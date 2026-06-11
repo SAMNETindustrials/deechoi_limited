@@ -1,0 +1,250 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    DEECHOI LIMITED - ADMIN DASHBOARD ACCESS
+═══════════════════════════════════════════════════════════════════════════════
+
+HOW TO ACCESS THE ADMIN DASHBOARD
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: START THE SERVER
+───────────────────────────────────────────────────────────────────────────────
+Open terminal and run:
+
+    cd /vercel/share/v0-project
+    pnpm dev
+
+The server will start on http://localhost:3000
+
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 2: NAVIGATE TO LOGIN PAGE
+───────────────────────────────────────────────────────────────────────────────
+Open your browser and go to:
+
+    http://localhost:3000/admin/login
+
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 3: CREATE YOUR ADMIN ACCOUNT (First Time Only)
+───────────────────────────────────────────────────────────────────────────────
+
+On the login page, click "Sign Up" and enter:
+  • Email: admin@deechoi.com (or any email)
+  • Password: YourSecurePassword123!
+
+Then:
+  1. Click "Create Account"
+  2. Check your email for confirmation link
+  3. Click the link to verify email
+  4. Return to login page
+  5. Login with your email and password
+
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 4: YOU'RE NOW IN THE ADMIN DASHBOARD!
+───────────────────────────────────────────────────────────────────────────────
+
+You'll see:
+
+    ┌─────────────────────────────────────────────┐
+    │  DEECHOI LIMITED - Admin Dashboard          │
+    │                                             │
+    │  Welcome! Choose your operation:            │
+    │                                             │
+    │  ┌──────────────────────┐                   │
+    │  │ Store Inventory      │   (Product Mgmt)  │
+    │  │ Management           │                   │
+    │  └──────────────────────┘                   │
+    │                                             │
+    │  ┌──────────────────────┐                   │
+    │  │ Stock Inventory      │   (Materials)     │
+    │  │ Management           │                   │
+    │  └──────────────────────┘                   │
+    │                                             │
+    └─────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+
+WHAT YOU CAN DO IN EACH SECTION
+═══════════════════════════════════════════════════════════════════════════════
+
+STORE INVENTORY MANAGEMENT (Product Management)
+────────────────────────────────────────────────
+
+✓ View all products
+✓ Add new products (name, price, description, category)
+✓ Edit existing products
+✓ Delete products
+✓ Manage stock quantities
+✓ Toggle in-stock status
+✓ Set product categories
+✓ Upload/add product images
+
+Products you add here IMMEDIATELY appear on the storefront homepage!
+
+
+STOCK INVENTORY MANAGEMENT (Raw Materials)
+───────────────────────────────────────────
+
+Contains TWO tabs:
+
+TAB 1: STOCK ITEMS
+  ✓ Track raw ingredients (Fish, Meat, Pepper, Onions, etc.)
+  ✓ Add new stock items
+  ✓ Monitor current quantities
+  ✓ Set unit prices
+  ✓ Define reorder levels
+  ✓ Manage supplier information
+  ✓ Get alerts when stock is low
+
+TAB 2: RESTOCK INVOICES
+  ✓ Create purchase orders for raw materials
+  ✓ Select items to reorder
+  ✓ Specify quantities needed
+  ✓ System calculates total cost
+  ✓ Generate PDF invoices
+  ✓ Download for purchasing team
+  ✓ Track invoice status
+
+═══════════════════════════════════════════════════════════════════════════════
+
+QUICK EXAMPLE WORKFLOW
+═══════════════════════════════════════════════════════════════════════════════
+
+ADDING YOUR FIRST PRODUCT:
+────────────────────────
+
+1. Click "Store Inventory Management"
+2. Click "Add Product"
+3. Fill in:
+   • Name: "Jollof Rice"
+   • Price: "2500"
+   • Description: "Delicious rice with vegetables"
+   • Category: "Rice & Foods"
+   • Stock Quantity: "20"
+   • In Stock: Toggle ON
+4. Click "Save Product"
+5. DONE! Product now appears on homepage
+
+────────────────────────────────────────────────────────────────────────────────
+
+CREATING A PURCHASE ORDER:
+──────────────────────────
+
+1. Click "Stock Inventory Management"
+2. Click "Stock Items" tab (if not already there)
+3. Add your raw materials first:
+   • Name: "Fresh Fish"
+   • Unit: "kg"
+   • Current Quantity: "50"
+   • Unit Price: "3500"
+   • Reorder Level: "20"
+   • Supplier: "Local Fish Market"
+4. Save item
+5. Click "Restock Invoices" tab
+6. Click "Create New Invoice"
+7. Select items you need (Fish, Meat, Pepper, etc.)
+8. Enter quantities
+9. Click "Generate Invoice"
+10. Click "Download PDF"
+11. Share with purchasing team
+
+═══════════════════════════════════════════════════════════════════════════════
+
+KEYBOARD SHORTCUTS
+═══════════════════════════════════════════════════════════════════════════════
+
+No special shortcuts, but these pages support:
+  • Tab - Navigate between fields
+  • Enter - Submit forms
+  • Escape - Close dialogs
+  • Ctrl+F - Search within page
+
+═══════════════════════════════════════════════════════════════════════════════
+
+IMPORTANT URLS TO REMEMBER
+═══════════════════════════════════════════════════════════════════════════════
+
+Customer Areas:
+  http://localhost:3000/              Storefront (products)
+  http://localhost:3000/about         About Us
+  http://localhost:3000/contact       Contact Us
+  http://localhost:3000/book          Book Us (events)
+  http://localhost:3000/cart          Shopping Cart
+
+Admin Areas (Requires Login):
+  http://localhost:3000/admin/login           Login page
+  http://localhost:3000/admin/dashboard       Main dashboard
+  http://localhost:3000/admin/store-inventory Product management
+  http://localhost:3000/admin/stock-inventory Materials management
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+Can't login?
+  → Check that email is confirmed
+  → Look in spam folder for confirmation email
+  → Try creating a new account
+
+Products not showing on storefront?
+  → Check "In Stock" toggle is ON
+  → Make sure category is filled in
+  → Wait 2-3 seconds for real-time sync
+
+Can't see the page?
+  → Ensure server is running (pnpm dev)
+  → Check browser console for errors
+  → Try http://localhost:3000 first
+  → Clear browser cache
+
+Forgot password?
+  → Use Supabase "Reset Password" link on login page
+  → Check spam folder for reset email
+
+═══════════════════════════════════════════════════════════════════════════════
+
+COMPANY INFORMATION (To Display)
+═══════════════════════════════════════════════════════════════════════════════
+
+DEECHOI LIMITED
+
+Address:
+  Eze Nvuigwe Avenue, Woji
+  Port Harcourt, Rivers State
+  Nigeria
+
+Contact:
+  Phone: +234 704 614 5982
+  Email: deechoi01@gmail.com
+
+Hours:
+  Monday - Friday: 9:00 AM - 8:00 PM
+  Saturday: 10:00 AM - 9:00 PM
+  Sunday: 12:00 PM - 7:00 PM
+
+═══════════════════════════════════════════════════════════════════════════════
+
+NEED HELP?
+═══════════════════════════════════════════════════════════════════════════════
+
+📘 Read the Full Documentation:
+  → README.md (complete guide)
+  → ADMIN_GUIDE.md (detailed admin instructions)
+  → QUICK_START.md (5-minute setup)
+
+📞 Contact Support:
+  → Email: deechoi01@gmail.com
+  → Phone: +234 704 614 5982
+
+═══════════════════════════════════════════════════════════════════════════════
+
+START USING YOUR ADMIN DASHBOARD NOW!
+
+1. pnpm dev
+2. http://localhost:3000/admin/login
+3. Create account
+4. Add your products
+5. Start taking orders!
+
+═══════════════════════════════════════════════════════════════════════════════
