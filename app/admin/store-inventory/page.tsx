@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Trash2, Edit2, Plus, X } from 'lucide-react'
+import { Trash2, Edit2, Plus, X, ChevronLeft } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { ProductOptionsManager } from '@/components/admin/product-options-manager'
+import { ProductDetailsManager } from '@/components/admin/product-details-manager'
+import { ProductFormEnhanced } from '@/components/admin/product-form-enhanced'
 
 interface Product {
   id: string
@@ -35,6 +36,8 @@ export default function StoreInventoryPage() {
     stock_quantity: '',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [showCustomizationPanel, setShowCustomizationPanel] = useState(false)
+  const [activeTab, setActiveTab] = useState<'basic' | 'options' | 'details'>('basic')
   const router = useRouter()
   const supabase = createClient()
 
@@ -87,10 +90,8 @@ export default function StoreInventoryPage() {
     setShowForm(true)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!formData.name.trim() || !formData.price) {
+  const handleFormSubmit = async (data: any) => {
+    if (!data.name.trim() || !data.price) {
       alert('Please fill in all required fields')
       return
     }
@@ -99,17 +100,16 @@ export default function StoreInventoryPage() {
       setSubmitting(true)
 
       const payload = {
-        name: formData.name,
-        description: formData.description,
-        price: parseFloat(formData.price),
-        image_url: formData.image_url || null,
-        category: formData.category,
-        in_stock: formData.in_stock,
-        stock_quantity: parseInt(formData.stock_quantity) || 0,
+        name: data.name,
+        description: data.description,
+        price: parseFloat(data.price),
+        image_url: data.image_url || null,
+        category: data.category,
+        in_stock: data.in_stock,
+        stock_quantity: parseInt(data.stock_quantity) || 0,
       }
 
       if (editingId) {
-        // Update existing product
         const { error } = await supabase
           .from('store_products')
           .update(payload)
@@ -118,7 +118,6 @@ export default function StoreInventoryPage() {
         if (error) throw error
         alert('Product updated successfully')
       } else {
-        // Create new product
         const { error } = await supabase
           .from('store_products')
           .insert([payload])
@@ -159,12 +158,16 @@ export default function StoreInventoryPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="bg-secondary text-secondary-foreground p-6 border-b border-border">
+      <div className="bg-primary text-primary-foreground p-6 border-b border-border">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Store Inventory</h1>
+          <div>
+            <h1 className="text-3xl font-bold">Store Inventory</h1>
+            <p className="text-primary-foreground/80 text-sm mt-1">Manage your product catalog with images and customizations</p>
+          </div>
           <Link href="/admin/dashboard">
-            <Button variant="outline" className="text-secondary-foreground border-secondary-foreground hover:bg-secondary-foreground/10">
-              ← Back to Dashboard
+            <Button variant="secondary" className="gap-2">
+              <ChevronLeft className="w-4 h-4" />
+              Back to Dashboard
             </Button>
           </Link>
         </div>
@@ -188,7 +191,7 @@ export default function StoreInventoryPage() {
         {/* Product Form */}
         {showForm && (
           <div className="bg-card border border-border rounded-lg p-6 mb-6">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-foreground">
                 {editingId ? 'Edit Product' : 'Add New Product'}
               </h2>
@@ -203,134 +206,67 @@ export default function StoreInventoryPage() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-foreground mb-2">
-                  Product Name *
-                </label>
-                <Input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  placeholder="e.g., Jollof Rice"
-                />
-              </div>
+            {/* Tabs for product management */}
+            <div className="flex gap-2 mb-6 border-b border-border">
+              <button
+                onClick={() => setActiveTab('basic')}
+                className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+                  activeTab === 'basic'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Basic Info
+              </button>
+              {editingId && (
+                <>
+                  <button
+                    onClick={() => setActiveTab('details')}
+                    className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+                      activeTab === 'details'
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Details
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('options')}
+                    className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+                      activeTab === 'options'
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Customization
+                  </button>
+                </>
+              )}
+            </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-foreground mb-2">
-                  Description
-                </label>
-                <Textarea
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  placeholder="Product description..."
-                  rows={3}
-                />
-              </div>
+            {/* Tab Content */}
+            {activeTab === 'basic' && (
+              <ProductFormEnhanced
+                initialData={formData}
+                onSubmit={handleFormSubmit}
+                onCancel={() => {
+                  setShowForm(false)
+                  resetForm()
+                }}
+                isSubmitting={submitting}
+                isEditing={!!editingId}
+              />
+            )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-foreground mb-2">
-                    Price (₦) *
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={(e) =>
-                      setFormData({ ...formData, price: e.target.value })
-                    }
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-foreground mb-2">
-                    Category
-                  </label>
-                  <Input
-                    type="text"
-                    value={formData.category}
-                    onChange={(e) =>
-                      setFormData({ ...formData, category: e.target.value })
-                    }
-                    placeholder="e.g., Main Course"
-                  />
-                </div>
-              </div>
+            {/* Details Tab */}
+            {activeTab === 'details' && editingId && (
+              <ProductDetailsManager productId={editingId} />
+            )}
 
-              <div>
-                <label className="block text-sm font-semibold text-foreground mb-2">
-                  Image URL
-                </label>
-                <Input
-                  type="url"
-                  value={formData.image_url}
-                  onChange={(e) =>
-                    setFormData({ ...formData, image_url: e.target.value })
-                  }
-                  placeholder="https://example.com/image.jpg"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-foreground mb-2">
-                    Stock Quantity
-                  </label>
-                  <Input
-                    type="number"
-                    value={formData.stock_quantity}
-                    onChange={(e) =>
-                      setFormData({ ...formData, stock_quantity: e.target.value })
-                    }
-                    placeholder="0"
-                  />
-                </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.in_stock}
-                      onChange={(e) =>
-                        setFormData({ ...formData, in_stock: e.target.checked })
-                      }
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm font-semibold text-foreground">
-                      In Stock
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex gap-4 pt-4">
-                <Button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 bg-primary hover:bg-primary/90"
-                >
-                  {submitting
-                    ? 'Saving...'
-                    : editingId
-                    ? 'Update Product'
-                    : 'Add Product'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowForm(false)
-                    resetForm()
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
+            {/* Options Tab */}
+            {activeTab === 'options' && editingId && (
+              <ProductOptionsManager productId={editingId} />
+            )}
           </div>
         )}
 

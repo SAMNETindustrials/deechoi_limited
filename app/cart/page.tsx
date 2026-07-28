@@ -3,77 +3,22 @@
 import { StorefrontHeader } from '@/components/storefront/header'
 import { useCart } from '@/lib/cart-context'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Trash2, Plus, Minus } from 'lucide-react'
 import Link from 'next/link'
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, clearCart, total, itemCount } = useCart()
-  const [loading, setLoading] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (items.length === 0) {
       alert('Your cart is empty')
       return
     }
 
-    try {
-      setLoading(true)
-
-      // Get customer details - in a real app this would be from user input
-      const customerName = prompt('Please enter your full name:')
-      if (!customerName) return
-
-      const customerEmail = prompt('Please enter your email:')
-      if (!customerEmail) return
-
-      const customerPhone = prompt('Please enter your phone number:')
-      if (!customerPhone) return
-
-      // Create order in Supabase
-      const { data: order, error: orderError } = await supabase
-        .from('orders')
-        .insert({
-          customer_name: customerName,
-          customer_email: customerEmail,
-          customer_phone: customerPhone,
-          total_amount: total,
-          status: 'pending',
-          payment_status: 'pending',
-        })
-        .select()
-        .single()
-
-      if (orderError) throw orderError
-
-      // Create order items
-      const orderItems = items.map((item) => ({
-        order_id: order.id,
-        product_id: item.productId,
-        quantity: item.quantity,
-        price_at_purchase: item.price,
-      }))
-
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItems)
-
-      if (itemsError) throw itemsError
-
-      // Clear cart and redirect to success page
-      clearCart()
-      router.push(`/order-confirmation/${order.id}`)
-    } catch (error) {
-      console.error('[v0] Checkout error:', error)
-      alert('Failed to place order. Please try again.')
-    } finally {
-      setLoading(false)
-    }
+    // Redirect to the checkout page
+    router.push('/checkout')
   }
 
   return (
@@ -95,59 +40,64 @@ export default function CartPage() {
             {/* Cart Items */}
             <div className="lg:col-span-2">
               <div className="space-y-4">
-                {items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex gap-4 p-4 border border-border rounded-lg bg-card"
-                  >
-                    {item.imageUrl && (
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        className="w-20 h-20 object-cover rounded"
-                      />
-                    )}
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-foreground">{item.name}</h3>
-                      <p className="text-primary font-bold">
-                        ₦{item.price.toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <div className="flex items-center gap-2 border border-border rounded">
-                        <button
-                          onClick={() =>
-                            updateQuantity(
-                              item.productId,
-                              Math.max(1, item.quantity - 1)
-                            )
-                          }
-                          className="p-1 hover:bg-muted"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="w-8 text-center">{item.quantity}</span>
-                        <button
-                          onClick={() =>
-                            updateQuantity(item.productId, item.quantity + 1)
-                          }
-                          className="p-1 hover:bg-muted"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
+                {items.map((item) => {
+                  const itemPrice = item.price ?? item.final_price ?? 0
+                  return (
+                    <div
+                      key={item.id ?? item.product_id}
+                      className="flex gap-4 p-4 border border-border rounded-lg bg-card"
+                    >
+                      {item.imageUrl && (
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name ?? item.product_name}
+                          className="w-20 h-20 object-cover rounded"
+                        />
+                      )}
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-foreground">
+                          {item.name ?? item.product_name}
+                        </h3>
+                        <p className="text-primary font-bold">
+                          ₦{itemPrice.toFixed(2)}
+                        </p>
                       </div>
-                      <button
-                        onClick={() => removeItem(item.productId)}
-                        className="text-destructive hover:bg-destructive/10 p-2 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <p className="font-semibold text-foreground">
-                        ₦{(item.price * item.quantity).toFixed(2)}
-                      </p>
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="flex items-center gap-2 border border-border rounded">
+                          <button
+                            onClick={() =>
+                              updateQuantity(
+                                item.product_id,
+                                Math.max(1, item.quantity - 1)
+                              )
+                            }
+                            className="p-1 hover:bg-muted"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <span className="w-8 text-center">{item.quantity}</span>
+                          <button
+                            onClick={() =>
+                              updateQuantity(item.product_id, item.quantity + 1)
+                            }
+                            className="p-1 hover:bg-muted"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => removeItem(item.product_id)}
+                          className="text-destructive hover:bg-destructive/10 p-2 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <p className="font-semibold text-foreground">
+                          ₦{(itemPrice * item.quantity).toFixed(2)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
               <Button
                 variant="outline"
@@ -171,7 +121,7 @@ export default function CartPage() {
                 <div className="space-y-4 mb-6 pb-6 border-b border-border">
                   <div className="flex justify-between text-muted-foreground">
                     <span>Subtotal</span>
-                    <span>₦{total.toFixed(2)}</span>
+                    <span>₦{(total ?? 0).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground">
                     <span>Items</span>
@@ -181,16 +131,15 @@ export default function CartPage() {
 
                 <div className="flex justify-between text-xl font-bold text-foreground mb-6">
                   <span>Total</span>
-                  <span className="text-primary">₦{total.toFixed(2)}</span>
+                  <span className="text-primary">₦{(total ?? 0).toFixed(2)}</span>
                 </div>
 
                 <Button
                   className="w-full bg-primary hover:bg-primary/90 text-white"
                   size="lg"
                   onClick={handleCheckout}
-                  disabled={loading}
                 >
-                  {loading ? 'Processing...' : 'Proceed to Checkout'}
+                  Proceed to Checkout
                 </Button>
               </div>
             </div>

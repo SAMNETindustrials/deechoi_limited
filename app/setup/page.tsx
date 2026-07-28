@@ -23,7 +23,7 @@ export default function SetupPage() {
         },
         body: JSON.stringify({
           email: 'deechoi01@gmail.com',
-          password: 'Deechoi01',
+          password: 'Deechoi01@2024!Secure',
         }),
       })
 

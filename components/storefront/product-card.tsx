@@ -1,8 +1,10 @@
 'use client'
 
-import { Button } from '@/components/ui/button'
-import { ShoppingCart } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { ShoppingCart, Sliders } from 'lucide-react'
 import Image from 'next/image'
+import { createClient } from '@/lib/supabase/client'
 
 export interface ProductCardProps {
   id: string
@@ -11,7 +13,7 @@ export interface ProductCardProps {
   price: number
   imageUrl?: string
   inStock: boolean
-  onAddToCart: () => void
+  onViewDetails: (productId: string) => void
 }
 
 export function ProductCard({
@@ -21,10 +23,34 @@ export function ProductCard({
   price,
   imageUrl,
   inStock,
-  onAddToCart,
+  onViewDetails,
 }: ProductCardProps) {
+  const [hasOptions, setHasOptions] = useState(false)
+  const supabase = createClient()
+
+  useEffect(() => {
+    checkProductOptions()
+  }, [id])
+
+  const checkProductOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('product_option_groups')
+        .select('id')
+        .eq('product_id', id)
+        .limit(1)
+
+      if (!error && data && data.length > 0) {
+        setHasOptions(true)
+      }
+    } catch (error) {
+      console.error('[v0] Error checking product options:', error)
+    }
+  }
+
   return (
-    <div className="bg-card rounded-lg overflow-hidden border border-border hover:shadow-lg transition-shadow duration-300">
+    <Link href={`/product/${id}`}>
+      <div className="group w-full text-left bg-card rounded-lg overflow-hidden border border-border hover:shadow-lg transition-all duration-300 hover:border-primary cursor-pointer">
       {/* Image Container */}
       <div className="relative w-full h-48 bg-muted overflow-hidden">
         {imageUrl ? (
@@ -32,16 +58,35 @@ export function ProductCard({
             src={imageUrl}
             alt={name}
             fill
-            className="object-cover hover:scale-105 transition-transform duration-300"
+            className="object-cover group-hover:scale-110 transition-transform duration-300"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground">
             <span className="text-sm">No image available</span>
           </div>
         )}
+        
+        {/* Hover Overlay - View Details */}
+        {inStock && (
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <div className="flex items-center gap-2 bg-primary text-background px-4 py-2 rounded-lg font-semibold">
+              <ShoppingCart className="h-5 w-5" />
+              View Details
+            </div>
+          </div>
+        )}
+
         {!inStock && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-            <span className="text-white font-semibold">Out of Stock</span>
+          <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center">
+            <span className="text-white font-bold text-lg">Out of Stock</span>
+          </div>
+        )}
+
+        {/* Customization Badge */}
+        {hasOptions && (
+          <div className="absolute top-2 right-2 bg-blue-600 text-white px-2 py-1 rounded-full flex items-center gap-1 text-xs font-semibold">
+            <Sliders className="w-3 h-3" />
+            Customizable
           </div>
         )}
       </div>
@@ -57,22 +102,17 @@ export function ProductCard({
           </p>
         </div>
 
-        {/* Price and Action */}
+        {/* Price and Status */}
         <div className="flex items-center justify-between pt-2 border-t border-border">
-          <div className="text-2xl font-bold text-primary">
-            ₦{price.toFixed(2)}
+          <div className="text-2xl font-bold text-accent">
+            ₦{price.toLocaleString()}
           </div>
-          <Button
-            onClick={onAddToCart}
-            disabled={!inStock}
-            size="sm"
-            className="gap-2"
-          >
-            <ShoppingCart className="h-4 w-4" />
-            <span className="hidden sm:inline">Add</span>
-          </Button>
+          <div className="text-xs bg-primary/15 text-primary px-2 py-1 rounded-full font-semibold whitespace-nowrap">
+            {inStock ? 'Click to Order' : 'Unavailable'}
+          </div>
         </div>
       </div>
-    </div>
+      </div>
+    </Link>
   )
 }
