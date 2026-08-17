@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/client'
 import { sendCustomerMessageEmail } from '@/lib/email'
 
+export const dynamic = 'force-dynamic'
+
 function generateAIAutoReply(message: string, name: string): { category: string; reply: string } {
   const lower = (message || '').toLowerCase()
   const firstName = name.split(' ')[0] || 'there'

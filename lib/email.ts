@@ -1,12 +1,8 @@
 import { Resend } from 'resend'
 
-function getResendClient() {
-  const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) {
-    return null
-  }
-  return new Resend(apiKey)
-}
+// Provide a dummy fallback key during build-time static evaluation to prevent constructor throw
+const resendApiKey = process.env.RESEND_API_KEY || 're_dummy_build_key_123456789'
+const resend = new Resend(resendApiKey)
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://deechoi-limited.vercel.app'
 
@@ -25,10 +21,9 @@ export async function sendCustomerMessageEmail({
   inquiryId: string
   isAutoReply?: boolean
 }) {
-  const resend = getResendClient()
-
-  if (!resend) {
-    console.warn('[Resend]: Skipping email dispatch. RESEND_API_KEY is not defined.')
+  // If actual key is not configured at runtime, safely skip
+  if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY.startsWith('re_dummy')) {
+    console.warn('[Resend]: Skipping email dispatch. RESEND_API_KEY is not defined in environment.')
     return { success: false, error: 'RESEND_API_KEY missing' }
   }
 
