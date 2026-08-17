@@ -6,23 +6,20 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: productId } = await params
+    const { id } = await params
     const supabase = createClient()
 
-    // Fetch product options from the database
-    const { data, error } = await supabase
-      .from('products')
-      .select('option_groups')
-      .eq('id', productId)
+    const { data: product, error } = await supabase
+      .from('store_products')
+      .select('customization_options')
+      .eq('id', id)
       .single()
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    if (error) throw error
 
-    return NextResponse.json({ option_groups: data?.option_groups || [] })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 })
+    return NextResponse.json({ option_groups: product?.customization_options || [] })
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
 
@@ -31,35 +28,24 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: productId } = await params
+    const { id } = await params
     const body = await request.json()
-    const { option_groups } = body
-
-    if (!Array.isArray(option_groups)) {
-      return NextResponse.json(
-        { error: 'Invalid option groups format' },
-        { status: 400 }
-      )
-    }
-
     const supabase = createClient()
 
-    // Save option_groups JSON to product row
     const { data, error } = await supabase
-      .from('products')
-      .update({ option_groups })
-      .eq('id', productId)
+      .from('store_products')
+      .update({
+        customization_options: body.option_groups || [],
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
       .select()
+      .single()
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    if (error) throw error
 
-    return NextResponse.json({
-      message: 'Options updated successfully',
-      product: data?.[0],
-    })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 })
+    return NextResponse.json({ success: true, data })
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

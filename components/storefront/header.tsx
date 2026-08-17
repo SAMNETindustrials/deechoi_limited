@@ -2,138 +2,374 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { ShoppingCart, Menu, X } from 'lucide-react'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
+import { 
+  ShoppingCart, 
+  Menu, 
+  X, 
+  Cake, 
+  Home, 
+  Info, 
+  PhoneCall, 
+  Calendar, 
+  Utensils, 
+  Search,
+  Sparkles,
+  Package,
+  MessageSquare
+} from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 import { useCart } from '@/lib/cart-context'
+import { createClient } from '@/lib/supabase/client'
 
 export function StorefrontHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [hasOrders, setHasOrders] = useState(false)
+  const [activeOrderCount, setActiveOrderCount] = useState(0)
+  const [hasMessages, setHasMessages] = useState(false)
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
+
   const { itemCount } = useCart()
   const router = useRouter()
+  const pathname = usePathname()
+  const supabase = createClient()
+
+  const checkCustomerData = async () => {
+    try {
+      if (typeof window === 'undefined') return
+
+      const storedOrders = JSON.parse(localStorage.getItem('deechoi_customer_orders') || '[]')
+      const storedInquiries = JSON.parse(localStorage.getItem('deechoi_customer_inquiries') || '[]')
+      const storedSession = JSON.parse(localStorage.getItem('deechoi_customer_session') || '{}')
+      const userEmail = storedSession.email?.trim().toLowerCase()
+      const userPhone = storedSession.phone?.trim()
+
+      // 1. Check Orders
+      if (storedOrders.length > 0 || userPhone || userEmail) {
+        setHasOrders(true)
+        let query = supabase
+          .from('store_orders')
+          .select('id, status')
+          .neq('status', 'completed')
+          .neq('status', 'cancelled')
+          .neq('payment_method', 'contact_form_message')
+
+        if (storedOrders.length > 0) {
+          query = query.in('id', storedOrders)
+        } else if (userPhone) {
+          query = query.eq('customer_phone', userPhone)
+        }
+
+        const { data } = await query
+        setActiveOrderCount(data?.length || 0)
+      } else {
+        setHasOrders(false)
+        setActiveOrderCount(0)
+      }
+
+      // 2. Check Messages & Inquiries
+      if (storedInquiries.length > 0 || userEmail) {
+        setHasMessages(true)
+        let inqQuery = supabase
+          .from('customer_inquiries')
+          .select('id, reply_status, status')
+
+        if (userEmail) {
+          inqQuery = inqQuery.ilike('email', userEmail)
+        } else if (storedInquiries.length > 0) {
+          inqQuery = inqQuery.in('id', storedInquiries)
+        }
+
+        const { data: inqData } = await inqQuery
+        if (inqData && inqData.length > 0) {
+          setHasMessages(true)
+          const replied = inqData.filter(i => i.reply_status === 'replied' || i.status === 'resolved').length
+          setUnreadMessageCount(replied)
+        }
+      } else {
+        setHasMessages(false)
+        setUnreadMessageCount(0)
+      }
+    } catch (e) {
+      console.warn('Header session check:', e)
+    }
+  }
+
+  useEffect(() => {
+    checkCustomerData()
+
+    const handleSync = () => checkCustomerData()
+    window.addEventListener('deechoi_order_placed', handleSync)
+    window.addEventListener('deechoi_message_sent', handleSync)
+    window.addEventListener('storage', handleSync)
+
+    return () => {
+      window.removeEventListener('deechoi_order_placed', handleSync)
+      window.removeEventListener('deechoi_message_sent', handleSync)
+      window.removeEventListener('storage', handleSync)
+    }
+  }, [])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (searchQuery.trim()) {
       router.push(`/?search=${encodeURIComponent(searchQuery)}`)
       setSearchQuery('')
+      setIsMenuOpen(false)
     }
   }
 
-  const menuItems = [
-    { label: 'Home', href: '/' },
-    { label: 'Products', href: '/?view=products' },
-    { label: 'Book Us', href: '/book-us' },
-    { label: 'About Us', href: '/about-us' },
+  const baseNavLinks = [
+    { label: 'Home', href: '/', icon: <Home className="w-4 h-4 text-[#072d1d]" /> },
+    { label: 'Cakes', href: '/cakes', icon: <Cake className="w-4 h-4 text-amber-600" />, isSpecial: true },
+    { label: 'Meals & Menu', href: '/#our-menu-section', icon: <Utensils className="w-4 h-4 text-[#072d1d]" /> },
+    { label: 'About Us', href: '/about', icon: <Info className="w-4 h-4 text-[#072d1d]" /> },
+    { label: 'Book Us', href: '/services', icon: <Calendar className="w-4 h-4 text-[#072d1d]" /> },
+    { label: 'Contact', href: '/contact', icon: <PhoneCall className="w-4 h-4 text-[#072d1d]" /> },
   ]
 
+  const dynamicLinks: any[] = [...baseNavLinks]
+
+  if (hasOrders) {
+    dynamicLinks.splice(2, 0, {
+      label: 'My Orders',
+      href: '/my-orders',
+      icon: <Package className="w-4 h-4 text-amber-600" />,
+      badge: activeOrderCount > 0 ? activeOrderCount : undefined,
+      isPill: true,
+    })
+  }
+
+  if (hasMessages) {
+    const insertPos = hasOrders ? 3 : 2
+    dynamicLinks.splice(insertPos, 0, {
+      label: 'My Messages',
+      href: '/my-messages',
+      icon: <MessageSquare className="w-4 h-4 text-emerald-600" />,
+      badge: unreadMessageCount > 0 ? unreadMessageCount : undefined,
+      isMessagePill: true,
+    })
+  }
+
   return (
-    <header className="sticky top-0 z-40 bg-primary text-background">
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-24">
-          {/* Logo */}
-          <Link href="/" className="flex items-center flex-shrink-0">
-            <Image
-              src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo1-removebg-preview-k7mm8OGisB0KbypGBJdZqPxPnbktIZ.png"
-              alt="DEECHOI Logo"
-              width={220}
-              height={80}
-              className="h-20 w-auto"
-              priority
-            />
-          </Link>
-
-          {/* Desktop Menu */}
-          <nav className="hidden md:flex gap-8 items-center">
-            {menuItems.map((item) => (
-              <Link
-                key={item.label}
-                href={item.href}
-                className="text-background hover:text-accent transition-colors text-sm font-medium"
+    <>
+      <header className="sticky top-0 z-50 bg-[#072d1d] text-white shadow-md border-b border-emerald-900/40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16 sm:h-20">
+            
+            {/* Left: Mobile Hamburger Toggle */}
+            <div className="flex items-center gap-2 md:hidden">
+              <button
+                onClick={() => setIsMenuOpen(true)}
+                aria-label="Open Navigation Menu"
+                className="text-white p-2 rounded-full hover:bg-white/10 transition active:scale-95 relative"
               >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+                <Menu className="w-6 h-6" />
+                {(activeOrderCount > 0 || unreadMessageCount > 0) && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping" />
+                )}
+              </button>
+            </div>
 
-          {/* Search Bar - Desktop */}
-          <form onSubmit={handleSearch} className="hidden lg:flex items-center gap-2 bg-background rounded-full px-4 py-2 flex-1 max-w-xs mx-8">
-            <input
-              type="text"
-              placeholder="Search food, restaurants..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground flex-1"
-            />
-            <button type="submit" className="text-accent hover:text-accent/80">
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </form>
+            {/* Brand Logo */}
+            <Link href="/" className="flex items-center flex-shrink-0">
+              <div className="relative w-36 sm:w-48 h-10 sm:h-12">
+                <Image
+                  src="/logo.png"
+                  alt="De-echoi Limited Logo"
+                  fill
+                  className="object-contain"
+                  priority
+                />
+              </div>
+            </Link>
 
-          {/* Right Side - Cart and Mobile Menu */}
-          <div className="flex items-center gap-4">
-            <Link href="/cart">
-              <Button variant="ghost" size="icon" className="relative text-background hover:bg-primary/90 rounded-full w-12 h-12 bg-background">
-                <ShoppingCart className="h-6 w-6 text-primary" />
+            {/* Desktop Navigation Links */}
+            <nav className="hidden md:flex gap-4 lg:gap-6 items-center">
+              {dynamicLinks.map((item: any) => {
+                const isActive = pathname === item.href
+
+                if (item.isPill) {
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-extrabold transition-all border ${
+                        isActive
+                          ? 'bg-amber-500 text-[#072d1d] border-amber-500 shadow-md'
+                          : 'bg-emerald-800/60 text-amber-300 border-amber-400/40 hover:bg-amber-400 hover:text-[#072d1d]'
+                      }`}
+                    >
+                      <Package className="w-3.5 h-3.5" />
+                      <span>{item.label}</span>
+                      {item.badge && (
+                        <span className="bg-amber-500 text-[#072d1d] text-[10px] font-black px-1.5 rounded-full">
+                          {item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  )
+                }
+
+                if (item.isMessagePill) {
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-extrabold transition-all border ${
+                        isActive
+                          ? 'bg-emerald-500 text-white border-emerald-400 shadow-md'
+                          : 'bg-emerald-900/80 text-emerald-200 border-emerald-600/40 hover:bg-emerald-600 hover:text-white'
+                      }`}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>{item.label}</span>
+                      {item.badge && (
+                        <span className="bg-amber-400 text-[#072d1d] text-[10px] font-black px-1.5 rounded-full">
+                          {item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  )
+                }
+
+                if (item.isSpecial) {
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs lg:text-sm font-bold transition-all ${
+                        isActive
+                          ? 'bg-amber-500 text-[#072d1d] shadow-sm'
+                          : 'bg-[#12422C] text-amber-400 border border-amber-400/30 hover:bg-amber-500 hover:text-[#072d1d]'
+                      }`}
+                    >
+                      <Cake className="w-3.5 h-3.5" />
+                      <span>{item.label}</span>
+                    </Link>
+                  )
+                }
+
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={`transition-colors text-xs lg:text-sm font-semibold ${
+                      isActive ? 'text-amber-400 font-bold' : 'text-gray-200 hover:text-amber-400'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </nav>
+
+            {/* Desktop Search Bar */}
+            <form 
+              onSubmit={handleSearch} 
+              className="hidden lg:flex items-center gap-2 bg-white rounded-full px-4 py-2 flex-1 max-w-xs mx-4 shadow-inner"
+            >
+              <input
+                type="text"
+                placeholder="Search meals, cakes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-transparent outline-none text-xs text-slate-800 placeholder-slate-400 flex-1"
+              />
+              <button type="submit" className="text-amber-600 hover:text-amber-700" aria-label="Search">
+                <Search className="w-4 h-4" />
+              </button>
+            </form>
+
+            {/* Right: Cart Button */}
+            <div className="flex items-center gap-3">
+              <Link 
+                href="/cart" 
+                aria-label="Shopping Cart"
+                className="relative bg-white text-[#072d1d] p-2.5 rounded-full shadow-md hover:bg-amber-400 transition active:scale-95"
+              >
+                <ShoppingCart className="w-5 h-5 text-[#072d1d]" />
                 {itemCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-accent text-primary text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-amber-500 text-[#072d1d] text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center border-2 border-[#072d1d]">
                     {itemCount}
                   </span>
                 )}
-              </Button>
-            </Link>
+              </Link>
+            </div>
 
-            {/* Mobile Menu Button */}
-            <button
-              className="md:hidden text-background"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              aria-label="Toggle menu"
-            >
-              {isMenuOpen ? (
-                <X className="h-6 w-6" />
-              ) : (
-                <Menu className="h-6 w-6" />
-              )}
-            </button>
           </div>
         </div>
+      </header>
 
-        {/* Mobile Search - visible only on mobile */}
-        <form onSubmit={handleSearch} className="md:hidden pb-4 flex items-center gap-2 bg-background rounded-full px-3 py-2">
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground flex-1"
-          />
-          <button type="submit" className="text-accent hover:text-accent/80">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </form>
+      {/* Mobile Drawer Menu */}
+      {isMenuOpen && (
+        <div className="fixed inset-0 z-50 flex justify-start bg-black/60 backdrop-blur-sm md:hidden">
+          <div className="absolute inset-0" onClick={() => setIsMenuOpen(false)} />
 
-        {/* Mobile Menu */}
-        {isMenuOpen && (
-          <nav className="md:hidden pb-4 space-y-2 animate-fade-in">
-            {menuItems.map((item) => (
-              <Link
-                key={item.label}
-                href={item.href}
-                className="block px-4 py-2 text-background hover:text-accent transition-colors"
+          <aside className="relative w-[82%] max-w-[320px] bg-slate-50 h-full shadow-2xl flex flex-col z-10 overflow-y-auto animate-in slide-in-from-left duration-300">
+            <div className="bg-[#072d1d] p-6 text-white relative rounded-b-3xl shadow-md">
+              <button
                 onClick={() => setIsMenuOpen(false)}
+                className="absolute top-4 right-4 bg-white/10 p-1.5 rounded-full text-white hover:bg-white/20"
               >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        )}
-      </div>
-    </header>
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="relative w-12 h-12 rounded-full border-2 border-amber-500 bg-emerald-900 overflow-hidden flex-shrink-0">
+                  <Image src="/logo.png" alt="De-echoi Logo" fill className="object-contain p-1" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">De-echoi Limited</h3>
+                  <p className="text-[10px] text-emerald-200/80">Authentic Flavors & Catering</p>
+                </div>
+              </div>
+            </div>
+
+            <nav className="p-5 space-y-4 flex-1 text-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2">Navigation</p>
+              <div className="space-y-1.5">
+                {dynamicLinks.map((item: any) => {
+                  const isActive = pathname === item.href
+
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      onClick={() => setIsMenuOpen(false)}
+                      className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-xs transition ${
+                        item.isMessagePill
+                          ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-300'
+                          : item.isPill
+                            ? 'bg-amber-100 text-amber-900 font-bold border border-amber-300'
+                            : isActive
+                              ? 'bg-[#072d1d] text-white font-bold'
+                              : 'text-slate-800 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </div>
+
+                      {item.badge && (
+                        <span className="bg-[#072d1d] text-amber-400 text-[9px] font-black px-2 py-0.5 rounded-full">
+                          {item.badge} Active
+                        </span>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            </nav>
+
+            <div className="p-4 border-t border-slate-200 bg-white text-center text-[10px] text-slate-400">
+              De-echoi Limited &copy; 2026
+            </div>
+          </aside>
+        </div>
+      )}
+    </>
   )
 }

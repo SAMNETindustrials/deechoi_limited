@@ -1,103 +1,164 @@
+'use client'
+
 import { StorefrontHeader } from '@/components/storefront/header'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-
-export const metadata = {
-  title: 'About Us - DEECHOI LIMITED',
-  description: 'Learn about DEECHOI LIMITED, your trusted source for authentic cooked meals and snacks.',
-}
+import Image from 'next/image'
+import { 
+  Heart, 
+  ShieldCheck, 
+  Leaf, 
+  Sparkles, 
+  Utensils, 
+  Cake, 
+  Award, 
+  Users, 
+  Clock, 
+  ArrowRight,
+  ChevronLeft
+} from 'lucide-react'
 
 export default function AboutPage() {
+  const values = [
+    {
+      icon: <ShieldCheck className="w-6 h-6 text-[#EAA823]" />,
+      title: 'Highest Quality & Hygiene',
+      description: 'We source the freshest local ingredients and prepare every meal with strict hygiene protocols in our certified kitchen.',
+    },
+    {
+      icon: <Leaf className="w-6 h-6 text-[#EAA823]" />,
+      title: 'Authentic Heritage Recipes',
+      description: 'Our dishes and bespoke cakes honor authentic culinary traditions while delivering bold, unforgettable flavors.',
+    },
+    {
+      icon: <Heart className="w-6 h-6 text-[#EAA823]" />,
+      title: 'Passion & Genuine Care',
+      description: 'Every meal and layered cake is prepared with love and precision, making customer satisfaction our ultimate badge of honor.',
+    },
+    {
+      icon: <Clock className="w-6 h-6 text-[#EAA823]" />,
+      title: 'Reliable Speed & Freshness',
+      description: 'On-time preparation and fast rider dispatch across Port Harcourt ensuring food arrives piping hot and fresh.',
+    },
+  ]
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans pb-16">
       <StorefrontHeader />
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-r from-secondary to-secondary/80 text-secondary-foreground py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">About DEECHOI LIMITED</h1>
-          <p className="text-lg md:text-xl opacity-90">
-            Your trusted partner in authentic, delicious cuisine
+      <section className="relative bg-gradient-to-r from-[#072d1d] via-[#0a3a26] to-[#072d1d] text-white py-16 sm:py-24 overflow-hidden border-b border-amber-500/20 shadow-xl">
+        <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#EAA823_1px,transparent_1px)] [background-size:16px_16px]" />
+
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-4">
+          <div className="inline-flex items-center gap-2 bg-[#12422C] text-amber-400 px-4 py-1.5 rounded-full border border-amber-400/30 text-xs font-extrabold uppercase tracking-wider">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>The De-echoi Experience</span>
+          </div>
+
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white leading-tight">
+            Authentic Flavors, <br />
+            <span className="text-[#EAA823]">Crafted with Love & Precision.</span>
+          </h1>
+
+          <p className="text-sm sm:text-base text-emerald-100/80 max-w-2xl mx-auto leading-relaxed">
+            From hot delicacies and artisanal pastries to bespoke celebration cakes and luxury event catering in Port Harcourt.
           </p>
         </div>
       </section>
 
-      {/* About Content */}
-      <section className="py-16 bg-background">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="space-y-12">
-            {/* Mission */}
-            <div>
-              <h2 className="text-3xl font-bold text-foreground mb-4">Our Mission</h2>
-              <p className="text-lg text-foreground/80 leading-relaxed">
-                At DEECHOI LIMITED, we are passionate about bringing authentic, mouth-watering Nigerian and West African cuisine to your table. Our mission is to prepare fresh, high-quality cooked meals and snacks that celebrate tradition while embracing modern culinary excellence. We believe food is more than nourishment—it&apos;s a celebration of culture, community, and care.
-              </p>
-            </div>
+      {/* Main Content */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 space-y-16">
+        
+        {/* Story Section with Visual Accent */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          <div className="lg:col-span-6 space-y-4">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-amber-600">Our Heritage & Story</span>
+            <h2 className="text-2xl sm:text-3xl font-black text-[#0A2E1D]">
+              Bringing the authentic taste of home to your table.
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+              DEECHOI LIMITED started with a clear vision: to combine authentic Nigerian and West African culinary heritage with modern kitchen excellence, hygienic packaging, and swift doorstep delivery.
+            </p>
+            <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+              From our kitchen in Woji, Port Harcourt, we bake signature tiered celebration cakes and cook delicious hot platters daily. Whether you are ordering a quick lunch, celebrating a milestone, or planning catering for hundreds of guests, we deliver uncompromising flavor and care.
+            </p>
+          </div>
 
-            {/* Values */}
-            <div>
-              <h2 className="text-3xl font-bold text-foreground mb-6">Our Values</h2>
-              <div className="grid md:grid-cols-3 gap-6">
-                <div className="bg-muted p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold text-primary mb-3">Quality</h3>
-                  <p className="text-foreground/80">
-                    We source the finest ingredients and prepare every meal with meticulous attention to detail and hygiene standards.
-                  </p>
+          <div className="lg:col-span-6 relative">
+            <div className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-xl border-2 border-[#0A2E1D]/10 bg-[#072d1d]">
+              <Image
+                src="/deechoi_brand.png"
+                alt="De-echoi Kitchen & Catering"
+                fill
+                className="object-cover"
+                priority
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+              <div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-gray-100 shadow-lg flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-black text-[#0A2E1D]">Port Harcourt Hub</p>
+                  <p className="text-[10px] text-gray-500">Woji Delivery & Baking Center</p>
                 </div>
-                <div className="bg-muted p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold text-primary mb-3">Authenticity</h3>
-                  <p className="text-foreground/80">
-                    Our recipes honor traditional cooking methods while delivering the authentic flavors our customers love.
-                  </p>
-                </div>
-                <div className="bg-muted p-6 rounded-lg">
-                  <h3 className="text-xl font-semibold text-primary mb-3">Care</h3>
-                  <p className="text-foreground/80">
-                    Every meal is prepared with love and care, ensuring customer satisfaction is our top priority.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Story */}
-            <div>
-              <h2 className="text-3xl font-bold text-foreground mb-4">Our Story</h2>
-              <p className="text-lg text-foreground/80 leading-relaxed mb-4">
-                DEECHOI LIMITED started as a passion project to bring the authentic taste of home to people who value quality, tradition, and genuine flavor. From humble beginnings, we&apos;ve grown into a trusted name for delicious, freshly-cooked meals and snacks.
-              </p>
-              <p className="text-lg text-foreground/80 leading-relaxed">
-                Today, we continue to serve our community with the same dedication and passion that started it all. Whether you&apos;re ordering for a quick meal or booking us for your special event, we&apos;re committed to making every experience memorable.
-              </p>
-            </div>
-
-            {/* CTA */}
-            <div className="bg-primary text-primary-foreground p-8 rounded-lg text-center">
-              <h3 className="text-2xl font-bold mb-4">Ready to Experience Our Cuisine?</h3>
-              <p className="text-lg mb-6 opacity-90">
-                Explore our menu and place your order today
-              </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link href="/">
-                  <Button variant="secondary" size="lg">
-                    View Our Menu
-                  </Button>
-                </Link>
-                <Link href="/contact">
-                  <Button variant="outline" size="lg" className="bg-transparent border-primary-foreground text-primary-foreground hover:bg-primary-foreground/10">
-                    Get in Touch
-                  </Button>
-                </Link>
+                <span className="bg-[#0A2E1D] text-amber-400 text-[10px] font-extrabold px-3 py-1 rounded-full">
+                  100% Fresh Daily
+                </span>
               </div>
             </div>
           </div>
         </div>
-      </section>
+
+        {/* Core Values Grid */}
+        <div>
+          <div className="text-center max-w-xl mx-auto mb-10 space-y-2">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-amber-600">What Drives Us</span>
+            <h2 className="text-2xl sm:text-3xl font-black text-[#0A2E1D]">Our Core Principles</h2>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {values.map((v, idx) => (
+              <div
+                key={idx}
+                className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-sm hover:shadow-md transition-all space-y-3"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[#0A2E1D] flex items-center justify-center shadow-md">
+                  {v.icon}
+                </div>
+                <h3 className="font-extrabold text-sm text-[#0A2E1D]">{v.title}</h3>
+                <p className="text-xs text-gray-600 leading-relaxed">{v.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* CTA Box */}
+        <div className="bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#072d1d] text-white p-8 sm:p-12 rounded-3xl text-center space-y-6 shadow-2xl border border-amber-400/30">
+          <div className="max-w-xl mx-auto space-y-2">
+            <h3 className="text-2xl sm:text-3xl font-black text-white">Ready for the De-echoi Experience?</h3>
+            <p className="text-xs sm:text-sm text-emerald-100/80">
+              Browse our fresh meals, build custom celebration cakes, or book us for your next special event.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link href="/">
+              <Button className="bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-extrabold px-8 py-6 rounded-full text-xs sm:text-sm shadow-md transition">
+                Order Food Menu
+              </Button>
+            </Link>
+            <Link href="/services">
+              <Button variant="outline" className="border-amber-400/50 text-white hover:bg-white/10 font-bold px-8 py-6 rounded-full text-xs sm:text-sm transition">
+                Book Catering / Events
+              </Button>
+            </Link>
+          </div>
+        </div>
+
+      </div>
 
       {/* Footer */}
-      <footer className="bg-secondary text-secondary-foreground py-12 border-t border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p>&copy; 2026 DEECHOI LIMITED. All rights reserved.</p>
-        </div>
+      <footer className="border-t border-gray-200/80 pt-8 text-center text-xs text-gray-400">
+        <p>&copy; 2026 DEECHOI LIMITED. All rights reserved.</p>
       </footer>
     </div>
   )

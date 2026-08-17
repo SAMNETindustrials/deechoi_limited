@@ -3,31 +3,26 @@
 import React, { useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { StorefrontHeader } from '@/components/storefront/header'
+import { CustomerReviewsSection } from '@/components/storefront/customer-reviews'
+import { WaitlistCountdownSection } from '@/components/storefront/waitlist-hero'
 import { 
-  Menu, 
-  ShoppingCart, 
-  Search, 
   ArrowRight, 
   Zap, 
   ShieldCheck, 
   Leaf, 
   Headphones, 
   ChevronRight,
-  Gift,
-  Tag,
   Utensils,
   Pizza,
   Drumstick,
-  Heart,
-  X,
-  Info,
-  PhoneCall,
-  Calendar,
-  Home,
-  Star,
+  Navigation,
+  MapPin,
+  Cake,
   Share2,
+  X,
   MessageCircle,
   Instagram,
   Facebook,
@@ -48,14 +43,12 @@ interface Product {
   category: string
 }
 
-// Hero Rider Images Carousel Config
 const HERO_IMAGES = [
   { src: '/mobile_bike.png', alt: 'Delivery Rider' },
   { src: '/deechoi_brand.png', alt: 'Fresh Delicious Meals' },
   { src: '/web_bike.png', alt: 'Tasty Gourmet Burger' }
 ]
 
-// Floating Social Handles Config
 const SOCIAL_HANDLES = [
   {
     name: 'WhatsApp',
@@ -93,18 +86,16 @@ const SOCIAL_HANDLES = [
   },
 ]
 
-export default function HomePage() {
+export default function MobileHomePage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [currentHeroIndex, setCurrentHeroIndex] = useState(0)
-  
-  // Floating Social Handles Expansion State
   const [isSocialOpen, setIsSocialOpen] = useState(false)
 
   const supabase = createClient()
@@ -120,12 +111,10 @@ export default function HomePage() {
     }
   }, [searchParams])
 
-  // 4-second interval timer for rotating hero images smoothly
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentHeroIndex((prevIndex) => (prevIndex + 1) % HERO_IMAGES.length)
     }, 4000)
-
     return () => clearInterval(interval)
   }, [])
 
@@ -135,11 +124,17 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from('store_products')
         .select('*')
+        .neq('category', 'Cakes')
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setProducts(data || [])
-      setFilteredProducts(data || [])
+
+      const mealList = (data || []).filter(
+        (p) => p.category?.toLowerCase() !== 'cakes' && !p.name?.toLowerCase().includes('cake')
+      )
+
+      setProducts(mealList)
+      setFilteredProducts(mealList)
     } catch (error) {
       console.error('Failed to fetch products:', error)
     } finally {
@@ -163,6 +158,15 @@ export default function HomePage() {
     }
   }
 
+  const handleCategoryClick = (categoryName: string) => {
+    if (categoryName.toLowerCase() === 'cakes') {
+      router.push('/cakes')
+    } else {
+      handleSearch(categoryName)
+      scrollToMenu()
+    }
+  }
+
   const handleViewDetails = (productId: string) => {
     setSelectedProductId(productId)
     setShowModal(true)
@@ -177,8 +181,8 @@ export default function HomePage() {
 
   const categories = [
     { name: 'Meals', icon: <Utensils className="w-4 h-4" />, image: '/Recipe2.jpg' },
+    { name: 'Cakes', icon: <Cake className="w-4 h-4 text-amber-400" />, image: '/cakes.jpg' },
     { name: 'Shawarma', icon: <span className="text-xs font-bold">🫔</span>, image: '/shawarma.jpeg' },
-    { name: 'Cakes', icon: <Pizza className="w-4 h-4" />, image: '/cakes.jpg' },
     { name: 'Pasta', icon: <span className="text-xs font-bold">🍝</span>, image: '/pasta.jpeg' },
     { name: 'Noodles', icon: <Drumstick className="w-4 h-4" />, image: '/noodles.jpeg' },
     { name: 'Corndogs', icon: <Pizza className="w-4 h-4" />, image: '/corndog.webp' },
@@ -192,192 +196,13 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-[#072d1d] text-slate-800 font-sans pb-12 relative">
       
-      {/* 1. STICKY HEADER NAVIGATION */}
-      <header className="sticky top-0 z-50 bg-[#072d1d]/95 backdrop-blur-md px-5 py-2.5 border-b border-emerald-900/40">
-        <div className="flex items-center justify-between max-w-md mx-auto h-12">
-          {/* Menu Toggle Button */}
-          <button 
-            onClick={() => setIsMenuOpen(true)}
-            aria-label="Toggle Navigation Menu"
-            className="text-white p-2 rounded-full hover:bg-white/10 transition active:scale-95"
-          >
-            <Menu className="w-6 h-6" />
-          </button>
-          
-          {/* Active Header Logo Image */}
-          <div 
-            className="flex items-center justify-center cursor-pointer" 
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          >
-            <div className="relative w-60 h-30">
-              <Image 
-                src="/logo.png" 
-                alt="De-echoi Limited Logo" 
-                fill 
-                className="object-contain scale-110"
-                priority
-              />
-            </div>
-          </div>
+      {/* 1. STOREFRONT HEADER */}
+      <StorefrontHeader />
 
-          {/* Cart Button with Cart Icon */}
-          <button 
-            onClick={scrollToMenu}
-            aria-label="View Shopping Cart"
-            className="relative bg-white text-[#072d1d] p-2.5 rounded-full shadow-md active:scale-95 transition"
-          >
-            <ShoppingCart className="w-5 h-5" />
-            <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#072d1d]">
-              2
-            </span>
-          </button>
-        </div>
-      </header>
+      {/* 2. 10-DAY WAITLIST COUNTDOWN BANNER */}
+      <WaitlistCountdownSection />
 
-      {/* SIDEBAR NAVIGATION OVERLAY */}
-      {isMenuOpen && (
-        <div className="fixed inset-0 z-50 flex justify-start bg-black/60 backdrop-blur-sm transition-opacity">
-          {/* Overlay Click-to-Close Handler */}
-          <div className="absolute inset-0" onClick={() => setIsMenuOpen(false)} />
-
-          <aside className="relative w-[80%] max-w-[320px] bg-slate-50 h-full shadow-2xl flex flex-col z-10 overflow-y-auto animate-in slide-in-from-left duration-300">
-            
-            {/* Top Brand Banner Header */}
-            <div className="bg-[#072d1d] p-6 text-white relative rounded-b-3xl shadow-md">
-              <button 
-                onClick={() => setIsMenuOpen(false)}
-                aria-label="Close Navigation Menu"
-                className="absolute top-4 right-4 bg-white/10 p-1.5 rounded-full text-white hover:bg-white/20 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="flex items-center gap-3">
-                <div className="relative w-14 h-14 rounded-full border-2 border-amber-500 bg-emerald-900 overflow-hidden flex-shrink-0 shadow-md">
-                  <Image 
-                    src="/logo.png" 
-                    alt="De-echoi Logo Avatar" 
-                    fill 
-                    className="object-contain p-1"
-                  />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-white leading-tight">De-echoi Limited</h3>
-                  <p className="text-[11px] text-emerald-200/80">Authentic Flavors & Catering</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Navigation Options List */}
-            <nav className="p-5 space-y-6 flex-1 text-slate-700">
-              
-              {/* Primary Pages Category */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-3">
-                  Main Navigation
-                </p>
-                <div className="space-y-1">
-                  <Link 
-                    href="/" 
-                    onClick={() => setIsMenuOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 font-medium text-xs transition"
-                  >
-                    <Home className="w-4 h-4 text-[#072d1d]" />
-                    <span>Home</span>
-                  </Link>
-
-                  <Link 
-                    href="/about" 
-                    onClick={() => setIsMenuOpen(false)}
-                    className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 font-medium text-xs transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Info className="w-4 h-4 text-[#072d1d]" />
-                      <span>About Us</span>
-                    </div>
-                  </Link>
-
-                  <Link 
-                    href="/contact" 
-                    onClick={() => setIsMenuOpen(false)}
-                    className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 font-medium text-xs transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <PhoneCall className="w-4 h-4 text-[#072d1d]" />
-                      <span>Contact</span>
-                    </div>
-                  </Link>
-
-                  <Link 
-                    href="/services" 
-                    onClick={() => setIsMenuOpen(false)}
-                    className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 font-medium text-xs transition"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-4 h-4 text-[#072d1d]" />
-                      <span>Book Us</span>
-                    </div>
-                    <span className="bg-amber-500/15 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded-full">
-                      Events
-                    </span>
-                  </Link>
-                </div>
-              </div>
-
-              {/* Menu Categories / Labels section */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-3">
-                  Quick Actions
-                </p>
-                <div className="space-y-1">
-                  <button 
-                    onClick={() => {
-                      setIsMenuOpen(false)
-                      scrollToMenu()
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 font-medium text-xs transition text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Utensils className="w-4 h-4 text-[#072d1d]" />
-                      <span>Our Menu</span>
-                    </div>
-                    <span className="bg-emerald-100 text-[#072d1d] text-[9px] font-bold px-2 py-0.5 rounded-full">
-                      {products.length} Items
-                    </span>
-                  </button>
-
-                  <button 
-                    onClick={() => {
-                      setIsMenuOpen(false)
-                      scrollToMenu()
-                    }}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-slate-800 font-medium text-xs transition text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Star className="w-4 h-4 text-amber-500" />
-                      <span>Promotions</span>
-                    </div>
-                    <span className="bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">
-                      Deals
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-            </nav>
-
-            {/* Sidebar Footer */}
-            <div className="p-4 border-t border-slate-200 bg-white text-center">
-              <p className="text-[10px] text-slate-400 font-medium">
-                De-echoi Limited &copy; 2026
-              </p>
-            </div>
-
-          </aside>
-        </div>
-      )}
-
-      {/* 2. HERO SECTION */}
+      {/* 3. HERO SECTION */}
       <section className="relative px-5 pt-4 pb-4 max-w-md mx-auto overflow-hidden min-h-[220px]">
         <div className="relative z-10 space-y-3 max-w-[60%]">
           <h1 className="text-3xl font-extrabold text-white leading-tight">
@@ -387,11 +212,10 @@ export default function HomePage() {
             <span className="font-serif italic font-normal underline decoration-amber-500">You.</span>
           </h1>
           <p className="text-xs text-emerald-100/80 leading-relaxed pr-2">
-            Delicious meals delivered fast and fresh to your door. Order now and enjoy the De-echoi experience.
+            Explore our delicious menu during the 10-day launch preview. Join the waitlist for priority access!
           </p>
         </div>
 
-        {/* Rotational Hero Image Container */}
         <div className="absolute right-[-15px] top-0 w-[58%] h-full pointer-events-none">
           {HERO_IMAGES.map((item, index) => (
             <div
@@ -411,7 +235,6 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Floating Delivery Tag */}
         <div className="mt-4 bg-[#0a3a26]/90 border border-emerald-600/30 backdrop-blur-md rounded-2xl p-2.5 flex items-center gap-3 w-fit ml-auto shadow-lg relative z-10">
           <div className="bg-amber-500 p-1.5 rounded-lg text-[#072d1d]">
             <Zap className="w-4 h-4 fill-current" />
@@ -423,40 +246,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 3. STICKY SEARCH BAR */}
-      <div className="sticky top-[61px] z-40 bg-[#072d1d] px-5 py-3 max-w-md mx-auto">
-        <div className="relative flex items-center">
-          <input
-            type="text"
-            placeholder="Search for food, restaurants..."
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="w-full bg-white rounded-full py-3 pl-11 pr-12 text-sm text-slate-800 placeholder-slate-400 shadow-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-          />
-          <Search className="absolute left-4 w-5 h-5 text-slate-400" />
-          
-          {searchQuery ? (
-            <button 
-              onClick={() => handleSearch('')}
-              className="absolute right-2 text-xs text-slate-500 hover:text-slate-800 bg-slate-200 p-1.5 rounded-full"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          ) : (
-            <button 
-              onClick={scrollToMenu}
-              className="absolute right-1.5 bg-amber-500 text-white p-2 rounded-full hover:bg-amber-600 transition shadow"
-            >
-              <Search className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* 4. MAIN BODY CONTAINER */}
       <main className="bg-slate-50 rounded-t-[32px] pt-6 px-4 space-y-6 max-w-md mx-auto min-h-screen">
         
-        {/* Feature Highlights */}
+        {/* Features Bar */}
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 grid grid-cols-4 gap-2 text-center">
           <div className="flex flex-col items-center gap-1.5 border-r border-slate-100 pr-1">
             <div className="p-2 bg-slate-100 rounded-full text-[#072d1d]">
@@ -490,7 +283,7 @@ export default function HomePage() {
             <h2 className="text-base font-bold text-slate-900">Popular Categories</h2>
             <button 
               onClick={scrollToMenu}
-              className="text-xs font-semibold text-amber-600 flex items-center gap-0.5 hover:underline"
+              className="text-xs font-semibold text-amber-600 flex items-center gap-0.5 hover:underline cursor-pointer"
             >
               See all <ChevronRight className="w-3.5 h-3.5" />
             </button>
@@ -500,8 +293,8 @@ export default function HomePage() {
             {categories.map((cat, idx) => (
               <button 
                 key={idx} 
-                onClick={() => handleSearch(cat.name)}
-                className="flex-shrink-0 flex flex-col items-center focus:outline-none group"
+                onClick={() => handleCategoryClick(cat.name)}
+                className="flex-shrink-0 flex flex-col items-center focus:outline-none group cursor-pointer"
               >
                 <div className="relative w-20 h-24 rounded-2xl overflow-hidden shadow-sm border border-slate-200/60">
                   <Image 
@@ -516,78 +309,110 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
-                <span className="text-xs font-medium text-slate-800 mt-2">{cat.name}</span>
+                <span className="text-xs font-medium text-slate-800 mt-2 flex items-center gap-1">
+                  {cat.name}
+                  {cat.name === 'Cakes' && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                  )}
+                </span>
               </button>
             ))}
           </div>
         </section>
 
-        {/* Exclusive Deals Section */}
-        <section className="bg-[#072d1d] rounded-2xl p-4 text-white relative overflow-hidden flex items-center justify-between shadow-md">
-          <div className="space-y-3 z-10 max-w-[60%]">
-            <div className="inline-block bg-amber-500 text-[#072d1d] font-black text-[9px] uppercase px-2 py-0.5 rounded shadow-sm">
-              Exclusive Deals
+        {/* Live Tracking Feature Card */}
+        <section className="bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] rounded-3xl p-4 text-white relative overflow-hidden shadow-xl border border-emerald-600/30">
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+          
+          <div className="grid grid-cols-12 gap-3 items-center relative z-10">
+            <div className="col-span-6 space-y-2.5">
+              <div className="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/40 text-amber-300 font-bold text-[9px] uppercase px-2.5 py-1 rounded-full shadow-sm backdrop-blur-sm">
+                <Navigation className="w-3 h-3 text-amber-400 animate-pulse" />
+                <span>Live Route Tracking</span>
+              </div>
+              
+              <h3 className="text-sm font-extrabold leading-snug tracking-tight text-white">
+                Live Order <br />
+                <span className="text-amber-400 italic">Fast Pickup & Delivery</span>
+              </h3>
+              
+              <p className="text-[10px] text-emerald-100/80 leading-relaxed font-medium">
+                Track your order in real-time from our kitchen directly to your doorstep.
+              </p>
+              
+              <button 
+                onClick={scrollToMenu}
+                className="mt-1 bg-amber-500 hover:bg-amber-400 text-[#072d1d] text-[11px] font-bold py-2 px-3.5 rounded-full flex items-center gap-1.5 shadow-md transition active:scale-95 group cursor-pointer"
+              >
+                Browse Menu
+                <span className="bg-[#072d1d] text-amber-400 rounded-full p-0.5 group-hover:translate-x-0.5 transition-transform">
+                  <ArrowRight className="w-2.5 h-2.5" />
+                </span>
+              </button>
             </div>
-            <p className="text-xs font-semibold leading-snug">
-              Enjoy exclusive deals on your <span className="text-amber-400">favorite meals!</span>
-            </p>
-            <button 
-              onClick={scrollToMenu}
-              className="bg-white text-[#072d1d] text-xs font-bold py-2 px-3.5 rounded-full flex items-center gap-1.5 shadow-sm hover:bg-slate-100 transition active:scale-95"
-            >
-              Order Now
-              <span className="bg-amber-500 text-white rounded-full p-0.5">
-                <ArrowRight className="w-2.5 h-2.5" />
-              </span>
-            </button>
-          </div>
 
-          <div className="relative w-50 h-30 -mr-2">
-            <Image 
-              src="/mobile_bike.png" 
-              alt="Exclusive Food Deal" 
-              fill 
-              className="object-contain"
-            />
+            <div className="col-span-6 relative flex justify-end">
+              <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden border border-emerald-500/30 shadow-2xl group bg-[#041a11]">
+                <div className="absolute inset-0 z-10 pointer-events-none bg-gradient-to-t from-[#072d1d]/80 via-transparent to-[#072d1d]/30" />
+                <div className="absolute inset-0 z-10 pointer-events-none border border-emerald-400/20 rounded-2xl" />
+
+                <video
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover rounded-2xl scale-105 group-hover:scale-110 transition-transform duration-700 ease-out filter brightness-105 contrast-105"
+                >
+                  <source src="/pickup.mp4" type="video/mp4" />
+                </video>
+
+                <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-[#072d1d]/90 backdrop-blur-md px-2 py-0.5 rounded-full border border-emerald-500/40 shadow-sm">
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
+                  <MapPin className="w-2.5 h-2.5 text-amber-400" />
+                  <span className="text-[8px] font-bold text-emerald-100">Woji Delivery Hub</span>
+                </div>
+
+                <div className="absolute bottom-2 right-2 z-20 bg-amber-500 text-[#072d1d] text-[8px] font-black px-2 py-0.5 rounded-md shadow-md backdrop-blur-md">
+                  ~12 Mins Away
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Rewards & Special Offers */}
-        <section className="bg-orange-50/60 rounded-2xl p-3 border border-orange-100/80 grid grid-cols-2 gap-2 divide-x divide-slate-200/60">
-          <div className="flex items-start gap-2.5 pr-2">
-            <div className="p-2 bg-[#072d1d] text-amber-400 rounded-xl">
-              <Gift className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-[11px] font-bold text-slate-900 leading-tight">Rewards & Discounts</h4>
-              <p className="text-[9px] text-slate-500 leading-tight mt-0.5">Earn points and enjoy amazing rewards.</p>
-            </div>
+        {/* Dedicated Cakes Feature Link Card */}
+        <section 
+          onClick={() => router.push('/cakes')}
+          className="bg-gradient-to-r from-[#072d1d] via-[#0a3a26] to-[#072d1d] rounded-2xl p-4 text-white border border-amber-400/30 shadow-md flex items-center justify-between cursor-pointer active:scale-95 transition"
+        >
+          <div className="space-y-1">
+            <span className="bg-amber-500 text-[#072d1d] font-bold text-[9px] px-2 py-0.5 rounded-full">
+              Bespoke Bakes
+            </span>
+            <h4 className="text-sm font-extrabold text-white">Looking for Cakes?</h4>
+            <p className="text-[10px] text-emerald-100/80">Customize 6&quot; & 7&quot; tiered flavors on our dedicated Cake page.</p>
           </div>
-
-          <div className="flex items-start gap-2.5 pl-3">
-            <div className="p-2 bg-[#072d1d] text-amber-400 rounded-xl">
-              <Tag className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-[11px] font-bold text-slate-900 leading-tight">Special Offers</h4>
-              <p className="text-[9px] text-slate-500 leading-tight mt-0.5">Check out our daily offers and save more.</p>
-            </div>
+          <div className="bg-amber-500 text-[#072d1d] p-2.5 rounded-full">
+            <Cake className="w-5 h-5" />
           </div>
         </section>
 
-        {/* 5. DYNAMIC PRODUCTS & MENU LISTING */}
+        {/* Customer Reviews & Star Ratings Section (Mobile Mount) */}
+        <CustomerReviewsSection />
+
+        {/* Food Menu Preview Listing */}
         <section id="our-menu-section" className="pt-4 scroll-mt-36">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">Our Menu</h2>
+              <h2 className="text-xl font-bold text-slate-900">Food Menu</h2>
               <p className="text-xs text-slate-500">
-                {filteredProducts.length} item{filteredProducts.length !== 1 ? 's' : ''} available
+                {filteredProducts.length} preview meal{filteredProducts.length !== 1 ? 's' : ''} available
               </p>
             </div>
             {searchQuery && (
               <button 
                 onClick={() => handleSearch('')}
-                className="text-xs text-amber-600 font-medium hover:underline"
+                className="text-xs text-amber-600 font-medium hover:underline cursor-pointer"
               >
                 Clear Search
               </button>
@@ -596,20 +421,21 @@ export default function HomePage() {
 
           {loading ? (
             <div className="flex justify-center items-center py-12">
-              <p className="text-xs text-slate-500">Loading delicious products...</p>
+              <p className="text-xs text-slate-500">Loading delicious preview catalog...</p>
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center bg-white rounded-2xl p-6 border border-slate-100">
               <p className="text-sm text-slate-600 mb-3">
                 {searchQuery
-                  ? `No products found matching "${searchQuery}".`
-                  : 'No products available yet.'}
+                  ? `No meals found matching "${searchQuery}".`
+                  : 'No food products available yet.'}
               </p>
               {searchQuery && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => handleSearch('')}
+                  className="cursor-pointer"
                 >
                   Clear Search
                 </Button>
@@ -624,8 +450,9 @@ export default function HomePage() {
                   name={product.name}
                   description={product.description || ''}
                   price={Number(product.price)}
-                  imageUrl={product.image_url}
+                  imageUrl={product.image_url ?? undefined}
                   inStock={product.in_stock}
+                  category={product.category}
                   onViewDetails={handleViewDetails}
                 />
               ))}
@@ -633,25 +460,7 @@ export default function HomePage() {
           )}
         </section>
 
-        {/* 6. BOTTOM CTA RIBBON */}
-        <section className="bg-[#072d1d] rounded-full p-2 pl-5 flex items-center justify-between shadow-md my-6">
-          <p className="text-xs font-semibold text-white flex items-center gap-1">
-            Taste the <span className="text-amber-400 italic">echoi</span> in every bite. 
-            <Heart className="w-3.5 h-3.5 fill-amber-400 text-amber-400 inline" />
-          </p>
-
-          <button 
-            onClick={scrollToMenu}
-            className="bg-amber-500 text-[#072d1d] text-xs font-bold py-2 px-3.5 rounded-full flex items-center gap-1.5 hover:bg-amber-400 transition active:scale-95"
-          >
-            Order Now
-            <span className="bg-[#072d1d] text-white rounded-full p-0.5">
-              <ArrowRight className="w-2.5 h-2.5" />
-            </span>
-          </button>
-        </section>
-
-        {/* 7. FOOTER SECTION */}
+        {/* Footer */}
         <footer id="contact" className="bg-[#072d1d] text-white rounded-2xl p-6 space-y-6 mt-8">
           <div className="space-y-2">
             <h3 className="font-bold text-lg text-amber-400">DEECHOI</h3>
@@ -664,6 +473,8 @@ export default function HomePage() {
             <div>
               <h4 className="font-semibold text-amber-400 mb-2">Quick Links</h4>
               <ul className="space-y-1 text-emerald-100/80">
+                <li><Link href="/" className="hover:text-amber-400 transition">Home</Link></li>
+                <li><Link href="/cakes" className="text-amber-400 font-bold transition">Cakes Collection</Link></li>
                 <li><Link href="/about" className="hover:text-amber-400 transition">About Us</Link></li>
                 <li><Link href="/contact" className="hover:text-amber-400 transition">Contact</Link></li>
                 <li><Link href="/services" className="hover:text-amber-400 transition">Book Us</Link></li>
@@ -694,10 +505,8 @@ export default function HomePage() {
 
       </main>
 
-      {/* 8. VERTICAL FLOATING COLLAPSIBLE SOCIAL HANDLES PANEL */}
+      {/* Floating Action Social Bar */}
       <div className="fixed right-4 bottom-8 z-50 flex flex-col items-end gap-2.5 pointer-events-none">
-        
-        {/* Expanded Social Handles Stack */}
         <div 
           className={`flex flex-col gap-2.5 items-end transition-all duration-300 ease-in-out pointer-events-auto ${
             isSocialOpen 
@@ -716,8 +525,6 @@ export default function HomePage() {
               className={`group relative flex items-center justify-center w-11 h-11 rounded-full shadow-lg border border-white/20 transition-all duration-300 hover:scale-110 active:scale-95 ${handle.color}`}
             >
               {handle.icon}
-
-              {/* Tooltip Label */}
               <span className="absolute right-14 bg-slate-900/90 text-white text-[10px] font-bold py-1 px-2.5 rounded-md backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap shadow-md border border-slate-700 pointer-events-none">
                 {handle.name}
               </span>
@@ -725,11 +532,10 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Collapsible Trigger Floating Action Button (FAB) */}
         <button
           onClick={() => setIsSocialOpen(!isSocialOpen)}
           aria-label="Toggle Social Handles"
-          className="pointer-events-auto relative flex items-center justify-center w-13 h-13 rounded-full bg-amber-500 hover:bg-amber-400 text-[#072d1d] shadow-xl border-2 border-white transition-transform duration-300 active:scale-90 hover:scale-105"
+          className="pointer-events-auto relative flex items-center justify-center w-13 h-13 rounded-full bg-amber-500 hover:bg-amber-400 text-[#072d1d] shadow-xl border-2 border-white transition-transform duration-300 active:scale-90 hover:scale-105 cursor-pointer"
         >
           <div className={`transition-transform duration-300 ${isSocialOpen ? 'rotate-90' : 'rotate-0'}`}>
             {isSocialOpen ? (
@@ -738,8 +544,6 @@ export default function HomePage() {
               <Share2 className="w-5 h-5 stroke-[2.5]" />
             )}
           </div>
-
-          {/* Pulse notification dot when collapsed */}
           {!isSocialOpen && (
             <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>

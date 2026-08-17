@@ -5,18 +5,31 @@ import { Button } from '@/components/ui/button'
 import { useCart } from '@/lib/cart-context'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, Upload, X, CreditCard, Building2, CheckCircle2, MapPin, Navigation, AlertTriangle } from 'lucide-react'
+import { 
+  ArrowLeft, 
+  Upload, 
+  X, 
+  CreditCard, 
+  Building2, 
+  CheckCircle2, 
+  MapPin, 
+  Navigation, 
+  AlertTriangle,
+  ShoppingBag,
+  ShieldCheck,
+  Truck,
+  Loader2
+} from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 
-// --- TypeScript Declaration for Google Maps on Window ---
 declare global {
   interface Window {
     google: any
   }
 }
 
-// --- Port Harcourt Delivery Zones Data ---
 const PH_ZONES: Record<number, { name: string; keywords: string[] }> = {
   1: {
     name: 'PH 1 (Woji, Elelenwo, Rumuibekwe, Rumuomasi, Trans Amadi, Peter Odili)',
@@ -56,54 +69,32 @@ const PH_ZONES: Record<number, { name: string; keywords: string[] }> = {
   },
 }
 
-// Matrix Rate Lookup [Origin Zone]-[Destination Zone]
 const DELIVERY_MATRIX: Record<string, number> = {
-  // Within same zone
   '1-1': 3000, '2-2': 3000, '3-3': 3000, '4-4': 3000, '5-5': 3000,
   '6-6': 3500, '7-7': 3000, '8-8': 5000, '9-9': 5000,
-
-  // Zone 1
   '1-2': 3000, '1-3': 3500, '1-4': 3500, '1-5': 3500,
   '1-6': 4000, '1-7': 5000, '1-8': 8000, '1-9': 8500,
-
-  // Zone 2
   '2-3': 3000, '2-4': 3500, '2-5': 3500, '2-6': 3500,
   '2-7': 3500, '2-8': 6500, '2-9': 7500,
-
-  // Zone 3
   '3-4': 3500, '3-5': 3000, '3-6': 4500, '3-7': 4500,
   '3-8': 7000, '3-9': 9000,
-
-  // Zone 4
   '4-5': 3500, '4-6': 3500, '4-7': 3500, '4-8': 5500, '4-9': 7500,
-
-  // Zone 5
   '5-6': 3500, '5-7': 4500, '5-8': 6500, '5-9': 7000,
-
-  // Zone 6
   '6-7': 4500, '6-8': 7000, '6-9': 8500,
-
-  // Zone 7
   '7-8': 6500, '7-9': 9000,
-
-  // Zone 8 & 9
   '8-9': 7500,
   '9-1': 10500, '9-2': 10500, '9-3': 10500, '9-4': 10500,
   '9-5': 10500, '9-6': 10500, '9-7': 10500,
 }
 
-// Fallback price for unlisted/out-of-zone locations
 const OUT_OF_ZONE_FEE = 10500
 
 function getDeliveryFee(originZone: number, destZone: number | null): number {
   if (!destZone) return OUT_OF_ZONE_FEE
-
   const key = `${originZone}-${destZone}`
   const reverseKey = `${destZone}-${originZone}`
-
   if (DELIVERY_MATRIX[key]) return DELIVERY_MATRIX[key]
   if (DELIVERY_MATRIX[reverseKey]) return DELIVERY_MATRIX[reverseKey]
-
   return OUT_OF_ZONE_FEE
 }
 
@@ -112,9 +103,7 @@ export default function CheckoutPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Checkout Steps: 1 = Information & Shipping, 2 = Payment
   const [step, setStep] = useState<1 | 2>(1)
-
   const [paymentMethod, setPaymentMethod] = useState<'bank_transfer' | 'card'>('bank_transfer')
   const [customerInfo, setCustomerInfo] = useState({
     firstName: '',
@@ -126,20 +115,40 @@ export default function CheckoutPage() {
     state: 'Rivers',
   })
 
-  // Delivery & Zone States
-  const [storeOriginZone] = useState<number>(1) // Kitchen origin e.g. Zone 1 (Woji/Peter Odili)
+  // Auto-fill from returning customer session if available
+  useEffect(() => {
+    try {
+      const savedSession = localStorage.getItem('deechoi_customer_session')
+      if (savedSession) {
+        const parsed = JSON.parse(savedSession)
+        setCustomerInfo(prev => ({
+          ...prev,
+          firstName: parsed.firstName || prev.firstName,
+          lastName: parsed.lastName || prev.lastName,
+          email: parsed.email || prev.email,
+          phone: parsed.phone || prev.phone,
+          address: parsed.address || prev.address,
+        }))
+        if (parsed.address) {
+          detectZoneFromAddress(parsed.address)
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read session:', e)
+    }
+  }, [])
+
+  const [storeOriginZone] = useState<number>(1)
   const [detectedZone, setDetectedZone] = useState<number | null>(null)
   const [deliveryFee, setDeliveryFee] = useState<number>(3000)
   const [isOutOfZone, setIsOutOfZone] = useState<boolean>(false)
   const [locating, setLocating] = useState<boolean>(false)
 
   const addressInputRef = useRef<HTMLInputElement | null>(null)
-
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofPreview, setProofPreview] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // Detect zone from input text
   const detectZoneFromAddress = (addressText: string) => {
     if (!addressText.trim()) {
       setDetectedZone(null)
@@ -163,14 +172,12 @@ export default function CheckoutPage() {
       setIsOutOfZone(false)
       setDeliveryFee(getDeliveryFee(storeOriginZone, foundZone))
     } else {
-      // Address typed does not fall within standard PH zones
       setDetectedZone(null)
       setIsOutOfZone(true)
       setDeliveryFee(OUT_OF_ZONE_FEE)
     }
   }
 
-  // Initialize Google Maps Places Autocomplete
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
     if (!apiKey) return
@@ -187,29 +194,31 @@ export default function CheckoutPage() {
 
     function initAutocomplete() {
       if (!addressInputRef.current || !window.google) return
+      try {
+        const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current, {
+          componentRestrictions: { country: 'ng' },
+          fields: ['address_components', 'formatted_address', 'geometry'],
+        })
 
-      const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current, {
-        componentRestrictions: { country: 'ng' },
-        fields: ['address_components', 'formatted_address', 'geometry'],
-      })
-
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace()
-        if (place.formatted_address) {
-          setCustomerInfo(prev => ({
-            ...prev,
-            address: place.formatted_address || prev.address
-          }))
-          detectZoneFromAddress(place.formatted_address)
-        }
-      })
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace()
+          if (place.formatted_address) {
+            setCustomerInfo(prev => ({
+              ...prev,
+              address: place.formatted_address || prev.address
+            }))
+            detectZoneFromAddress(place.formatted_address)
+          }
+        })
+      } catch (err) {
+        console.warn('Google Places error:', err)
+      }
     }
   }, [])
 
-  // Geolocation handler
   const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser')
+    if (typeof window === 'undefined' || !navigator?.geolocation) {
+      alert('Geolocation is not supported by your current browser.')
       return
     }
 
@@ -229,6 +238,10 @@ export default function CheckoutPage() {
               const formattedAddr = data.results[0].formatted_address
               setCustomerInfo(prev => ({ ...prev, address: formattedAddr }))
               detectZoneFromAddress(formattedAddr)
+            } else {
+              const fallback = `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)} (Port Harcourt)`
+              setCustomerInfo(prev => ({ ...prev, address: fallback }))
+              detectZoneFromAddress(fallback)
             }
           } else {
             const coordsAddress = `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)} (Port Harcourt)`
@@ -237,15 +250,20 @@ export default function CheckoutPage() {
           }
         } catch (err) {
           console.error('Geocoding error:', err)
+          alert('Could not resolve your location address. Please type your street name manually.')
         } finally {
           setLocating(false)
         }
       },
       (error) => {
-        console.error('Location error:', error)
-        alert('Could not retrieve your location. Please type your address manually.')
+        let msg = 'Could not retrieve your location. Please type your address manually.'
+        if (error.code === 1) {
+          msg = 'Location permission was denied. Please enable location access or type your address manually.'
+        }
+        alert(msg)
         setLocating(false)
-      }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     )
   }
 
@@ -279,7 +297,11 @@ export default function CheckoutPage() {
     const file = e.target.files?.[0]
     if (file) {
       if (!['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'].includes(file.type)) {
-        alert('Please upload a PDF or JPG/PNG image')
+        alert('Please upload a PDF or JPG/PNG image receipt.')
+        return
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size exceeds 10MB limit.')
         return
       }
       setProofFile(file)
@@ -298,11 +320,12 @@ export default function CheckoutPage() {
 
   const handleProceedToPayment = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!customerInfo.firstName || !customerInfo.email || !customerInfo.phone || !customerInfo.address) {
-      alert('Please fill in all required customer fields.')
+    if (!customerInfo.firstName.trim() || !customerInfo.email.trim() || !customerInfo.phone.trim() || !customerInfo.address.trim()) {
+      alert('Please fill in all required contact and shipping details.')
       return
     }
     setStep(2)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const finalOrderTotal = total + deliveryFee
@@ -311,65 +334,140 @@ export default function CheckoutPage() {
     e.preventDefault()
 
     if (paymentMethod === 'bank_transfer' && !proofFile) {
-      alert('Please upload your payment receipt before submitting.')
+      alert('Please upload your payment transfer receipt before completing your order.')
       return
     }
 
     setLoading(true)
     try {
-      let proofUrl = null
-      if (proofFile) {
-        const fileName = `${Date.now()}-${proofFile.name}`
-        const { data, error } = await supabase.storage
-          .from('payment-proofs')
-          .upload(fileName, proofFile)
+      let proofUrl: string | null = null
 
-        if (error) throw error
-        proofUrl = data.path
+      if (proofFile) {
+        const fileExt = proofFile.name.split('.').pop() || 'png'
+        const sanitizedFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('payment-proofs')
+          .upload(sanitizedFileName, proofFile, {
+            cacheControl: '3600',
+            upsert: false
+          })
+
+        if (uploadError) {
+          throw new Error(`Receipt upload failed: ${uploadError.message}`)
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('payment-proofs')
+          .getPublicUrl(uploadData.path)
+
+        proofUrl = publicUrlData?.publicUrl || uploadData.path
       }
 
-      const fullName = `${customerInfo.firstName} ${customerInfo.lastName}`.trim()
+      const fullName = `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`.trim()
 
-      const { data: order, error } = await supabase
+      const sanitizedItems = items.map((item) => ({
+        id: String(item.id || item.product_id || ''),
+        product_id: String(item.product_id || item.id || ''),
+        name: item.name || item.product_name || 'Product',
+        quantity: item.quantity || 1,
+        price: item.price ?? item.unit_price ?? item.final_price ?? 0,
+        selected_options: item.selected_options || {},
+        imageUrl: item.imageUrl || null
+      }))
+
+      const orderPayload = {
+        customer_name: fullName,
+        customer_email: customerInfo.email.trim(),
+        customer_phone: customerInfo.phone.trim(),
+        delivery_address: customerInfo.address.trim(),
+        delivery_city: customerInfo.city.trim(),
+        delivery_state: customerInfo.state.trim(),
+        payment_method: paymentMethod,
+        payment_proof_url: proofUrl,
+        delivery_fee: deliveryFee,
+        total_amount: finalOrderTotal,
+        status: 'pending',
+        items: sanitizedItems
+      }
+
+      const { data: order, error: insertError } = await supabase
         .from('store_orders')
-        .insert({
-          customer_name: fullName,
-          customer_email: customerInfo.email,
-          customer_phone: customerInfo.phone,
-          delivery_address: customerInfo.address,
-          delivery_city: customerInfo.city,
-          delivery_state: customerInfo.state,
-          payment_method: paymentMethod,
-          payment_proof_url: proofUrl,
-          delivery_fee: deliveryFee,
-          total_amount: finalOrderTotal,
-          status: 'pending',
-          items: items
-        })
-        .select('id')
+        .insert([orderPayload])
+        .select('*')
         .single()
 
-      if (error) throw error
+      if (insertError) {
+        throw new Error(insertError.message || 'Failed to place order.')
+      }
+
+      if (!order?.id) {
+        throw new Error('Order was placed but no order ID was returned.')
+      }
+
+      // 1. Persist Customer Account & Order ID in Local Storage
+      try {
+        const customerSession = {
+          name: fullName,
+          firstName: customerInfo.firstName.trim(),
+          lastName: customerInfo.lastName.trim(),
+          email: customerInfo.email.trim(),
+          phone: customerInfo.phone.trim(),
+          address: customerInfo.address.trim(),
+          createdAt: new Date().toISOString(),
+        }
+        localStorage.setItem('deechoi_customer_session', JSON.stringify(customerSession))
+
+        const existingOrders = JSON.parse(localStorage.getItem('deechoi_customer_orders') || '[]')
+        const updatedOrders = Array.from(new Set([order.id, ...existingOrders]))
+        localStorage.setItem('deechoi_customer_orders', JSON.stringify(updatedOrders))
+
+        // Notify other components (like StorefrontHeader) of order update
+        window.dispatchEvent(new Event('deechoi_order_placed'))
+      } catch (storageErr) {
+        console.warn('Storage persistence warning:', storageErr)
+      }
+
+      // 2. Dispatch Telegram Alert in Background
+      fetch('/api/notifications/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      }).catch((err) => console.warn('Notification trigger warning:', err))
 
       clearCart()
       router.push(`/order-confirmation/${order.id}`)
-    } catch (error) {
-      console.error('Error placing order:', error)
-      alert('Failed to place order. Please try again.')
+    } catch (error: any) {
+      console.error('Full Order Submission Error:', error)
+      alert(error.message || 'Failed to place order. Please check your connection and try again.')
     } finally {
       setLoading(false)
     }
   }
 
+  const BANK_DETAILS = {
+    accountName: 'De-echoi Limited',
+    accountNumber: '1312120060',
+    bankName: 'Zenith Bank',
+  }
+
   if (items.length === 0) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans">
         <StorefrontHeader />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="text-center">
-            <p className="text-foreground text-lg mb-4">Your cart is empty</p>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200 p-8 shadow-sm">
+            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-[#EAA823]">
+              <ShoppingBag className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Your cart is currently empty</h2>
+            <p className="text-gray-500 text-sm mb-6">
+              Add some freshly baked celebration cakes or delicious meals to proceed.
+            </p>
             <Link href="/">
-              <Button className="bg-primary text-background">Continue Shopping</Button>
+              <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs">
+                Continue Shopping
+              </Button>
             </Link>
           </div>
         </div>
@@ -377,103 +475,104 @@ export default function CheckoutPage() {
     )
   }
 
-  const BANK_DETAILS = {
-    accountName: 'De-echoi Limited',
-    accountNumber: '1312120060',
-    bankName: 'Zenith',
-  }
-
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans">
       <StorefrontHeader />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+        <div className="mb-6 flex items-center justify-between">
+          <Link 
+            href="/cart" 
+            className="text-xs sm:text-sm font-bold text-gray-500 hover:text-[#0A2E1D] flex items-center gap-1.5 transition active:scale-95"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Return to Cart
+          </Link>
 
-          {/* Main Content (Left Column) */}
-          <div className="lg:col-span-7 space-y-8">
+          <div className="flex items-center gap-2 text-xs font-semibold text-gray-400">
+            <span className={step === 1 ? 'text-[#0A2E1D] font-bold' : 'text-gray-400'}>1. Details</span>
+            <span>›</span>
+            <span className={step === 2 ? 'text-[#0A2E1D] font-bold' : 'text-gray-400'}>2. Payment</span>
+          </div>
+        </div>
 
-            {/* Shopify Breadcrumb Navigation */}
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-              <Link href="/cart" className="hover:text-primary transition-colors">Cart</Link>
-              <span>›</span>
-              <span className={step === 1 ? 'font-bold text-foreground' : 'text-muted-foreground'}>
-                Information & Shipping
-              </span>
-              <span>›</span>
-              <span className={step === 2 ? 'font-bold text-foreground' : 'text-muted-foreground'}>
-                Payment
-              </span>
-            </div>
+        <div className="mb-8">
+          <h1 className="text-2xl sm:text-4xl font-black text-[#0A2E1D] flex items-center gap-2">
+            <Truck className="w-7 h-7 text-[#EAA823]" />
+            Complete Your Order
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">
+            Fast, secure delivery across Port Harcourt and surrounding zones.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <div className="lg:col-span-7 space-y-6">
 
             {step === 1 ? (
-              /* STEP 1: Customer Information & Delivery */
-              <form onSubmit={handleProceedToPayment} className="space-y-6">
+              <form onSubmit={handleProceedToPayment} className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-foreground mb-4">Contact Information</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">Email *</label>
-                      <input
-                        type="email"
-                        name="email"
-                        required
-                        value={customerInfo.email}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary"
-                        placeholder="john@example.com"
-                      />
-                    </div>
+                  <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D] mb-4">Contact Information</h2>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Email Address *</label>
+                    <input
+                      type="email"
+                      name="email"
+                      required
+                      value={customerInfo.email}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                      placeholder="e.g. name@example.com"
+                    />
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-border">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-2xl font-bold text-foreground">Shipping Address</h2>
+                <div className="pt-4 border-t border-gray-100">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                    <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D]">Shipping Address</h2>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={handleUseCurrentLocation}
                       disabled={locating}
-                      className="gap-2 text-primary border-primary hover:bg-primary/10 text-xs"
+                      className="gap-2 text-[#0A2E1D] border-gray-300 hover:bg-gray-50 text-xs rounded-full font-bold self-start sm:self-auto"
                     >
-                      <Navigation className="w-3.5 h-3.5" />
-                      {locating ? 'Locating...' : 'Use My Current Location'}
+                      <Navigation className="w-3.5 h-3.5 text-[#EAA823]" />
+                      {locating ? 'Locating...' : 'Use Current Location'}
                     </Button>
                   </div>
 
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">First Name *</label>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">First Name *</label>
                         <input
                           type="text"
                           name="firstName"
                           required
                           value={customerInfo.firstName}
                           onChange={handleInputChange}
-                          className="w-full px-4 py-2 border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary"
-                          placeholder="John"
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                          placeholder="e.g. Samuel"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">Last Name</label>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Last Name</label>
                         <input
                           type="text"
                           name="lastName"
                           value={customerInfo.lastName}
                           onChange={handleInputChange}
-                          className="w-full px-4 py-2 border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary"
-                          placeholder="Doe"
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                          placeholder="e.g. Doe"
                         />
                       </div>
                     </div>
 
-                    {/* Google Map Autocomplete Address Input */}
                     <div>
-                      <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">
-                        Delivery Address (Google Location) *
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
+                        Street Address (Port Harcourt Area) *
                       </label>
                       <div className="relative">
                         <input
@@ -483,26 +582,25 @@ export default function CheckoutPage() {
                           required
                           value={customerInfo.address}
                           onChange={handleInputChange}
-                          className="w-full pl-10 pr-4 py-2.5 border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                          placeholder="Type address (e.g. Woji, Rumuokoro, GRA, Choba)"
+                          className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                          placeholder="e.g. Woji, Peter Odili, GRA Phase 2, Choba..."
                         />
-                        <MapPin className="w-4 h-4 text-muted-foreground absolute left-3 top-3" />
+                        <MapPin className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
                       </div>
                     </div>
 
-                    {/* Delivery Zone Selector & Rate Verification */}
-                    <div className="p-4 bg-muted/40 border border-border rounded-lg space-y-3">
+                    <div className="p-4 bg-[#FDFBF7] border border-gray-200 rounded-2xl space-y-3">
                       <div className="flex justify-between items-center">
-                        <label className="block text-xs font-bold text-foreground uppercase">
-                          Delivery Zone Verification
+                        <label className="block text-xs font-extrabold text-[#0A2E1D] uppercase">
+                          Port Harcourt Delivery Zone
                         </label>
                         {detectedZone ? (
-                          <span className="text-xs bg-green-500/10 text-green-600 font-bold px-2 py-0.5 rounded">
+                          <span className="text-[11px] bg-green-100 text-green-800 font-bold px-2.5 py-0.5 rounded-full">
                             Matched Zone {detectedZone}
                           </span>
                         ) : isOutOfZone ? (
-                          <span className="text-xs bg-amber-500/10 text-amber-600 font-bold px-2 py-0.5 rounded flex items-center gap-1">
-                            <AlertTriangle className="w-3 h-3" /> Outer Zone Rate Applied
+                          <span className="text-[11px] bg-amber-100 text-amber-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" /> Outer Zone Fee
                           </span>
                         ) : null}
                       </div>
@@ -510,7 +608,7 @@ export default function CheckoutPage() {
                       <select
                         value={detectedZone || ''}
                         onChange={handleZoneSelectChange}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-white text-xs sm:text-sm text-[#0A2E1D] font-medium focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
                       >
                         <option value="">-- Outside Standard Local PH Zones --</option>
                         {Object.entries(PH_ZONES).map(([zoneNum, zoneData]) => (
@@ -521,148 +619,149 @@ export default function CheckoutPage() {
                       </select>
 
                       {isOutOfZone && customerInfo.address.trim() !== '' && (
-                        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 p-2 rounded">
-                          Your address falls outside standard Port Harcourt local delivery zones. Outer-zone delivery fare applies.
+                        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 p-2.5 rounded-xl leading-relaxed">
+                          Your address falls outside standard Port Harcourt local delivery zones. Outer-zone delivery fee applied.
                         </p>
                       )}
 
-                      <div className="flex justify-between items-center pt-2 border-t border-border/60">
-                        <span className="text-xs text-muted-foreground font-medium">Calculated Delivery Fee</span>
-                        <span className="text-lg font-bold text-primary">₦{deliveryFee.toLocaleString()}</span>
+                      <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                        <span className="text-xs text-gray-500 font-semibold">Calculated Delivery Fee</span>
+                        <span className="text-base sm:text-lg font-black text-[#0A2E1D]">₦{deliveryFee.toLocaleString()}</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">City</label>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">City</label>
                         <input
                           type="text"
                           name="city"
                           value={customerInfo.city}
                           onChange={handleInputChange}
-                          className="w-full px-4 py-2 border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary"
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
                           placeholder="Port Harcourt"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">State</label>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">State</label>
                         <input
                           type="text"
                           name="state"
                           value={customerInfo.state}
                           onChange={handleInputChange}
-                          className="w-full px-4 py-2 border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary"
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
                           placeholder="Rivers"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-muted-foreground uppercase mb-1">Phone Number *</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Phone Number *</label>
                       <input
                         type="tel"
                         name="phone"
                         required
                         value={customerInfo.phone}
                         onChange={handleInputChange}
-                        className="w-full px-4 py-2 border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
                         placeholder="+234 701 234 5678"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-6">
-                  <Link href="/cart" className="flex items-center gap-2 text-primary hover:underline text-sm font-semibold">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-gray-100">
+                  <Link href="/cart" className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-[#0A2E1D]">
                     <ArrowLeft className="w-4 h-4" />
                     Return to cart
                   </Link>
-                  <Button type="submit" size="lg" className="bg-primary text-white font-bold px-8">
+                  <Button 
+                    type="submit" 
+                    size="lg" 
+                    className="w-full sm:w-auto bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-extrabold px-8 py-6 rounded-xl text-sm shadow-md transition-all"
+                  >
                     Continue to Payment
                   </Button>
                 </div>
               </form>
             ) : (
-              /* STEP 2: Payment Selection & Bank Receipt Upload */
-              <div className="space-y-8">
+              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-foreground mb-2">Payment Method</h2>
-                  <p className="text-sm text-muted-foreground mb-6">Select how you would like to pay for your order.</p>
+                  <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D] mb-1">Select Payment Method</h2>
+                  <p className="text-xs text-gray-500 mb-6">Choose how you would like to complete your payment.</p>
 
-                  {/* Button-style Payment Selectors */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('bank_transfer')}
-                      className={`p-5 rounded-xl border-2 text-left flex flex-col justify-between transition-all ${
+                      className={`p-5 rounded-2xl border-2 text-left flex flex-col justify-between transition-all ${
                         paymentMethod === 'bank_transfer'
-                          ? 'border-primary bg-primary/10 shadow-sm'
-                          : 'border-border bg-card hover:border-primary/50'
+                          ? 'border-[#0A2E1D] bg-[#0A2E1D]/5 shadow-sm'
+                          : 'border-gray-200 bg-[#FDFBF7] hover:border-gray-300'
                       }`}
                     >
                       <div className="flex items-center justify-between w-full mb-3">
-                        <Building2 className={`w-6 h-6 ${paymentMethod === 'bank_transfer' ? 'text-primary' : 'text-muted-foreground'}`} />
-                        {paymentMethod === 'bank_transfer' && <CheckCircle2 className="w-5 h-5 text-primary" />}
+                        <Building2 className={`w-6 h-6 ${paymentMethod === 'bank_transfer' ? 'text-[#0A2E1D]' : 'text-gray-400'}`} />
+                        {paymentMethod === 'bank_transfer' && <CheckCircle2 className="w-5 h-5 text-[#0A2E1D]" />}
                       </div>
                       <div>
-                        <p className="font-bold text-foreground text-base">Bank Transfer</p>
-                        <p className="text-xs text-muted-foreground mt-1">Direct transfer to official company account</p>
+                        <p className="font-extrabold text-[#0A2E1D] text-sm">Direct Bank Transfer</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">Transfer to official corporate account</p>
                       </div>
                     </button>
 
                     <button
                       type="button"
                       disabled
-                      className="p-5 rounded-xl border-2 border-border bg-muted/40 text-left flex flex-col justify-between opacity-60 cursor-not-allowed"
+                      className="p-5 rounded-2xl border border-gray-200 bg-gray-50 text-left flex flex-col justify-between opacity-60 cursor-not-allowed"
                     >
                       <div className="flex items-center justify-between w-full mb-3">
-                        <CreditCard className="w-6 h-6 text-muted-foreground" />
-                        <span className="text-[10px] bg-muted-foreground/20 text-muted-foreground font-semibold px-2 py-0.5 rounded">
+                        <CreditCard className="w-6 h-6 text-gray-400" />
+                        <span className="text-[9px] bg-gray-200 text-gray-600 font-bold px-2 py-0.5 rounded-full">
                           Coming Soon
                         </span>
                       </div>
                       <div>
-                        <p className="font-bold text-foreground text-base">Card Payment</p>
-                        <p className="text-xs text-muted-foreground mt-1">Pay instantly via Credit or Debit Card</p>
+                        <p className="font-bold text-gray-700 text-sm">Card Payment</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">Pay via Mastercard / Visa / Verve</p>
                       </div>
                     </button>
                   </div>
 
-                  {/* Bank Details Display */}
                   {paymentMethod === 'bank_transfer' && (
-                    <div className="border border-border rounded-xl bg-card p-6 space-y-6">
-                      <div className="bg-primary/5 border border-primary/20 rounded-lg p-5">
-                        <h3 className="font-bold text-foreground text-lg mb-4 flex items-center gap-2">
-                          Official Account Details
+                    <div className="border border-gray-200 rounded-2xl bg-[#FDFBF7] p-5 sm:p-6 space-y-6">
+                      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 shadow-xs">
+                        <h3 className="font-bold text-[#0A2E1D] text-sm mb-3 flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-[#EAA823]" />
+                          Official Bank Details
                         </h3>
-                        <div className="space-y-3 text-sm">
-                          <div className="flex justify-between items-center pb-2 border-b border-border/60">
-                            <span className="text-muted-foreground">Account Name</span>
-                            <span className="font-bold text-foreground">{BANK_DETAILS.accountName}</span>
+                        <div className="space-y-2.5 text-xs">
+                          <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                            <span className="text-gray-500">Account Name</span>
+                            <span className="font-bold text-[#0A2E1D]">{BANK_DETAILS.accountName}</span>
                           </div>
-                          <div className="flex justify-between items-center pb-2 border-b border-border/60">
-                            <span className="text-muted-foreground">Account Number</span>
-                            <span className="font-mono font-bold text-lg text-primary">{BANK_DETAILS.accountNumber}</span>
+                          <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                            <span className="text-gray-500">Account Number</span>
+                            <span className="font-mono font-black text-base text-[#0A2E1D]">{BANK_DETAILS.accountNumber}</span>
                           </div>
                           <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Bank Name</span>
-                            <span className="font-bold text-foreground">{BANK_DETAILS.bankName}</span>
+                            <span className="text-gray-500">Bank Name</span>
+                            <span className="font-bold text-[#0A2E1D]">{BANK_DETAILS.bankName}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Payment Proof Upload Area */}
                       <div>
-                        <h4 className="font-bold text-foreground mb-1">Upload Payment Proof *</h4>
-                        <p className="text-xs text-muted-foreground mb-4">Please upload a clear screenshot or PDF receipt of your payment.</p>
+                        <h4 className="font-bold text-[#0A2E1D] text-xs uppercase mb-1">Upload Payment Receipt *</h4>
+                        <p className="text-[11px] text-gray-500 mb-3">Upload a screenshot or PDF receipt of your completed transfer.</p>
 
-                        <div className="border-2 border-dashed border-border rounded-xl p-6 text-center hover:border-primary/50 transition-colors">
+                        <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center bg-white hover:border-[#0A2E1D] transition-colors">
                           {proofPreview ? (
                             <div className="relative inline-block max-w-full">
                               <img
                                 src={proofPreview}
                                 alt="Payment proof preview"
-                                className="max-h-56 rounded-lg object-contain mx-auto"
+                                className="max-h-48 rounded-xl object-contain mx-auto border border-gray-200"
                               />
                               <button
                                 type="button"
@@ -676,8 +775,8 @@ export default function CheckoutPage() {
                               </button>
                             </div>
                           ) : proofFile ? (
-                            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                              <span className="text-sm font-medium text-foreground truncate">{proofFile.name}</span>
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+                              <span className="text-xs font-bold text-[#0A2E1D] truncate">{proofFile.name}</span>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -686,15 +785,17 @@ export default function CheckoutPage() {
                                 }}
                                 className="text-red-500 hover:text-red-700 ml-2"
                               >
-                                <X className="w-5 h-5" />
+                                <X className="w-4 h-4" />
                               </button>
                             </div>
                           ) : (
                             <label className="cursor-pointer block">
                               <div className="flex flex-col items-center gap-2">
-                                <Upload className="w-8 h-8 text-primary mb-1" />
-                                <span className="text-foreground font-medium text-sm">Click to upload or drag and drop</span>
-                                <span className="text-xs text-muted-foreground">PDF, PNG, or JPG (max 10MB)</span>
+                                <div className="p-3 bg-amber-50 rounded-full text-[#EAA823]">
+                                  <Upload className="w-6 h-6" />
+                                </div>
+                                <span className="text-[#0A2E1D] font-bold text-xs">Tap to upload receipt</span>
+                                <span className="text-[10px] text-gray-400">PDF, PNG, or JPG (max 10MB)</span>
                               </div>
                               <input
                                 type="file"
@@ -710,11 +811,11 @@ export default function CheckoutPage() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-between pt-6 border-t border-border">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-gray-100">
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="flex items-center gap-2 text-primary hover:underline text-sm font-semibold"
+                    className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-[#0A2E1D]"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     Back to Information
@@ -723,61 +824,86 @@ export default function CheckoutPage() {
                   <Button
                     onClick={handleSubmit}
                     disabled={loading}
-                    className="bg-primary text-white font-bold text-lg px-8 py-6 rounded-lg"
+                    className="w-full sm:w-auto bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black text-sm px-8 py-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
                   >
-                    {loading ? 'Processing Order...' : `Complete Order - ₦${finalOrderTotal.toLocaleString()}`}
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Processing Order...</span>
+                      </>
+                    ) : (
+                      `Complete Order - ₦${finalOrderTotal.toLocaleString()}`
+                    )}
                   </Button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Right Column: Order Summary Sidebar */}
           <div className="lg:col-span-5">
-            <div className="border border-border bg-card rounded-xl p-6 sticky top-8">
-              <h3 className="text-xl font-bold text-foreground mb-6 pb-4 border-b border-border">Order Summary</h3>
+            <div className="bg-white border border-gray-200/80 rounded-3xl p-6 shadow-sm sticky top-20 space-y-6">
+              <h3 className="text-lg font-black text-[#0A2E1D] pb-3 border-b border-gray-100">
+                Order Summary
+              </h3>
 
-              <div className="space-y-4 mb-6 max-h-80 overflow-y-auto pr-1">
+              <div className="space-y-3.5 mb-6 max-h-80 overflow-y-auto pr-1">
                 {items.map((item) => {
-                  const itemPrice = item.price ?? item.final_price ?? 0
+                  const targetKey = String(item.id || item.product_id || '')
+                  const unitPrice = item.price ?? item.unit_price ?? item.final_price ?? 0
+                  const options = item.selected_options || {}
+
                   return (
-                    <div key={item.product_id ?? item.id} className="flex gap-4 items-center pb-4 border-b border-border/50">
-                      {item.imageUrl && (
-                        <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-muted flex-shrink-0 border border-border">
-                          <img
+                    <div key={targetKey} className="flex gap-3.5 items-center pb-3 border-b border-gray-100">
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-100">
+                        {item.imageUrl ? (
+                          <Image
                             src={item.imageUrl}
-                            alt={item.product_name ?? item.name}
-                            className="w-full h-full object-cover"
+                            alt={item.name ?? item.product_name ?? 'Product'}
+                            fill
+                            className="object-cover"
                           />
-                          <span className="absolute top-0 right-0 bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-bl">
-                            {item.quantity}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-foreground text-sm truncate">{item.product_name ?? item.name}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Qty: {item.quantity}</p>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-gray-400">
+                            FOOD
+                          </div>
+                        )}
+                        <span className="absolute top-0 right-0 bg-[#0A2E1D] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl">
+                          {item.quantity}
+                        </span>
                       </div>
-                      <p className="font-semibold text-foreground text-sm">
-                        ₦{(itemPrice * item.quantity).toLocaleString()}
-                      </p>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="font-extrabold text-[#0A2E1D] text-xs truncate">
+                          {item.name ?? item.product_name}
+                        </p>
+                        {Object.keys(options).length > 0 && (
+                          <p className="text-[10px] text-gray-400 truncate mt-0.5">
+                            {Object.values(options).join(' • ')}
+                          </p>
+                        )}
+                        <p className="text-[11px] font-bold text-[#EAA823] mt-0.5">
+                          ₦{(unitPrice * item.quantity).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
                   )
                 })}
               </div>
 
-              <div className="space-y-3 pt-2 text-sm border-t border-border">
-                <div className="flex justify-between text-muted-foreground">
+              <div className="space-y-3 pt-2 text-xs sm:text-sm border-t border-gray-100">
+                <div className="flex justify-between text-gray-500">
                   <span>Subtotal</span>
-                  <span className="font-medium text-foreground">₦{total.toLocaleString()}</span>
+                  <span className="font-bold text-[#0A2E1D]">₦{total.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between text-muted-foreground items-center">
+                <div className="flex justify-between text-gray-500 items-center">
                   <span>Delivery Fee</span>
-                  <span className="font-semibold text-foreground">₦{deliveryFee.toLocaleString()}</span>
+                  <span className="font-bold text-[#0A2E1D]">₦{deliveryFee.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between items-center pt-3 border-t border-border text-base">
-                  <span className="font-bold text-foreground">Total</span>
-                  <span className="font-bold text-xl text-primary">₦{finalOrderTotal.toLocaleString()}</span>
+                <div className="flex justify-between items-center pt-3 border-t border-gray-100 text-base">
+                  <span className="font-black text-[#0A2E1D]">Total Payable</span>
+                  <span className="font-black text-2xl text-[#0A2E1D]">
+                    ₦{finalOrderTotal.toLocaleString()}
+                  </span>
                 </div>
               </div>
             </div>

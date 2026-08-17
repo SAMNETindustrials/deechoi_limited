@@ -1,19 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { ShoppingCart, Sliders } from 'lucide-react'
 import Image from 'next/image'
-import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/button'
+import { Cake, ShoppingBag, Layers, CheckCircle2, XCircle } from 'lucide-react'
 
-export interface ProductCardProps {
+interface ProductCardProps {
   id: string
   name: string
-  description: string
+  description?: string
   price: number
-  imageUrl?: string
-  inStock: boolean
-  onViewDetails: (productId: string) => void
+  imageUrl?: string | null
+  inStock?: boolean
+  category?: string
+  onViewDetails: (id: string) => void
 }
 
 export function ProductCard({
@@ -22,97 +21,123 @@ export function ProductCard({
   description,
   price,
   imageUrl,
-  inStock,
+  inStock = true,
+  category,
   onViewDetails,
 }: ProductCardProps) {
-  const [hasOptions, setHasOptions] = useState(false)
-  const supabase = createClient()
+  // Check if item is a cake product
+  const isCake = 
+    category?.toLowerCase() === 'cakes' || 
+    name.toLowerCase().includes('cake') ||
+    id.startsWith('cake-')
 
-  useEffect(() => {
-    checkProductOptions()
-  }, [id])
-
-  const checkProductOptions = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('product_option_groups')
-        .select('id')
-        .eq('product_id', id)
-        .limit(1)
-
-      if (!error && data && data.length > 0) {
-        setHasOptions(true)
-      }
-    } catch (error) {
-      console.error('[v0] Error checking product options:', error)
-    }
-  }
+  // Extract size tag if present (e.g. 6" or 7")
+  const sizeMatch = name.match(/([67]['"”]|6\s*inches|7\s*inches)/i)
+  const sizeTag = sizeMatch ? sizeMatch[0].replace(/inches/i, '"').trim() : null
 
   return (
-    <Link href={`/product/${id}`}>
-      <div className="group w-full text-left bg-card rounded-lg overflow-hidden border border-border hover:shadow-lg transition-all duration-300 hover:border-primary cursor-pointer">
-      {/* Image Container */}
-      <div className="relative w-full h-48 bg-muted overflow-hidden">
-        {imageUrl ? (
-          <Image
-            src={imageUrl}
-            alt={name}
-            fill
-            className="object-cover group-hover:scale-110 transition-transform duration-300"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted text-muted-foreground">
-            <span className="text-sm">No image available</span>
-          </div>
-        )}
-        
-        {/* Hover Overlay - View Details */}
-        {inStock && (
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
-            <div className="flex items-center gap-2 bg-primary text-background px-4 py-2 rounded-lg font-semibold">
-              <ShoppingCart className="h-5 w-5" />
-              View Details
+    <div className="group bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between p-4 sm:p-5 relative">
+      
+      {/* Top Image Section */}
+      <div className="space-y-3.5">
+        <div className="relative w-full h-48 sm:h-52 rounded-2xl overflow-hidden bg-gray-50 border border-gray-100">
+          {imageUrl ? (
+            <Image
+              src={imageUrl}
+              alt={name}
+              fill
+              className="object-cover group-hover:scale-105 transition-transform duration-500"
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
+            />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 gap-2">
+              {isCake ? <Cake className="w-10 h-10 text-[#EAA823]" /> : <ShoppingBag className="w-10 h-10 text-gray-300" />}
+              <span className="text-xs font-medium">De-echoi Special</span>
             </div>
-          </div>
-        )}
+          )}
 
-        {!inStock && (
-          <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center">
-            <span className="text-white font-bold text-lg">Out of Stock</span>
+          {/* Floating Badges */}
+          <div className="absolute top-3 left-3 flex flex-col gap-1.5 z-10">
+            {isCake && (
+              <span className="inline-flex items-center gap-1 bg-[#0A2E1D]/90 backdrop-blur-xs text-[#EAA823] text-[10px] font-extrabold px-2.5 py-1 rounded-full border border-[#EAA823]/30 shadow-sm">
+                <Cake className="w-3 h-3" />
+                Cake
+              </span>
+            )}
+            {sizeTag && (
+              <span className="bg-[#12422C] text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
+                {sizeTag} Size
+              </span>
+            )}
           </div>
-        )}
 
-        {/* Customization Badge */}
-        {hasOptions && (
-          <div className="absolute top-2 right-2 bg-blue-600 text-white px-2 py-1 rounded-full flex items-center gap-1 text-xs font-semibold">
-            <Sliders className="w-3 h-3" />
-            Customizable
+          <div className="absolute top-3 right-3 z-10">
+            {inStock ? (
+              <span className="inline-flex items-center gap-1 bg-green-500/90 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+                <CheckCircle2 className="w-3 h-3" />
+                Available
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 bg-red-500/90 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm">
+                <XCircle className="w-3 h-3" />
+                Out of Stock
+              </span>
+            )}
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Content */}
-      <div className="p-4 flex flex-col gap-3">
-        <div>
-          <h3 className="font-semibold text-foreground text-lg line-clamp-2">
+        {/* Product Details */}
+        <div className="space-y-1">
+          {category && (
+            <span className="text-[10px] font-extrabold tracking-wider uppercase text-[#EAA823] block">
+              {category}
+            </span>
+          )}
+
+          <h3 className="font-bold text-base sm:text-lg text-[#0A2E1D] line-clamp-1 group-hover:text-[#12422C] transition-colors">
             {name}
           </h3>
-          <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
-            {description}
-          </p>
+
+          {description && (
+            <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed min-h-[32px]">
+              {description}
+            </p>
+          )}
         </div>
 
-        {/* Price and Status */}
-        <div className="flex items-center justify-between pt-2 border-t border-border">
-          <div className="text-2xl font-bold text-accent">
-            ₦{price.toLocaleString()}
+        {/* Cake Tier Indicator Chip */}
+        {isCake && (
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-[#12422C] bg-[#FDFBF7] p-2 rounded-xl border border-[#EAA823]/20">
+            <Layers className="w-3.5 h-3.5 text-[#EAA823]" />
+            <span>Available in 1, 2 & 3 Layers</span>
           </div>
-          <div className="text-xs bg-primary/15 text-primary px-2 py-1 rounded-full font-semibold whitespace-nowrap">
-            {inStock ? 'Click to Order' : 'Unavailable'}
+        )}
+      </div>
+
+      {/* Bottom Pricing & Action Section */}
+      <div className="pt-4 mt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+        <div>
+          <span className="text-[10px] text-gray-400 block font-medium">
+            {isCake ? 'Starting from' : 'Price'}
+          </span>
+          <div className="text-lg sm:text-xl font-extrabold text-[#0A2E1D]">
+            ₦{Number(price).toLocaleString()}
           </div>
         </div>
+
+        <Button
+          onClick={() => onViewDetails(id)}
+          disabled={!inStock}
+          className={`rounded-full px-5 py-2 text-xs font-bold transition-all shadow-sm ${
+            inStock
+              ? 'bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D]'
+              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+          }`}
+        >
+          {isCake ? 'Select & Order' : 'Order Now'}
+        </Button>
       </div>
-      </div>
-    </Link>
+
+    </div>
   )
 }

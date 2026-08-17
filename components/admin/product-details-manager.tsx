@@ -35,7 +35,9 @@ export function ProductDetailsManager({ productId, onSaved }: ProductDetailsMana
   const [newAllergen, setNewAllergen] = useState('')
 
   useEffect(() => {
-    fetchDetails()
+    if (productId) {
+      fetchDetails()
+    }
   }, [productId])
 
   const fetchDetails = async () => {
@@ -45,7 +47,14 @@ export function ProductDetailsManager({ productId, onSaved }: ProductDetailsMana
       const data = await response.json()
 
       if (data.success && data.data) {
-        setDetails(data.data)
+        setDetails({
+          description: data.data.description || '',
+          ingredients: data.data.ingredients || [],
+          allergens: data.data.allergens || [],
+          preparation_time_minutes: data.data.preparation_time_minutes || '',
+          servings: data.data.servings || '',
+          storage_instructions: data.data.storage_instructions || ''
+        })
       }
     } catch (error) {
       console.error('[v0] Failed to fetch details:', error)
@@ -193,8 +202,9 @@ export function ProductDetailsManager({ productId, onSaved }: ProductDetailsMana
             value={newIngredient}
             onChange={(e) => setNewIngredient(e.target.value)}
             placeholder="e.g., Rice, Tomato, Onion"
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === 'Enter') {
+                e.preventDefault()
                 addIngredient()
               }
             }}
@@ -240,8 +250,9 @@ export function ProductDetailsManager({ productId, onSaved }: ProductDetailsMana
             value={newAllergen}
             onChange={(e) => setNewAllergen(e.target.value)}
             placeholder="e.g., Peanuts, Shellfish"
-            onKeyPress={(e) => {
+            onKeyDown={(e) => {
               if (e.key === 'Enter') {
+                e.preventDefault()
                 addAllergen()
               }
             }}
@@ -261,13 +272,13 @@ export function ProductDetailsManager({ productId, onSaved }: ProductDetailsMana
           {details.allergens.map((allergen, index) => (
             <div
               key={index}
-              className="flex items-center justify-between bg-red-50 px-3 py-2 rounded border border-red-200"
+              className="flex items-center justify-between bg-red-500/10 dark:bg-red-950/20 px-3 py-2 rounded border border-red-500/20"
             >
-              <span className="text-sm text-red-900">{allergen}</span>
+              <span className="text-sm text-red-600 dark:text-red-400 font-medium">{allergen}</span>
               <button
                 type="button"
                 onClick={() => removeAllergen(index)}
-                className="text-red-600 hover:text-red-800"
+                className="text-red-500 hover:text-red-700"
               >
                 <X className="w-4 h-4" />
               </button>
