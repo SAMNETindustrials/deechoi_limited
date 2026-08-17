@@ -1,7 +1,14 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY || '')
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) {
+    return null
+  }
+  return new Resend(apiKey)
+}
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://deechoi-limited.vercel.app'
 
 export async function sendCustomerMessageEmail({
   to,
@@ -18,9 +25,11 @@ export async function sendCustomerMessageEmail({
   inquiryId: string
   isAutoReply?: boolean
 }) {
-  if (!process.env.RESEND_API_KEY) {
-    console.error('[Resend Error]: RESEND_API_KEY environment variable is not defined.')
-    return { success: false, error: 'No API key' }
+  const resend = getResendClient()
+
+  if (!resend) {
+    console.warn('[Resend]: Skipping email dispatch. RESEND_API_KEY is not defined.')
+    return { success: false, error: 'RESEND_API_KEY missing' }
   }
 
   const threadLink = `${APP_URL}/my-messages?thread=${inquiryId}`
@@ -74,9 +83,7 @@ export async function sendCustomerMessageEmail({
   `
 
   try {
-    // If you don't have a verified domain yet, use onboarding@resend.dev
     const fromAddress = process.env.RESEND_FROM_EMAIL || 'De-echoi Support <onboarding@resend.dev>'
-
     const response = await resend.emails.send({
       from: fromAddress,
       to: [to],
@@ -84,15 +91,9 @@ export async function sendCustomerMessageEmail({
       html: htmlContent,
     })
 
-    if (response.error) {
-      console.error('[Resend Delivery Error]:', response.error)
-      return { success: false, error: response.error }
-    }
-
-    console.log('[Resend Success]: Email sent to', to, response.data)
     return { success: true, data: response.data }
   } catch (error) {
-    console.error('[Resend Fatal Error]:', error)
+    console.error('[Resend Error]:', error)
     return { success: false, error }
   }
 }
