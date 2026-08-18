@@ -156,7 +156,7 @@ export function StorefrontHeader() {
     <>
       <header className="sticky top-0 z-50 bg-[#072d1d] text-white shadow-md border-b border-emerald-900/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16 sm:h-20">
+          <div className="flex justify-between items-center h-16 sm:h-20 gap-2 lg:gap-4">
             
             {/* Left: Mobile Hamburger Toggle */}
             <div className="flex items-center gap-2 md:hidden">
@@ -174,7 +174,7 @@ export function StorefrontHeader() {
 
             {/* Brand Logo */}
             <Link href="/" className="flex items-center flex-shrink-0">
-              <div className="relative w-36 sm:w-48 h-10 sm:h-12">
+              <div className="relative w-32 sm:w-40 lg:w-44 h-9 sm:h-11">
                 <Image
                   src="/logo.png"
                   alt="De-echoi Limited Logo"
@@ -185,8 +185,8 @@ export function StorefrontHeader() {
               </div>
             </Link>
 
-            {/* Desktop Navigation Links */}
-            <nav className="hidden md:flex gap-4 lg:gap-6 items-center">
+            {/* Desktop Navigation Links - Single line, non-wrapping */}
+            <nav className="hidden md:flex gap-2 lg:gap-3.5 xl:gap-5 items-center flex-shrink-0">
               {dynamicLinks.map((item: any) => {
                 const isActive = pathname === item.href
 
@@ -195,14 +195,14 @@ export function StorefrontHeader() {
                     <Link
                       key={item.label}
                       href={item.href}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-extrabold transition-all border ${
+                      className={`flex items-center gap-1.5 px-2.5 lg:px-3 py-1 rounded-full text-xs lg:text-[13px] font-extrabold transition-all border whitespace-nowrap flex-shrink-0 ${
                         isActive
                           ? 'bg-amber-500 text-[#072d1d] border-amber-500 shadow-md'
                           : 'bg-emerald-800/60 text-amber-300 border-amber-400/40 hover:bg-amber-400 hover:text-[#072d1d]'
                       }`}
                     >
-                      <Package className="w-3.5 h-3.5" />
-                      <span>{item.label}</span>
+                      <Package className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="whitespace-nowrap">{item.label}</span>
                       {item.badge && (
                         <span className="bg-amber-500 text-[#072d1d] text-[10px] font-black px-1.5 rounded-full">
                           {item.badge}
@@ -217,14 +217,14 @@ export function StorefrontHeader() {
                     <Link
                       key={item.label}
                       href={item.href}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs lg:text-sm font-extrabold transition-all border ${
+                      className={`flex items-center gap-1.5 px-2.5 lg:px-3 py-1 rounded-full text-xs lg:text-[13px] font-extrabold transition-all border whitespace-nowrap flex-shrink-0 ${
                         isActive
                           ? 'bg-emerald-500 text-white border-emerald-400 shadow-md'
                           : 'bg-emerald-900/80 text-emerald-200 border-emerald-600/40 hover:bg-emerald-600 hover:text-white'
                       }`}
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      <span>{item.label}</span>
+                      <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="whitespace-nowrap">{item.label}</span>
                       {item.badge && (
                         <span className="bg-amber-400 text-[#072d1d] text-[10px] font-black px-1.5 rounded-full">
                           {item.badge}
@@ -239,14 +239,14 @@ export function StorefrontHeader() {
                     <Link
                       key={item.label}
                       href={item.href}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs lg:text-sm font-bold transition-all ${
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs lg:text-[13px] font-bold transition-all whitespace-nowrap flex-shrink-0 ${
                         isActive
                           ? 'bg-amber-500 text-[#072d1d] shadow-sm'
                           : 'bg-[#12422C] text-amber-400 border border-amber-400/30 hover:bg-amber-500 hover:text-[#072d1d]'
                       }`}
                     >
-                      <Cake className="w-3.5 h-3.5" />
-                      <span>{item.label}</span>
+                      <Cake className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="whitespace-nowrap">{item.label}</span>
                     </Link>
                   )
                 }
@@ -255,7 +255,7 @@ export function StorefrontHeader() {
                   <Link
                     key={item.label}
                     href={item.href}
-                    className={`transition-colors text-xs lg:text-sm font-semibold ${
+                    className={`transition-colors text-xs lg:text-[13px] xl:text-sm font-semibold whitespace-nowrap flex-shrink-0 ${
                       isActive ? 'text-amber-400 font-bold' : 'text-gray-200 hover:text-amber-400'
                     }`}
                   >
@@ -265,33 +265,34 @@ export function StorefrontHeader() {
               })}
             </nav>
 
-            {/* Desktop Search Bar */}
-            <form 
-              onSubmit={handleSearch} 
-              className="hidden lg:flex items-center gap-2 bg-white rounded-full px-4 py-2 flex-1 max-w-xs mx-4 shadow-inner"
-            >
-              <input
-                type="text"
-                placeholder="Search meals, cakes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent outline-none text-xs text-slate-800 placeholder-slate-400 flex-1"
-              />
-              <button type="submit" className="text-amber-600 hover:text-amber-700" aria-label="Search">
-                <Search className="w-4 h-4" />
-              </button>
-            </form>
+            {/* Right Action Group: Search & Cart shifted closer together */}
+            <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0 ml-auto lg:ml-2">
+              {/* Desktop Search Bar */}
+              <form 
+                onSubmit={handleSearch} 
+                className="hidden md:flex items-center gap-1.5 bg-white rounded-full px-3 py-1.5 w-40 lg:w-48 xl:w-56 shadow-inner"
+              >
+                <input
+                  type="text"
+                  placeholder="Search meals..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-transparent outline-none text-xs text-slate-800 placeholder-slate-400 w-full min-w-0"
+                />
+                <button type="submit" className="text-amber-600 hover:text-amber-700 flex-shrink-0" aria-label="Search">
+                  <Search className="w-3.5 h-3.5" />
+                </button>
+              </form>
 
-            {/* Right: Cart Button */}
-            <div className="flex items-center gap-3">
+              {/* Cart Button */}
               <Link 
                 href="/cart" 
                 aria-label="Shopping Cart"
-                className="relative bg-white text-[#072d1d] p-2.5 rounded-full shadow-md hover:bg-amber-400 transition active:scale-95"
+                className="relative bg-white text-[#072d1d] p-2 lg:p-2.5 rounded-full shadow-md hover:bg-amber-400 transition active:scale-95 flex-shrink-0"
               >
-                <ShoppingCart className="w-5 h-5 text-[#072d1d]" />
+                <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5 text-[#072d1d]" />
                 {itemCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-amber-500 text-[#072d1d] text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center border-2 border-[#072d1d]">
+                  <span className="absolute -top-1 -right-1 bg-amber-500 text-[#072d1d] text-[10px] font-black rounded-full w-4.5 h-4.5 sm:w-5 sm:h-5 flex items-center justify-center border-2 border-[#072d1d]">
                     {itemCount}
                   </span>
                 )}
@@ -325,6 +326,25 @@ export function StorefrontHeader() {
                   <p className="text-[10px] text-emerald-200/80">Authentic Flavors & Catering</p>
                 </div>
               </div>
+            </div>
+
+            {/* Mobile Search inside Drawer */}
+            <div className="px-5 pt-4">
+              <form 
+                onSubmit={handleSearch} 
+                className="flex items-center gap-2 bg-white border border-slate-200 rounded-full px-3.5 py-2 shadow-sm"
+              >
+                <input
+                  type="text"
+                  placeholder="Search meals, cakes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-transparent outline-none text-xs text-slate-800 placeholder-slate-400 flex-1"
+                />
+                <button type="submit" className="text-amber-600" aria-label="Search">
+                  <Search className="w-4 h-4" />
+                </button>
+              </form>
             </div>
 
             <nav className="p-5 space-y-4 flex-1 text-slate-700">
