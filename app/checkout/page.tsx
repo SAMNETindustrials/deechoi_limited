@@ -18,7 +18,8 @@ import {
   ShoppingBag,
   ShieldCheck,
   Truck,
-  Loader2
+  Loader2,
+  ScanLine
 } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -148,6 +149,11 @@ export default function CheckoutPage() {
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofPreview, setProofPreview] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Receipt verification states
+  const [isScanning, setIsScanning] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
+  const [verificationDetails, setVerificationDetails] = useState<{ reference?: string; verified: boolean } | null>(null)
 
   const detectZoneFromAddress = (addressText: string) => {
     if (!addressText.trim()) {
@@ -305,6 +311,8 @@ export default function CheckoutPage() {
         return
       }
       setProofFile(file)
+      setValidationError(null)
+      setVerificationDetails(null)
 
       if (file.type.startsWith('image/')) {
         const reader = new FileReader()
@@ -330,14 +338,56 @@ export default function CheckoutPage() {
 
   const finalOrderTotal = total + deliveryFee
 
+  const BANK_DETAILS = {
+    accountName: 'De-echoi Limited',
+    accountNumber: '1312120060',
+    bankName: 'Zenith Bank',
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setValidationError(null)
 
-    if (paymentMethod === 'bank_transfer' && !proofFile) {
-      alert('Please upload your payment transfer receipt before completing your order.')
-      return
+    if (paymentMethod === 'bank_transfer') {
+      if (!proofFile) {
+        alert('Please upload your payment transfer receipt before completing your order.')
+        return
+      }
+
+      // Step 1: Scan receipt for authenticity and match details
+      setIsScanning(true)
+      try {
+        const verifyData = new FormData()
+        verifyData.append('file', proofFile)
+        verifyData.append('expectedAmount', finalOrderTotal.toString())
+        verifyData.append('expectedAccount', BANK_DETAILS.accountNumber)
+
+        const verifyRes = await fetch('/api/validate-receipt', {
+          method: 'POST',
+          body: verifyData,
+        })
+
+        const verifyJson = await verifyRes.json()
+
+        if (!verifyRes.ok || !verifyJson.valid) {
+          setValidationError(verifyJson.message || 'Receipt validation failed. Please ensure the exact amount, reference, and date/time are visible on your receipt.')
+          setIsScanning(false)
+          return
+        }
+
+        setVerificationDetails({
+          reference: verifyJson.reference,
+          verified: true,
+        })
+      } catch (err: any) {
+        setValidationError('Failed to connect to the receipt scanner. Please try again.')
+        setIsScanning(false)
+        return
+      }
+      setIsScanning(false)
     }
 
+    // Step 2: Upload file and record order
     setLoading(true)
     try {
       let proofUrl: string | null = null
@@ -443,12 +493,6 @@ export default function CheckoutPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const BANK_DETAILS = {
-    accountName: 'De-echoi Limited',
-    accountNumber: '1312120060',
-    bankName: 'Zenith Bank',
   }
 
   if (items.length === 0) {
@@ -753,7 +797,7 @@ export default function CheckoutPage() {
 
                       <div>
                         <h4 className="font-bold text-[#0A2E1D] text-xs uppercase mb-1">Upload Payment Receipt *</h4>
-                        <p className="text-[11px] text-gray-500 mb-3">Upload a screenshot or PDF receipt of your completed transfer.</p>
+                        <p className="text-[11px] text-gray-500 mb-3">Upload a screenshot or PDF receipt of your completed transfer (amount, date, time & reference will be verified).</p>
 
                         <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center bg-white hover:border-[#0A2E1D] transition-colors">
                           {proofPreview ? (
@@ -768,6 +812,8 @@ export default function CheckoutPage() {
                                 onClick={() => {
                                   setProofFile(null)
                                   setProofPreview(null)
+                                  setValidationError(null)
+                                  setVerificationDetails(null)
                                 }}
                                 className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 shadow"
                               >
@@ -782,6 +828,8 @@ export default function CheckoutPage() {
                                 onClick={() => {
                                   setProofFile(null)
                                   setProofPreview(null)
+                                  setValidationError(null)
+                                  setVerificationDetails(null)
                                 }}
                                 className="text-red-500 hover:text-red-700 ml-2"
                               >
@@ -806,6 +854,32 @@ export default function CheckoutPage() {
                             </label>
                           )}
                         </div>
+
+                        {/* Validation Error Alert */}
+                        {validationError && (
+                          <div className="mt-3 p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-2 animate-in fade-in">
+                            <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                            <div className="space-y-0.5">
+                              <span className="font-bold block">Receipt Verification Failed</span>
+                              <p className="text-[11px] leading-relaxed">{validationError}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Verified Success Confirmation */}
+                        {verificationDetails?.verified && (
+                          <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 animate-in fade-in">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                            <div>
+                              <span className="font-bold">Receipt Authenticated</span>
+                              {verificationDetails.reference && (
+                                <span className="text-[11px] text-emerald-700 block font-mono">
+                                  Ref: {verificationDetails.reference}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -815,6 +889,7 @@ export default function CheckoutPage() {
                   <button
                     type="button"
                     onClick={() => setStep(1)}
+                    disabled={isScanning || loading}
                     className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-[#0A2E1D]"
                   >
                     <ArrowLeft className="w-4 h-4" />
@@ -823,10 +898,15 @@ export default function CheckoutPage() {
 
                   <Button
                     onClick={handleSubmit}
-                    disabled={loading}
-                    className="w-full sm:w-auto bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black text-sm px-8 py-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                    disabled={loading || isScanning}
+                    className="w-full sm:w-auto bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black text-sm px-8 py-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    {loading ? (
+                    {isScanning ? (
+                      <>
+                        <ScanLine className="w-4 h-4 animate-pulse text-[#EAA823]" />
+                        <span>Scanning receipt for originality...</span>
+                      </>
+                    ) : loading ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span>Processing Order...</span>
