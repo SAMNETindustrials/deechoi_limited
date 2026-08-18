@@ -4,7 +4,9 @@ const resendApiKey = process.env.RESEND_API_KEY
 const resend = resendApiKey ? new Resend(resendApiKey) : null
 const FROM_EMAIL = process.env.EMAIL_FROM || 'De-echoi Limited <orders@deechoi.com>'
 
-// 1. Send Admin Message / Reply Notification to Customer
+// ==========================================
+// 1. Send Customer Support / Message Reply Email
+// ==========================================
 export interface CustomerMessageEmailProps {
   to: string
   customerName: string
@@ -69,7 +71,7 @@ export async function sendCustomerMessageEmail({
             </div>
 
             <p style="margin-top: 24px; font-size: 12px; color: #6b7280;">
-              You can track your live orders, invoices, and active chat thread directly in your dashboard.
+              You can track your live orders, payment receipts, and active conversations directly in your dashboard.
             </p>
           </div>
           <div class="footer">
@@ -95,7 +97,9 @@ export async function sendCustomerMessageEmail({
   }
 }
 
+// ==========================================
 // 2. Send VIP Waitlist Confirmation Email
+// ==========================================
 export interface WaitlistEmailProps {
   to: string
   customerName: string
@@ -144,7 +148,7 @@ export async function sendWaitlistConfirmationEmail({
           </div>
           <div class="content">
             <p>Hello <strong>${customerName}</strong>,</p>
-            <p>Thank you for joining our exclusive 10-day launch waitlist! Your <strong>${discountPercent} VIP Launch Voucher</strong> has been locked in for launch day:</p>
+            <p>Thank you for joining our exclusive 10-day launch waitlist! Your <strong>${discountPercent} VIP Launch Voucher</strong> is ready for launch day:</p>
             
             <div class="voucher-box">
               <span style="color: #d1fae5; font-size: 11px; font-weight: bold; text-transform: uppercase;">Your ${discountPercent} Launch Voucher</span>
@@ -157,7 +161,7 @@ export async function sendWaitlistConfirmationEmail({
               <span>${favoriteDish}</span>
             </div>
 
-            <p>We'll notify you via WhatsApp and Email the instant ordering opens. Get ready for authentic taste crafted with love!</p>
+            <p>We will notify you via WhatsApp and Email the instant ordering opens. Get ready for authentic taste crafted with love!</p>
           </div>
           <div class="footer">
             <strong>De-echoi Limited</strong> &bull; Eze Nvuigwe Avenue, Woji, Port Harcourt, Rivers State.<br>
