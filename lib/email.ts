@@ -4,9 +4,7 @@ const resendApiKey = process.env.RESEND_API_KEY
 const resend = resendApiKey ? new Resend(resendApiKey) : null
 const FROM_EMAIL = process.env.EMAIL_FROM || 'De-echoi Limited <orders@deechoi.com>'
 
-// ==========================================
 // 1. Send Customer Support / Message Reply Email
-// ==========================================
 export interface CustomerMessageEmailProps {
   to: string
   customerName: string
@@ -27,7 +25,7 @@ export async function sendCustomerMessageEmail({
   if (!to) return { success: false, reason: 'Recipient email is missing' }
 
   if (!resend) {
-    console.warn('[Email Notice]: RESEND_API_KEY is not set. Skipping message email dispatch.')
+    console.warn('[Email Notice]: RESEND_API_KEY is not set. Skipping email dispatch.')
     return { success: false, reason: 'Resend API key not configured' }
   }
 
@@ -97,9 +95,7 @@ export async function sendCustomerMessageEmail({
   }
 }
 
-// ==========================================
 // 2. Send VIP Waitlist Confirmation Email
-// ==========================================
 export interface WaitlistEmailProps {
   to: string
   customerName: string
