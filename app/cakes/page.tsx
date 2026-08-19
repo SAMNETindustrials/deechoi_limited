@@ -238,7 +238,6 @@ function CakesPageContent() {
   const supabase = createClient()
 
   // Navigation & UI States
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isSocialOpen, setIsSocialOpen] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -465,11 +464,6 @@ function CakesPageContent() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
-  const scrollToMenu = () => {
-    const el = document.getElementById('our-cake-menu')
-    if (el) el.scrollIntoView({ behavior: 'smooth' })
-  }
-
   const filteredCakes = cakes.filter((cake) => {
     const matchesSize = selectedSize === 'All' || cake.size === selectedSize
     const matchesFlavor = selectedFlavor === 'All' || cake.flavor?.toLowerCase().includes(selectedFlavor.toLowerCase())
@@ -567,7 +561,7 @@ function CakesPageContent() {
       </div>
 
       {/* 4. MAIN BODY CONTAINER */}
-      <main className="bg-slate-50 rounded-t-[32px] pt-6 px-4 sm:px-6 lg:px-8 space-y-8 max-w-6xl mx-auto min-h-screen">
+      <main className="bg-slate-50 rounded-t-[32px] pt-6 px-4 sm:px-6 lg:px-8 pb-12 space-y-8 max-w-6xl mx-auto min-h-screen">
 
         {/* Feature Highlights Ribbon */}
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 grid grid-cols-4 gap-2 text-center">
@@ -1021,50 +1015,9 @@ function CakesPageContent() {
           )}
         </section>
 
-        {/* 8. FOOTER SECTION */}
-        <footer id="contact" className="bg-[#072d1d] text-white rounded-2xl p-6 space-y-6 mt-8">
-          <div className="space-y-2">
-            <h3 className="font-bold text-lg text-amber-400">DEECHOI</h3>
-            <p className="text-xs text-emerald-100/80">
-              Handcrafted bespoke cakes, layered delicacies, and catering delivered across Port Harcourt.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div>
-              <h4 className="font-semibold text-amber-400 mb-2">Navigation</h4>
-              <ul className="space-y-1 text-emerald-100/80">
-                <li><Link href="/" className="hover:text-amber-400 transition">Main Storefront</Link></li>
-                <li><Link href="/cakes" className="text-amber-400 font-bold">Cakes Collection</Link></li>
-                <li><Link href="/about" className="hover:text-amber-400 transition">About Us</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-amber-400 mb-2">Custom Bakes</h4>
-              <p className="text-emerald-100/80">
-                <a href="mailto:deechoi01@gmail.com" className="hover:text-amber-400 block">
-                  deechoi01@gmail.com
-                </a>
-                <a href="tel:+2347046145982" className="hover:text-amber-400 block mt-1">
-                  +234 704 614 5982
-                </a>
-              </p>
-            </div>
-          </div>
-
-          <div className="border-t border-emerald-800/60 pt-4 text-xs text-emerald-100/80 space-y-1">
-            <h4 className="font-semibold text-amber-400">Bakery Location</h4>
-            <p>Eze Nvuigwe Avenue, Woji, Port Harcourt, Rivers State, Nigeria</p>
-          </div>
-
-          <div className="border-t border-emerald-800/60 pt-4 text-center text-[10px] text-emerald-200/60">
-            <p>&copy; 2026 DEECHOI LIMITED. All rights reserved.</p>
-          </div>
-        </footer>
-
       </main>
 
-      {/* 9. FLOATING ACTION SOCIAL / CALL CONTACT BAR */}
+      {/* 8. FLOATING ACTION SOCIAL / CALL CONTACT BAR */}
       <div className="fixed right-4 bottom-8 z-50 flex flex-col items-end gap-2.5 pointer-events-none">
         <div 
           className={`flex flex-col gap-2.5 items-end transition-all duration-300 ease-in-out pointer-events-auto ${

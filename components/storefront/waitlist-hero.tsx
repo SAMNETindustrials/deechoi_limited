@@ -15,7 +15,14 @@ import {
   Minus,
   GraduationCap,
   Tag,
-  Utensils
+  Utensils,
+  Copy,
+  CheckCheck,
+  ArrowRight,
+  ShieldCheck,
+  Star,
+  Eye,
+  Info
 } from 'lucide-react'
 
 // 10-day launch countdown target: August 27, 2026 at 00:00:00 GMT+1
@@ -68,8 +75,17 @@ export function WaitlistCountdownSection() {
   
   const [wantsTraining, setWantsTraining] = useState(false)
 
-  // Coupon State
-  const [couponCode, setCouponCode] = useState('DEECHOI15')
+  // Unique Dynamic Promo Code State
+  const [generatedPromoCode, setGeneratedPromoCode] = useState<string>('')
+  const [copiedCode, setCopiedCode] = useState(false)
+
+  // Already-Registered & Preview Control State
+  const [isAlreadyVip, setIsAlreadyVip] = useState(false)
+  const [showCodePreview, setShowCodePreview] = useState(false)
+  const [showAppliedPrompt, setShowAppliedPrompt] = useState(false)
+
+  // Live Simulator Coupon State
+  const [couponCode, setCouponCode] = useState('')
   const [couponApplied, setCouponApplied] = useState(false)
   const [couponError, setCouponError] = useState<string | null>(null)
 
@@ -120,7 +136,7 @@ export function WaitlistCountdownSection() {
       if (cakeloafFlavor === 'Red Velvet') return 4500
       if (cakeloafFlavor === 'Vanilla') return 4300
       if (cakeloafFlavor === '2 Mixed Flavours') return 4600
-      return 4000 // Chocolate
+      return 4000
     }
     return 5500
   }
@@ -190,12 +206,51 @@ export function WaitlistCountdownSection() {
 
   const handleApplyCoupon = () => {
     setCouponError(null)
-    if (couponCode.trim().toUpperCase() === 'DEECHOI15') {
+    const code = couponCode.trim().toUpperCase()
+    if (code.length >= 5) {
       setCouponApplied(true)
     } else {
-      setCouponError('Invalid voucher code. Enter DEECHOI15 for 15% discount.')
+      setCouponError('Enter a valid VIP code (e.g. your custom launch code).')
       setCouponApplied(false)
     }
+  }
+
+  // Resilient Clipboard Copy with execCommand Fallback + Prompt Trigger
+  const handleCopyCode = async () => {
+    if (!generatedPromoCode) return
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(generatedPromoCode)
+      } else {
+        const textArea = document.createElement('textarea')
+        textArea.value = generatedPromoCode
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-999999px'
+        textArea.style.top = '-999999px'
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        document.execCommand('copy')
+        textArea.remove()
+      }
+      setCopiedCode(true)
+      setShowAppliedPrompt(true)
+      setTimeout(() => setCopiedCode(false), 2500)
+    } catch (err) {
+      console.warn('Clipboard copy failed:', err)
+      setCopiedCode(true)
+      setShowAppliedPrompt(true)
+      setTimeout(() => setCopiedCode(false), 2500)
+    }
+  }
+
+  const handleCancelPrompt = () => {
+    setShowAppliedPrompt(false)
+    setIsModalOpen(false)
+    setSubmitted(false)
+    setIsAlreadyVip(false)
+    setShowCodePreview(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -230,6 +285,25 @@ export function WaitlistCountdownSection() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to join waitlist')
 
+      const personalPromo = data.promoCode || `${formData.name.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}-VIP`
+      setGeneratedPromoCode(personalPromo)
+      setCouponCode(personalPromo)
+
+      try {
+        localStorage.setItem('deechoi_vip_promo_code', personalPromo)
+      } catch (err) {
+        console.warn('Local storage error:', err)
+      }
+
+      // Check if user is already a VIP
+      if (data.alreadyRegistered) {
+        setIsAlreadyVip(true)
+        setShowCodePreview(false)
+      } else {
+        setIsAlreadyVip(false)
+        setShowCodePreview(true)
+      }
+
       setSubmitted(true)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error joining waitlist'
@@ -261,7 +335,7 @@ export function WaitlistCountdownSection() {
               We Are Launching in 10 Days!
             </h2>
             <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-              Explore our fresh kitchen menu & bespoke celebration cakes. Online orders unlock on launch day! Join the waitlist for <strong className="text-[#EAA823]">15% OFF</strong> your selected dishes.
+              Explore our fresh kitchen menu & bespoke celebration cakes. Online orders unlock on launch day! Join the waitlist to receive your <strong className="text-[#EAA823]">Unique 15% OFF VIP Code</strong>.
             </p>
           </div>
 
@@ -304,7 +378,12 @@ export function WaitlistCountdownSection() {
 
           {/* Action Trigger */}
           <Button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              setIsModalOpen(true)
+              setSubmitted(false)
+              setIsAlreadyVip(false)
+              setShowCodePreview(false)
+            }}
             className="bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-black text-xs sm:text-sm px-7 py-6 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer"
           >
             <Gift className="w-4 h-4" />
@@ -319,75 +398,199 @@ export function WaitlistCountdownSection() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-gray-100 space-y-5 text-[#0A2E1D] relative max-h-[90vh] overflow-y-auto">
             
+            {/* Top Close / Return to Storefront */}
             <button
-              onClick={() => {
-                setIsModalOpen(false)
-                setSubmitted(false)
-              }}
-              className="absolute top-5 right-5 p-1 rounded-full text-gray-400 hover:text-gray-700 cursor-pointer"
+              onClick={handleCancelPrompt}
+              className="absolute top-5 right-5 p-1 rounded-full text-gray-400 hover:text-gray-700 cursor-pointer transition"
             >
               <X className="w-5 h-5" />
             </button>
 
             {submitted ? (
-              <div className="text-center py-6 space-y-4">
-                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
-                  <PartyPopper className="w-8 h-8" />
-                </div>
-                <h3 className="text-2xl font-black text-[#0A2E1D]">You&apos;re on the VIP List!</h3>
-                <p className="text-xs text-gray-600 leading-relaxed max-w-xs mx-auto">
-                  We have secured your priority spot for <strong>{formData.name}</strong>. Your launch discount code has been locked in:
-                </p>
+              <div className="text-center py-4 space-y-4 animate-in zoom-in-95 duration-200">
+                
+                {/* 1. APPLIED PROMPT (TRIGGERED WHEN CODE IS COPIED) */}
+                {showAppliedPrompt ? (
+                  <div className="bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] text-white p-5 sm:p-6 rounded-3xl border-2 border-amber-400/60 shadow-2xl space-y-4 text-left relative animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    
+                    {/* STAR CANCEL ICON (Returns back to waitlist home page) */}
+                    <button
+                      type="button"
+                      onClick={handleCancelPrompt}
+                      className="absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full bg-white/10 hover:bg-amber-500 hover:text-[#072d1d] text-amber-300 transition-transform active:scale-90 cursor-pointer shadow-md group border border-amber-400/30"
+                      title="Cancel & Return to Storefront"
+                    >
+                      <Star className="w-4 h-4 fill-amber-400 group-hover:fill-current" />
+                    </button>
 
-                {/* Voucher Code Card */}
-                <div className="bg-[#072d1d] text-[#EAA823] p-4 rounded-2xl border border-amber-400/30 space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-gray-300 block">Your Exclusive Launch Voucher</span>
-                  <p className="font-mono font-black text-2xl tracking-widest text-[#EAA823]">DEECHOI15</p>
-                  <p className="text-[11px] text-emerald-200/90 font-semibold">15% OFF your selected order on launch day</p>
-                </div>
+                    <div className="flex items-center gap-2 text-amber-400">
+                      <ShieldCheck className="w-5 h-5" />
+                      <h4 className="text-xs font-black uppercase tracking-wider">
+                        VIP Code Applied Successfully!
+                      </h4>
+                    </div>
 
-                {/* Selected Dishes Summary with Discounted Projection */}
-                <div className="bg-[#FDFBF7] p-4 rounded-2xl border border-gray-200 text-left space-y-2.5 text-xs">
-                  <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-                    <span className="font-extrabold text-[#0A2E1D]">Your Selected Menu Preview:</span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                      {selectedItems.length} Category{selectedItems.length > 1 ? 'ies' : ''} Saved
-                    </span>
-                  </div>
+                    <div className="bg-[#041a11] p-3 rounded-2xl border border-emerald-500/40 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-gray-400 block">Active Code:</span>
+                        <strong className="font-mono text-base text-[#EAA823] tracking-widest">{generatedPromoCode}</strong>
+                      </div>
+                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-2.5 py-1 rounded-full">
+                        15% APPLIED
+                      </span>
+                    </div>
 
-                  <p className="text-gray-700 leading-relaxed text-[11px]">
-                    {compileFavoriteDishes()}
-                  </p>
-
-                  {rawTotal > 0 && (
-                    <div className="pt-2 border-t border-gray-200 space-y-1 text-xs">
-                      <div className="flex justify-between text-gray-500">
-                        <span>Standard Menu Value:</span>
+                    {/* Dynamic Live Price Breakdown for Selected Items */}
+                    <div className="bg-white/5 p-3.5 rounded-2xl border border-white/10 space-y-2 text-xs">
+                      <div className="flex items-center justify-between border-b border-white/10 pb-1.5 text-gray-300">
+                        <span>Configured Items ({selectedItems.length}):</span>
                         <span>₦{rawTotal.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between text-emerald-700 font-bold">
-                        <span>VIP Launch Discount (15%):</span>
+
+                      <p className="text-[10px] text-emerald-200/80 leading-relaxed italic">
+                        {compileFavoriteDishes()}
+                      </p>
+
+                      <div className="flex items-center justify-between text-amber-300 font-bold pt-1">
+                        <span>VIP 15% Launch Savings:</span>
                         <span>-₦{discountAmount.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between text-[#0A2E1D] font-black text-sm pt-1 border-t border-gray-100">
-                        <span>Estimated Launch Price:</span>
-                        <span className="text-emerald-700">₦{finalDiscountedTotal.toLocaleString()}</span>
+
+                      <div className="flex items-center justify-between text-white font-black text-sm pt-2 border-t border-white/10">
+                        <span>Discounted Launch Total:</span>
+                        <span className="text-[#EAA823] text-base">₦{finalDiscountedTotal.toLocaleString()}</span>
                       </div>
                     </div>
-                  )}
-                </div>
 
-                <Button
-                  onClick={() => {
-                    setIsModalOpen(false)
-                    setSubmitted(false)
-                  }}
-                  className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold text-xs rounded-full px-8 py-5 mt-2 cursor-pointer transition"
-                >
-                  Explore Storefront Menu
-                </Button>
+                    <div className="flex gap-2.5 pt-1">
+                      <Button
+                        type="button"
+                        onClick={handleCancelPrompt}
+                        className="flex-1 bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-black text-xs py-3 rounded-xl cursor-pointer shadow-md transition flex items-center justify-center gap-1.5"
+                      >
+                        <span>Return to Storefront</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : isAlreadyVip && !showCodePreview ? (
+                  /* 2. ALREADY VIP PROMPT STATE */
+                  <div className="bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] text-white p-6 rounded-3xl border-2 border-amber-400/50 shadow-2xl space-y-4 text-center relative animate-in fade-in zoom-in-95 duration-200">
+                    <div className="w-14 h-14 bg-amber-400/20 text-[#EAA823] rounded-full flex items-center justify-center mx-auto border border-amber-400/30">
+                      <Sparkles className="w-7 h-7" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <h3 className="text-xl font-extrabold text-white">Thank you, you&apos;re already a VIP!</h3>
+                      <p className="text-xs text-emerald-100/80 leading-relaxed max-w-xs mx-auto">
+                        Your phone number or email is already registered on our priority launch list.
+                      </p>
+                    </div>
+
+                    <div className="bg-black/30 p-4 rounded-2xl border border-white/10 text-xs text-amber-200 font-medium">
+                      Forgotten your code? Click <strong>Preview</strong> below to view your code.
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+                      <Button
+                        type="button"
+                        onClick={() => setShowCodePreview(true)}
+                        className="flex-1 bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-black text-xs py-3.5 rounded-xl cursor-pointer shadow-md transition flex items-center justify-center gap-2"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>Preview My Code</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={handleCancelPrompt}
+                        variant="outline"
+                        className="flex-1 border-white/20 text-white hover:bg-white/10 text-xs py-3.5 rounded-xl cursor-pointer"
+                      >
+                        Back to Home
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* 3. CODE PREVIEW CARD (FOR NEW REGISTRATIONS OR AFTER CLICKING PREVIEW) */
+                  <>
+                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                      <PartyPopper className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-2xl font-black text-[#0A2E1D]">
+                      {isAlreadyVip ? 'Your VIP Launch Pass' : "You're on the VIP List!"}
+                    </h3>
+                    <p className="text-xs text-gray-600 leading-relaxed max-w-xs mx-auto">
+                      Priority spot secured for <strong>{formData.name}</strong>. Copy your single-use launch discount code below:
+                    </p>
+
+                    {/* Unique Voucher Code Card with One-Tap Copy */}
+                    <div className="bg-[#072d1d] text-[#EAA823] p-4 sm:p-5 rounded-3xl border-2 border-amber-400/50 shadow-xl space-y-3 relative overflow-hidden">
+                      <span className="text-[10px] uppercase font-bold text-emerald-200/80 tracking-wider block">
+                        Your Personalized 15% VIP Voucher
+                      </span>
+                      
+                      <div className="flex items-center justify-center gap-2 bg-[#041a11] py-3 px-4 rounded-2xl border border-emerald-700/50">
+                        <p className="font-mono font-black text-2xl tracking-widest text-[#EAA823]">
+                          {generatedPromoCode}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleCopyCode}
+                          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition active:scale-90 cursor-pointer ml-2 flex items-center justify-center"
+                          title="Copy Unique Code & Apply Discount"
+                        >
+                          {copiedCode ? <CheckCheck className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5 text-amber-300" />}
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-emerald-100 font-medium">
+                        Click the copy icon above to copy and check your instant 15% discount.
+                      </p>
+                    </div>
+
+                    {/* Selected Dishes Summary with Discounted Projection */}
+                    <div className="bg-[#FDFBF7] p-4 rounded-2xl border border-gray-200 text-left space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                        <span className="font-extrabold text-[#0A2E1D]">Your Selected Menu Preview:</span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                          {selectedItems.length} Category{selectedItems.length > 1 ? 'ies' : ''} Saved
+                        </span>
+                      </div>
+
+                      <p className="text-gray-700 leading-relaxed text-[11px]">
+                        {compileFavoriteDishes()}
+                      </p>
+
+                      {rawTotal > 0 && (
+                        <div className="pt-2 border-t border-gray-200 space-y-1 text-xs">
+                          <div className="flex justify-between text-gray-500">
+                            <span>Standard Menu Value:</span>
+                            <span>₦{rawTotal.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-700 font-bold">
+                            <span>VIP Launch Discount (15%):</span>
+                            <span>-₦{discountAmount.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-[#0A2E1D] font-black text-sm pt-1 border-t border-gray-100">
+                            <span>Estimated Launch Price:</span>
+                            <span className="text-emerald-700">₦{finalDiscountedTotal.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <Button
+                      onClick={handleCancelPrompt}
+                      className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold text-xs rounded-full px-8 py-5 mt-2 cursor-pointer transition"
+                    >
+                      Explore Storefront Menu
+                    </Button>
+                  </>
+                )}
+
               </div>
             ) : (
+              /* FORM SUBMISSION VIEW */
               <>
                 <div className="space-y-1">
                   <div className="inline-flex items-center gap-1.5 bg-amber-100 text-amber-900 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full mb-1">
@@ -396,7 +599,7 @@ export function WaitlistCountdownSection() {
                   </div>
                   <h3 className="text-2xl font-black text-[#0A2E1D]">Join Priority Waitlist</h3>
                   <p className="text-xs text-gray-500">
-                    Select the dishes you want to unlock with your 15% VIP voucher when online orders launch in 10 days.
+                    Select your favorite dishes. We&apos;ll generate your unique 15% VIP promo code instantly.
                   </p>
                 </div>
 
@@ -562,7 +765,7 @@ export function WaitlistCountdownSection() {
                               <button
                                 type="button"
                                 onClick={() => setNoodleTurkeyCubesCount(Math.max(1, noodleTurkeyCubesCount - 1))}
-                                className="p-1 hover:bg-gray-100 rounded text-gray-700"
+                                className="p-1 hover:bg-gray-100 rounded text-gray-700 cursor-pointer"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
@@ -570,7 +773,7 @@ export function WaitlistCountdownSection() {
                               <button
                                 type="button"
                                 onClick={() => setNoodleTurkeyCubesCount(noodleTurkeyCubesCount + 1)}
-                                className="p-1 hover:bg-gray-100 rounded text-gray-700"
+                                className="p-1 hover:bg-gray-100 rounded text-gray-700 cursor-pointer"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -652,7 +855,6 @@ export function WaitlistCountdownSection() {
                           <span className="text-[10px] font-black text-amber-700">Price: ₦{getParfaitPrice().toLocaleString()}</span>
                         </div>
 
-                        {/* Parfait category tabs */}
                         <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
                           {[
                             'Classic Parfait',
@@ -676,7 +878,6 @@ export function WaitlistCountdownSection() {
                           ))}
                         </div>
 
-                        {/* Category specific sub-controls */}
                         {parfaitCategory !== 'Mini Cakeloaf' ? (
                           <div className="space-y-1.5">
                             <span className="text-[10px] text-gray-500 block">
@@ -807,7 +1008,7 @@ export function WaitlistCountdownSection() {
                         type="text"
                         value={couponCode}
                         onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                        placeholder="e.g. DEECHOI15"
+                        placeholder="Enter VIP voucher code"
                         className="bg-[#041a11] border-emerald-700/50 text-white font-mono font-bold text-xs uppercase py-2"
                       />
                       <Button
@@ -849,7 +1050,7 @@ export function WaitlistCountdownSection() {
                     {submitting ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Securing Your Spot...</span>
+                        <span>Verifying VIP Pass...</span>
                       </>
                     ) : (
                       <>

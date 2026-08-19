@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,8 +19,10 @@ import {
   Wallet,
   X,
   FileText,
-  Clock,
-  ExternalLink
+  ExternalLink,
+  Sparkles,
+  Layers,
+  Sparkle
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -57,12 +59,26 @@ export default function AdminMessagesPage() {
   const [checkingPaymentId, setCheckingPaymentId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  // Payment Request Modal Dialog State
+  // Advanced Payment Request Form State
   const [showPaymentRequestPrompt, setShowPaymentRequestPrompt] = useState(false)
-  const [paymentAmountInput, setPaymentAmountInput] = useState('25000')
-  const [paymentNoteInput, setPaymentNoteInput] = useState('Custom Cake / Catering Order Payment')
+  const [itemName, setItemName] = useState('Custom Celebration Cake')
+  const [categoryType, setCategoryType] = useState('Cakes')
+  const [itemSize, setItemSize] = useState('7" (2-Layer Tier)')
+  const [flavorMix, setFlavorMix] = useState('Red Velvet & Whipped Vanilla')
+  const [paymentAmountInput, setPaymentAmountInput] = useState('35000')
+  const [deliveryOption, setDeliveryOption] = useState('Doorstep Delivery (Port Harcourt)')
+  const [paymentNoteInput, setPaymentNoteInput] = useState('50% Upfront Commitment Deposit')
 
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const typingTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const channelRef = useRef<any>(null)
   const supabase = createClient()
+
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }, 80)
+  }
 
   const selectThread = useCallback(async (id: string) => {
     if (!id) return
@@ -78,6 +94,7 @@ export default function AdminMessagesPage() {
 
       if (error) throw error
       setActiveMessages((data || []) as MessageItem[])
+      scrollToBottom()
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load conversation'
       console.error('Error loading messages:', message)
@@ -116,12 +133,15 @@ export default function AdminMessagesPage() {
     fetchThreads()
   }, [fetchThreads])
 
-  // Real-time listener for incoming customer messages and receipts
+  // Real-time listener for incoming customer messages & Typing Broadcasting
   useEffect(() => {
     if (!activeThreadId) return
 
-    const channel = supabase
-      .channel(`admin_thread_${activeThreadId}`)
+    const channel = supabase.channel(`inquiry_chat_${activeThreadId}`, {
+      config: { broadcast: { self: true } },
+    })
+
+    channel
       .on(
         'postgres_changes',
         {
@@ -130,44 +150,154 @@ export default function AdminMessagesPage() {
           table: 'inquiry_messages',
           filter: `inquiry_id=eq.${activeThreadId}`,
         },
-        () => {
-          selectThread(activeThreadId)
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newMsg = payload.new as MessageItem
+            setActiveMessages((prev) => {
+              const withoutOptimistic = prev.filter(
+                (m) => !(m.id.startsWith('temp-') && m.message === newMsg.message)
+              )
+              if (withoutOptimistic.some((m) => m.id === newMsg.id)) return withoutOptimistic
+              return [...withoutOptimistic, newMsg]
+            })
+            scrollToBottom()
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedMsg = payload.new as MessageItem
+            setActiveMessages((prev) =>
+              prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m))
+            )
+          }
         }
       )
+      .on('broadcast', { event: 'new_chat_message' }, (payload) => {
+        const incomingMsg = payload.payload as MessageItem
+        if (incomingMsg && incomingMsg.inquiry_id === activeThreadId) {
+          setActiveMessages((prev) => {
+            if (prev.some((m) => m.id === incomingMsg.id)) return prev
+            return [...prev, incomingMsg]
+          })
+          scrollToBottom()
+        }
+      })
       .subscribe()
+
+    channelRef.current = channel
 
     return () => {
       supabase.removeChannel(channel)
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
     }
   }, [activeThreadId, supabase, selectThread])
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setReplyText(e.target.value)
+
+    if (!channelRef.current) return
+
+    channelRef.current.send({
+      type: 'broadcast',
+      event: 'admin_typing',
+      payload: { isTyping: true, sender: 'admin' },
+    })
+
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+    typingTimerRef.current = setTimeout(() => {
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'admin_typing',
+        payload: { isTyping: false, sender: 'admin' },
+      })
+    }, 2000)
+  }
 
   const handleSendReply = async (type: 'text' | 'payment_request' = 'text', customMetadata: any = null) => {
     if (type === 'text' && !replyText.trim()) return
     if (!activeThreadId) return
 
-    const currentThread = threads.find(t => t.id === activeThreadId)
+    const currentThread = threads.find((t) => t.id === activeThreadId)
     setErrorMessage(null)
+
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'admin_typing',
+      payload: { isTyping: false, sender: 'admin' },
+    })
+
+    const paymentReference = `DE-${Date.now().toString().slice(-6)}`
+    
+    // Construct rich checkout query parameters
+    const checkoutParams = new URLSearchParams({
+      amount: String(paymentAmountInput || '0'),
+      ref: paymentReference,
+      inquiryId: String(activeThreadId),
+      item_name: itemName.trim() || 'Custom Kitchen Order',
+      size: itemSize.trim(),
+      flavor: flavorMix.trim(),
+      category: categoryType.trim(),
+      delivery: deliveryOption.trim(),
+      note: paymentNoteInput.trim(),
+    })
+
+    const dynamicCheckoutUrl = `/checkout?${checkoutParams.toString()}`
+
+    const metadataPayload = customMetadata || (type === 'payment_request' ? {
+      amount: Number(paymentAmountInput) || 0,
+      item_name: itemName.trim() || 'Custom Order',
+      category: categoryType.trim(),
+      size: itemSize.trim(),
+      flavor: flavorMix.trim(),
+      delivery_mode: deliveryOption.trim(),
+      note: paymentNoteInput.trim(),
+      status: 'pending',
+      reference: paymentReference,
+      payment_url: dynamicCheckoutUrl,
+      created_at: new Date().toISOString()
+    } : null)
+
+    const textPayload = type === 'payment_request' 
+      ? `[PAYMENT_REQUEST:₦${Number(paymentAmountInput).toLocaleString()}] - ${itemName.trim()} (${itemSize.trim()})` 
+      : replyText.trim()
+
+    const tempId = `temp-${Date.now()}`
+    const optimisticMessage: MessageItem = {
+      id: tempId,
+      inquiry_id: activeThreadId,
+      sender_type: 'admin',
+      sender_name: 'De-echoi Support',
+      message: textPayload,
+      type,
+      metadata: metadataPayload,
+      created_at: new Date().toISOString(),
+    }
+
+    setActiveMessages((prev) => [...prev, optimisticMessage])
+    scrollToBottom()
+
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'new_chat_message',
+        payload: optimisticMessage,
+      })
+    }
+
+    setReplyText('')
+    setShowPaymentRequestPrompt(false)
 
     try {
       setSending(true)
 
-      // Providing a valid string token so existing backend route validations pass without error
-      const textPayload = type === 'payment_request' 
-        ? `[PAYMENT_REQUEST:₦${Number(paymentAmountInput).toLocaleString()}]` 
-        : replyText.trim()
-
       const payload = {
         inquiryId: String(activeThreadId).trim(),
+        message: textPayload,
         replyMessage: textPayload,
+        to: currentThread?.email ? String(currentThread.email).trim().toLowerCase() : '',
         customerEmail: currentThread?.email ? String(currentThread.email).trim().toLowerCase() : '',
         customerName: currentThread?.name ? String(currentThread.name).trim() : 'Customer',
+        senderName: 'De-echoi Support',
         type,
-        metadata: customMetadata || (type === 'payment_request' ? {
-          amount: Number(paymentAmountInput) || 0,
-          note: paymentNoteInput.trim() || 'Custom Order Payment',
-          status: 'pending',
-          created_at: new Date().toISOString()
-        } : null)
+        metadata: metadataPayload,
       }
 
       const res = await fetch('/api/admin/messages/reply', {
@@ -184,10 +314,11 @@ export default function AdminMessagesPage() {
         throw new Error(data.error || 'Failed to dispatch reply')
       }
 
-      setReplyText('')
-      setShowPaymentRequestPrompt(false)
-      await selectThread(activeThreadId)
-      fetchThreads()
+      if (data.data?.id) {
+        setActiveMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? (data.data as MessageItem) : m))
+        )
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error sending reply'
       console.error('Error sending reply:', message)
@@ -197,7 +328,6 @@ export default function AdminMessagesPage() {
     }
   }
 
-  // Admin checks if customer has paid/submitted
   const handleCheckCustomerPayment = async (messageId: string) => {
     try {
       setCheckingPaymentId(messageId)
@@ -209,7 +339,7 @@ export default function AdminMessagesPage() {
 
       if (error) throw error
 
-      setActiveMessages(prev => prev.map(m => m.id === messageId ? data : m))
+      setActiveMessages((prev) => prev.map((m) => (m.id === messageId ? data : m)))
     } catch (err: any) {
       alert(err.message || 'Failed to check status')
     } finally {
@@ -217,14 +347,13 @@ export default function AdminMessagesPage() {
     }
   }
 
-  // Admin confirmation trigger
   const handleConfirmCustomerPayment = async (msg: MessageItem) => {
     try {
       setSending(true)
       const updatedMetadata = {
         ...(msg.metadata || {}),
         status: 'confirmed',
-        confirmed_at: new Date().toISOString()
+        confirmed_at: new Date().toISOString(),
       }
 
       const { error } = await supabase
@@ -234,14 +363,21 @@ export default function AdminMessagesPage() {
 
       if (error) throw error
 
-      // Post formal confirmation in chat stream
-      await supabase.from('inquiry_messages').insert({
+      const { data: newMsg } = await supabase.from('inquiry_messages').insert({
         inquiry_id: activeThreadId,
         sender_type: 'admin',
         sender_name: 'De-echoi Support',
-        message: `✅ Payment of ₦${Number(msg.metadata?.amount || 0).toLocaleString()} has been confirmed! Your order is approved.`,
-        type: 'text'
-      })
+        message: `✅ Payment of ₦${Number(msg.metadata?.amount || 0).toLocaleString()} has been confirmed! Your order is scheduled with the kitchen.`,
+        type: 'text',
+      }).select('*').single()
+
+      if (channelRef.current && newMsg) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'new_chat_message',
+          payload: newMsg,
+        })
+      }
 
       await selectThread(activeThreadId!)
     } catch (err: any) {
@@ -265,11 +401,10 @@ export default function AdminMessagesPage() {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
-  const activeThread = threads.find(t => t.id === activeThreadId)
+  const activeThread = threads.find((t) => t.id === activeThreadId)
 
   return (
     <div className="min-h-screen bg-[#0F1419] text-white font-sans flex flex-col">
-      {/* Header */}
       <header className="h-20 bg-gradient-to-r from-[#1a1f2e] to-[#131821] border-b border-[#EAA823]/20 px-4 md:px-8 flex items-center justify-between shadow-lg sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <Link href="/admin/dashboard">
@@ -282,18 +417,24 @@ export default function AdminMessagesPage() {
               <MessageSquare className="w-5 h-5 text-[#EAA823]" />
               <span>Customer Conversations</span>
             </h1>
-            <p className="text-xs text-gray-400">Two-way messaging with in-chat dynamic payment buttons</p>
+            <p className="text-xs text-gray-400">Custom Payment Invoicing &amp; Two-Way Instant Chat</p>
           </div>
         </div>
 
-        <Link href="/admin/dashboard">
-          <Button className="bg-[#EAA823] hover:bg-white text-[#0A2E1D] text-xs font-black rounded-xl cursor-pointer">
-            Dashboard
-          </Button>
-        </Link>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs bg-emerald-950/60 border border-emerald-500/30 px-3 py-1.5 rounded-full text-emerald-300">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Instant Real-Time Reflection Active</span>
+          </div>
+
+          <Link href="/admin/dashboard">
+            <Button className="bg-[#EAA823] hover:bg-white text-[#0A2E1D] text-xs font-black rounded-xl cursor-pointer shadow-md">
+              Dashboard
+            </Button>
+          </Link>
+        </div>
       </header>
 
-      {/* Messenger Body */}
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
         
         {/* Left: Thread List */}
@@ -356,7 +497,7 @@ export default function AdminMessagesPage() {
                     className="bg-amber-500 hover:bg-amber-400 text-[#0A2E1D] font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
                   >
                     <Wallet className="w-3.5 h-3.5" />
-                    <span>Request Payment</span>
+                    <span>Request Custom Payment</span>
                   </Button>
 
                   <button
@@ -384,35 +525,39 @@ export default function AdminMessagesPage() {
                 ) : (
                   activeMessages.map((m) => {
                     const isAdmin = m.sender_type === 'admin'
-                    const isPayment = m.type === 'payment_request' || Boolean(m.metadata?.amount)
-                    const paymentStatus = m.metadata?.status || 'pending'
-                    const requestedAmount = Number(m.metadata?.amount || 0)
+                    const rawMeta = typeof m.metadata === 'string' ? JSON.parse(m.metadata || '{}') : (m.metadata || {})
+                    const isPayment = m.type === 'payment_request' || Boolean(rawMeta?.amount) || (m.message && m.message.includes('[PAYMENT_REQUEST:'))
+                    const paymentStatus = rawMeta?.status || 'pending'
+                    const requestedAmount = Number(rawMeta?.amount || 0)
                     const hasCustomMessage = Boolean(m.message && !m.message.startsWith('[PAYMENT_REQUEST:'))
 
                     return (
                       <div key={m.id} className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}>
                         <span className="text-[10px] text-gray-400 mb-1 px-1">{m.sender_name}</span>
                         
-                        <div className={`max-w-[85%] rounded-2xl text-xs sm:text-sm leading-relaxed ${
+                        <div className={`max-w-[88%] rounded-2xl text-xs sm:text-sm leading-relaxed ${
                           isAdmin
                             ? 'bg-[#12422C] text-white border border-[#EAA823]/30 rounded-tr-none'
                             : 'bg-[#131821] text-gray-200 border border-white/10 rounded-tl-none'
-                        } ${isPayment ? 'p-3' : 'p-4'}`}>
+                        } ${isPayment ? 'p-4' : 'p-4'}`}>
                           
-                          {/* Text bubble only shown for real messages, suppressing token markers */}
                           {hasCustomMessage && <p className="mb-2">{m.message}</p>}
 
-                          {/* Dynamic In-Chat Payment Action Card */}
+                          {/* Dynamic Payment Card in Admin Stream */}
                           {isPayment && (
-                            <div className="bg-black/50 rounded-xl p-3.5 border border-amber-400/40 space-y-3 w-full min-w-[260px] sm:min-w-[320px]">
-                              
+                            <div className="bg-black/60 rounded-2xl p-4 border border-amber-400/50 space-y-3 w-full min-w-[280px] sm:min-w-[340px]">
                               <div className="flex items-center justify-between text-xs pb-2 border-b border-white/10">
-                                <span className="text-amber-400 font-black flex items-center gap-1.5">
-                                  <CreditCard className="w-4 h-4" />
-                                  ₦{requestedAmount.toLocaleString()}
-                                </span>
+                                <div>
+                                  <span className="text-amber-400 font-black text-base flex items-center gap-1.5">
+                                    <CreditCard className="w-4 h-4" />
+                                    ₦{requestedAmount.toLocaleString()}
+                                  </span>
+                                  <p className="text-[11px] text-white font-bold mt-0.5">
+                                    {rawMeta?.item_name || 'Custom Order'}
+                                  </p>
+                                </div>
 
-                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
                                   paymentStatus === 'confirmed'
                                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                                     : paymentStatus === 'submitted'
@@ -423,21 +568,39 @@ export default function AdminMessagesPage() {
                                 </span>
                               </div>
 
-                              {m.metadata?.note && (
+                              {/* Spec Chips */}
+                              <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-white/5 p-2 rounded-xl border border-white/10">
+                                <div>
+                                  <span className="text-gray-400 block">Size / Tier:</span>
+                                  <strong className="text-white">{rawMeta?.size || 'Standard Tier'}</strong>
+                                </div>
+                                <div>
+                                  <span className="text-gray-400 block">Flavor / Style:</span>
+                                  <strong className="text-white">{rawMeta?.flavor || 'Custom Recipe'}</strong>
+                                </div>
+                                {rawMeta?.delivery_mode && (
+                                  <div className="col-span-2 pt-1 border-t border-white/5">
+                                    <span className="text-gray-400 block">Fulfillment:</span>
+                                    <strong className="text-amber-300">{rawMeta.delivery_mode}</strong>
+                                  </div>
+                                )}
+                              </div>
+
+                              {rawMeta?.note && (
                                 <p className="text-[11px] text-gray-300 italic">
-                                  &ldquo;{m.metadata.note}&rdquo;
+                                  &ldquo;{rawMeta.note}&rdquo;
                                 </p>
                               )}
 
-                              {m.metadata?.reference && (
+                              {rawMeta?.reference && (
                                 <p className="text-[11px] text-emerald-300 font-mono bg-white/5 p-1.5 rounded-md">
-                                  Receipt Ref: #{m.metadata.reference}
+                                  Invoice Ref: #{rawMeta.reference}
                                 </p>
                               )}
 
-                              {m.metadata?.receipt_url && (
+                              {rawMeta?.receipt_url && (
                                 <a
-                                  href={m.metadata.receipt_url}
+                                  href={rawMeta.receipt_url}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1.5 text-[11px] text-amber-300 hover:underline bg-white/5 px-2.5 py-1.5 rounded-lg border border-amber-400/20"
@@ -448,7 +611,7 @@ export default function AdminMessagesPage() {
                                 </a>
                               )}
 
-                              {/* State 1: Awaiting Customer Payment -> Check If Paid Button */}
+                              {/* State 1: Awaiting Customer Payment */}
                               {paymentStatus === 'pending' && (
                                 <div className="space-y-2 pt-1">
                                   <Button
@@ -465,7 +628,7 @@ export default function AdminMessagesPage() {
                                 </div>
                               )}
 
-                              {/* State 2: Customer Submitted Proof -> Confirm Payment Button */}
+                              {/* State 2: Customer Submitted Proof */}
                               {paymentStatus === 'submitted' && (
                                 <Button
                                   type="button"
@@ -482,7 +645,7 @@ export default function AdminMessagesPage() {
                               {paymentStatus === 'confirmed' && (
                                 <div className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-bold bg-emerald-950/40 p-2 rounded-lg border border-emerald-500/20">
                                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                                  <span>Payment Verified & Approved</span>
+                                  <span>Payment Verified &amp; Order Approved</span>
                                 </div>
                               )}
 
@@ -497,22 +660,23 @@ export default function AdminMessagesPage() {
                     )
                   })
                 )}
+                <div ref={messagesEndRef} />
               </div>
 
-              {/* Reply Input Box */}
+              {/* Reply Input Box with Realtime Typing Sync */}
               <div className="pt-4 border-t border-white/10 flex gap-2">
                 <input
                   type="text"
                   placeholder="Type a response... (Synced to customer dashboard & email)"
                   value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
+                  onChange={handleTextChange}
                   onKeyDown={(e) => e.key === 'Enter' && !sending && handleSendReply('text')}
                   className="flex-1 bg-[#131821] border border-white/10 text-white text-xs sm:text-sm px-4 py-3 rounded-2xl outline-none focus:border-[#EAA823]"
                 />
                 <Button
                   onClick={() => handleSendReply('text')}
                   disabled={sending || !replyText.trim()}
-                  className="bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-extrabold px-6 py-3 rounded-2xl text-xs gap-1.5 shadow-md cursor-pointer"
+                  className="bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-extrabold px-6 py-3 rounded-2xl text-xs gap-1.5 shadow-md cursor-pointer transition"
                 >
                   {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   <span>Reply</span>
@@ -528,10 +692,10 @@ export default function AdminMessagesPage() {
 
       </div>
 
-      {/* Admin Payment Request Generator Modal */}
+      {/* Advanced Custom Payment Invoicing Modal */}
       {showPaymentRequestPrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-[#1a1f2e] border border-[#EAA823]/30 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4 relative text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+          <div className="bg-[#1a1f2e] border border-[#EAA823]/40 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 relative text-white max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowPaymentRequestPrompt(false)}
               className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-white cursor-pointer"
@@ -539,41 +703,107 @@ export default function AdminMessagesPage() {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-              <Wallet className="w-4 h-4" />
-              <span>Create Customer Payment Request</span>
+            <div className="flex items-center gap-2 text-amber-400 font-black text-sm pb-2 border-b border-white/10">
+              <Wallet className="w-4 h-4 text-[#EAA823]" />
+              <span>Generate Customer Payment Request</span>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <div className="space-y-3.5 text-xs">
+              {/* Product Type & Item Name */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-gray-400 mb-1">Item Category</label>
+                  <select
+                    value={categoryType}
+                    onChange={(e) => setCategoryType(e.target.value)}
+                    className="w-full bg-[#131821] border border-white/10 text-white text-xs p-2.5 rounded-xl outline-none"
+                  >
+                    <option value="Cakes">Celebration Cakes</option>
+                    <option value="Meals">Kitchen Meals &amp; Soups</option>
+                    <option value="Shawarma">Shawarma &amp; Fast Food</option>
+                    <option value="Academy">Culinary Academy</option>
+                    <option value="Catering">Event Catering Pack</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-gray-400 mb-1">Product / Order Title</label>
+                  <Input
+                    type="text"
+                    value={itemName}
+                    onChange={(e) => setItemName(e.target.value)}
+                    placeholder="e.g. 2-Tier Birthday Cake"
+                    className="bg-[#131821] border-white/10 text-white text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Size & Flavor / Spec Customization */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-gray-400 mb-1">Size / Tier Dimension</label>
+                  <Input
+                    type="text"
+                    value={itemSize}
+                    onChange={(e) => setItemSize(e.target.value)}
+                    placeholder="e.g. 6-inch & 8-inch Tier, Jumbo Pack"
+                    className="bg-[#131821] border-white/10 text-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-400 mb-1">Flavor / Mix Recipe</label>
+                  <Input
+                    type="text"
+                    value={flavorMix}
+                    onChange={(e) => setFlavorMix(e.target.value)}
+                    placeholder="e.g. Red Velvet & Chocolate Whipped"
+                    className="bg-[#131821] border-white/10 text-white text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Delivery / Fulfillment Mode */}
               <div>
-                <label className="block text-gray-400 mb-1">Amount (₦ Naira)</label>
+                <label className="block text-gray-400 mb-1">Delivery / Pickup Location</label>
                 <Input
-                  type="number"
-                  value={paymentAmountInput}
-                  onChange={(e) => setPaymentAmountInput(e.target.value)}
-                  placeholder="e.g. 25000"
-                  className="bg-[#131821] border-white/10 text-white font-bold text-sm"
+                  type="text"
+                  value={deliveryOption}
+                  onChange={(e) => setDeliveryOption(e.target.value)}
+                  placeholder="e.g. Doorstep Delivery to Woji, PH"
+                  className="bg-[#131821] border-white/10 text-white text-xs"
                 />
               </div>
 
-              <div>
-                <label className="block text-gray-400 mb-1">Order Description / Note</label>
-                <Input
-                  type="text"
-                  value={paymentNoteInput}
-                  onChange={(e) => setPaymentNoteInput(e.target.value)}
-                  placeholder="e.g. Custom 2-Tier Celebration Cake Deposit"
-                  className="bg-[#131821] border-white/10 text-white"
-                />
+              {/* Amount & Description Note */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-amber-400 font-bold mb-1">Amount to Charge (₦)</label>
+                  <Input
+                    type="number"
+                    value={paymentAmountInput}
+                    onChange={(e) => setPaymentAmountInput(e.target.value)}
+                    placeholder="e.g. 35000"
+                    className="bg-[#131821] border-amber-400/40 text-amber-300 font-black text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-400 mb-1">Payment Type / Note</label>
+                  <Input
+                    type="text"
+                    value={paymentNoteInput}
+                    onChange={(e) => setPaymentNoteInput(e.target.value)}
+                    placeholder="e.g. 50% Deposit, Full Payment"
+                    className="bg-[#131821] border-white/10 text-white text-xs"
+                  />
+                </div>
               </div>
             </div>
 
             <Button
               onClick={() => handleSendReply('payment_request')}
               disabled={sending || !paymentAmountInput}
-              className="w-full bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-black text-xs py-3 rounded-xl cursor-pointer"
+              className="w-full bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-black text-xs py-3.5 rounded-xl cursor-pointer shadow-lg mt-2 transition"
             >
-              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send Payment Request to Customer'}
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send Invoice & Payment Card to Customer'}
             </Button>
           </div>
         </div>

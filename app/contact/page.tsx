@@ -61,23 +61,40 @@ export default function ContactPage() {
     try {
       setSubmitting(true)
 
-      const res = await fetch('/api/contact/message', {
+      // Post to primary contact endpoint
+      let res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
           email,
           phone,
+          subject: 'Support Message via Contact Page',
           message,
         }),
       })
+
+      // Fallback to /api/contact/message if /api/contact is unavailable
+      if (!res.ok && res.status === 404) {
+        res = await fetch('/api/contact/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            email,
+            phone,
+            subject: 'Support Message via Contact Page',
+            message,
+          }),
+        })
+      }
 
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data.error || 'Failed to submit message')
       }
 
-      // Persist customer session
+      // Persist customer session & conversation inquiry thread
       try {
         const customerSession = {
           name,
@@ -98,11 +115,15 @@ export default function ContactPage() {
         console.warn('Storage sync warning:', err)
       }
 
-      setAutoResponseReceived(data.autoReply || 'Thank you for reaching out! We will contact you shortly.')
+      setAutoResponseReceived(
+        data.autoReply || 
+        'Thank you for reaching out! We have received your inquiry and our kitchen support team will get back to you shortly.'
+      )
       setFormData(prev => ({ ...prev, message: '' }))
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to send message. Please reach us via WhatsApp.'
       console.error('Error sending message:', err)
-      alert(err.message || 'Failed to send message. Please reach us via WhatsApp.')
+      alert(errorMsg)
     } finally {
       setSubmitting(false)
     }
@@ -141,7 +162,7 @@ export default function ContactPage() {
             Get in Touch with DEECHOI
           </h1>
           <p className="text-xs sm:text-sm text-emerald-100/80 max-w-lg mx-auto">
-            Questions about your order, custom celebration cakes, or special event catering? Reach out directly.
+            Questions about your order, custom celebration cakes, or culinary training? Reach out directly.
           </p>
         </div>
 
@@ -188,7 +209,7 @@ export default function ContactPage() {
                 </a>
 
                 <a
-                  href="mailto:deechoi01@gmail.com"
+                  href="mailto:deechoion@gmail.com"
                   className="flex items-start gap-3.5 p-3 rounded-2xl bg-[#FDFBF7] hover:bg-blue-50 transition border border-gray-100 group"
                 >
                   <div className="w-9 h-9 rounded-xl bg-[#0A2E1D] text-amber-400 flex items-center justify-center flex-shrink-0">
@@ -197,7 +218,7 @@ export default function ContactPage() {
                   <div>
                     <span className="text-gray-400 font-medium block">Email Us</span>
                     <strong className="text-xs text-[#0A2E1D] group-hover:text-blue-700 transition">
-                      deechoi01@gmail.com
+                      deechoion@gmail.com
                     </strong>
                   </div>
                 </a>
@@ -254,7 +275,7 @@ export default function ContactPage() {
                   <div className="bg-[#072d1d] text-white p-6 rounded-3xl space-y-2 shadow-md border border-amber-400/30">
                     <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
                       <Sparkles className="w-4 h-4" />
-                      <span>Instant AI Response:</span>
+                      <span>Instant Response:</span>
                     </div>
                     <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
                       {autoResponseReceived}
@@ -263,14 +284,14 @@ export default function ContactPage() {
 
                   <div className="flex gap-3">
                     <Link href="/my-messages" className="flex-1">
-                      <Button className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold py-5 rounded-2xl text-xs">
+                      <Button className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold py-5 rounded-2xl text-xs cursor-pointer">
                         Open Conversation Hub
                       </Button>
                     </Link>
                     <Button
                       onClick={() => setAutoResponseReceived(null)}
                       variant="outline"
-                      className="text-xs font-bold rounded-2xl py-5 border-gray-300"
+                      className="text-xs font-bold rounded-2xl py-5 border-gray-300 cursor-pointer"
                     >
                       Send Another
                     </Button>
@@ -330,7 +351,7 @@ export default function ContactPage() {
                   <Button
                     type="submit"
                     disabled={submitting}
-                    className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-extrabold py-6 rounded-2xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                    className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-extrabold py-6 rounded-2xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {submitting ? (
                       <>

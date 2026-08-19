@@ -1,89 +1,124 @@
-// app/api/waitlist/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/client'
-import { sendWaitlistConfirmationEmail } from '@/lib/email'
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { sendWaitlistConfirmationEmail } from '@/lib/email/send-waitlist-email'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(req: NextRequest) {
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false }
+  })
+}
+
+function generateUniquePromoCode(name: string): string {
+  const cleanPrefix = name
+    .trim()
+    .split(' ')[0]
+    .replace(/[^a-zA-Z]/g, '')
+    .toUpperCase()
+    .slice(0, 4) || 'DE'
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000)
+  return `${cleanPrefix}-${randomSuffix}-VIP`
+}
+
+export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { name, email, phone, favoriteDish, selectedItems = [], wantsTraining = false } = body
+    const { name, email, phone, favoriteDish, selectedItems, wantsTraining } = body
 
     if (!name?.trim() || !email?.trim() || !phone?.trim()) {
-      return NextResponse.json(
-        { error: 'Name, email, and phone number are required.' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Name, email, and phone number are required.' }, { status: 400 })
     }
 
-    const cleanEmail = email.trim().toLowerCase()
+    const supabase = getSupabaseClient()
     const cleanName = name.trim()
+    const cleanEmail = email.trim().toLowerCase()
     const cleanPhone = phone.trim()
-    const cleanDish = (favoriteDish || 'General Kitchen Menu & Celebration Cakes').trim()
 
-    const supabase = createClient()
-
-    // 1. Column-Safe Insert / Upsert into 'waitlist' or 'customer_inquiries'
-    const recordPayload: Record<string, any> = {
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanPhone,
-      favorite_dish: cleanDish,
-      status: 'vip_registered',
-      created_at: new Date().toISOString(),
-    }
-
-    // Try inserting into waitlist table
-    const { data: waitlistRecord, error: insertError } = await supabase
+    // 1. DUAL CHECK: Check if user exists by either EMAIL OR PHONE NUMBER
+    const { data: existingUsers } = await supabase
       .from('waitlist')
-      .upsert(recordPayload, { onConflict: 'email' })
       .select('*')
-      .maybeSingle()
+      .or(`email.eq.${cleanEmail},phone.eq.${cleanPhone}`)
+      .limit(1)
 
-    // Fallback if 'waitlist' table does not exist: save into customer_inquiries
-    if (insertError) {
-      console.warn('[Waitlist DB Warning]:', insertError.message)
-      await supabase
-        .from('customer_inquiries')
-        .insert({
-          name: cleanName,
-          email: cleanEmail,
-          phone: cleanPhone,
-          category: 'VIP Waitlist & Training',
-          status: 'vip_waitlist',
-          message: `VIP Waitlist Registration: ${cleanDish} | Wants Training: ${wantsTraining ? 'Yes' : 'No'}`,
-          created_at: new Date().toISOString(),
-          last_message_at: new Date().toISOString(),
+    const existingUser = existingUsers && existingUsers.length > 0 ? existingUsers[0] : null
+
+    if (existingUser) {
+      // Extract original promo code
+      let existingPromo = existingUser.promo_code
+      if (!existingPromo && existingUser.favorite_dish && existingUser.favorite_dish.includes('Code: ')) {
+        existingPromo = existingUser.favorite_dish.split('Code: ')[1]?.trim()
+      }
+      if (!existingPromo) {
+        existingPromo = generateUniquePromoCode(existingUser.name || cleanName)
+      }
+
+      // Re-send verification email silently in the background
+      try {
+        await sendWaitlistConfirmationEmail({
+          toEmail: cleanEmail,
+          customerName: existingUser.name || cleanName,
+          promoCode: existingPromo,
+          favoriteDish: existingUser.favorite_dish || favoriteDish || 'General Kitchen Menu & Cakes',
         })
-        .select()
-        .maybeSingle()
+      } catch (err) {
+        console.warn('[Email Notice]:', err)
+      }
+
+      return NextResponse.json({
+        success: true,
+        alreadyRegistered: true,
+        name: existingUser.name || cleanName,
+        promoCode: existingPromo,
+        favoriteDish: existingUser.favorite_dish || favoriteDish || 'General Kitchen Menu & Cakes',
+        discountPercent: 15,
+        message: `Thank you, you're already a VIP! Forgotten your code? Click preview to view your code.`,
+      })
     }
 
-    // 2. Dispatch Confirmation Email in a safe try-catch so email provider issues never fail the submission
-    let emailSent = false
+    // 2. New User Registration
+    const activePromoCode = generateUniquePromoCode(cleanName)
+
+    const { error: insertError } = await supabase
+      .from('waitlist')
+      .insert({
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        favorite_dish: `${favoriteDish || 'General Kitchen Menu'} | Code: ${activePromoCode}`,
+        created_at: new Date().toISOString(),
+      })
+
+    if (insertError) {
+      console.warn('[Waitlist Insert Warning]:', insertError.message)
+    }
+
+    // 3. Dispatch Automated Confirmation Email
     try {
       await sendWaitlistConfirmationEmail({
-        to: cleanEmail,
+        toEmail: cleanEmail,
         customerName: cleanName,
-        favoriteDish: cleanDish,
-        voucherCode: 'DEECHOI15',
-        discountPercent: '15%',
+        promoCode: activePromoCode,
+        favoriteDish: favoriteDish || 'General Kitchen Menu & Cakes',
       })
-      emailSent = true
     } catch (emailErr) {
-      console.error('[Waitlist Email Error]:', emailErr)
+      console.error('[Email Dispatch Notice]:', emailErr)
     }
 
     return NextResponse.json({
       success: true,
-      emailSent,
-      message: 'Successfully registered for De-echoi Limited VIP Waitlist.',
-      voucherCode: 'DEECHOI15',
+      alreadyRegistered: false,
+      name: cleanName,
+      promoCode: activePromoCode,
+      favoriteDish: favoriteDish || 'General Kitchen Menu & Cakes',
+      discountPercent: 15,
+      message: `Welcome to the VIP list, ${cleanName}! Your unique launch code is ${activePromoCode}.`,
     })
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Internal server error occurred.'
-    console.error('[Waitlist Fatal Route Error]:', err)
+    const errorMsg = err instanceof Error ? err.message : 'Error submitting waitlist'
     return NextResponse.json({ error: errorMsg }, { status: 500 })
   }
 }

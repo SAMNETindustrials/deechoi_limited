@@ -1,137 +1,108 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/client'
+import { createClient } from '@supabase/supabase-js'
 
-export async function POST(request: Request) {
+export const dynamic = 'force-dynamic'
+
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false }
+  })
+}
+
+export async function POST(req: Request) {
   try {
-    const body = await request.json()
-    const { order, isTest, autoDetect, botToken } = body
+    const body = await req.json()
+    const { autoDetect, botToken, isTest, orderData } = body
+    const supabase = getSupabaseClient()
 
-    const supabase = createClient()
-
-    // Auto-detect chat ID feature
+    // 1. Auto-Detect Chat ID by querying getUpdates from Telegram
     if (autoDetect && botToken) {
       const cleanToken = botToken.trim()
-      const updatesRes = await fetch(`https://api.telegram.org/bot${cleanToken}/getUpdates`)
-      const updatesData = await updatesRes.json()
+      const url = `https://api.telegram.org/bot${cleanToken}/getUpdates`
+      const tgRes = await fetch(url)
+      const tgData = await tgRes.json()
 
-      if (!updatesData.ok) {
-        return NextResponse.json({
-          success: false,
-          error: updatesData.description || 'Invalid Bot Token. Check token from @BotFather.',
-        })
-      }
+      if (tgData.ok && tgData.result && tgData.result.length > 0) {
+        const lastMsg = tgData.result[tgData.result.length - 1]
+        const detectedChatId = lastMsg?.message?.chat?.id || lastMsg?.channel_post?.chat?.id
 
-      const results = updatesData.result || []
-      if (results.length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: 'No messages found yet. Please open your bot in Telegram and click START, then try again.',
-        })
-      }
-
-      // Grab the latest sender's chat ID
-      const latestUpdate = results[results.length - 1]
-      const detectedChatId = latestUpdate.message?.chat?.id || latestUpdate.channel_post?.chat?.id
-
-      if (!detectedChatId) {
-        return NextResponse.json({
-          success: false,
-          error: 'Could not extract Chat ID. Please send a message to your bot first.',
-        })
+        if (detectedChatId) {
+          return NextResponse.json({ success: true, detectedChatId: String(detectedChatId) })
+        }
       }
 
       return NextResponse.json({
-        success: true,
-        detectedChatId: String(detectedChatId),
+        success: false,
+        error: 'No recent messages found. Open Telegram, search for your bot, and click START, then try again.',
       })
     }
 
-    // 1. Fetch admin notification settings
-    const { data: settingsRecord } = await supabase
+    // 2. Fetch saved settings
+    const { data: dbSettings } = await supabase
       .from('app_settings')
       .select('value')
       .eq('key', 'notification_settings')
-      .single()
+      .maybeSingle()
 
-    const settings = settingsRecord?.value || {
-      telegram_bot_token: process.env.TELEGRAM_BOT_TOKEN || '',
-      telegram_chat_id: process.env.TELEGRAM_CHAT_ID || '',
-      telegram_enabled: true,
-      admin_email: process.env.ADMIN_NOTIFICATION_EMAIL || 'deechoi01@gmail.com',
-      email_enabled: true,
+    const settings = dbSettings?.value || {}
+    const activeBotToken = settings.telegram_bot_token?.trim() || process.env.TELEGRAM_BOT_TOKEN
+    const activeChatId = settings.telegram_chat_id?.trim() || process.env.TELEGRAM_CHAT_ID
+
+    if (!activeBotToken || !activeChatId) {
+      return NextResponse.json({
+        telegramSent: false,
+        telegramError: 'Bot Token or Chat ID is missing in database settings.',
+      })
     }
 
-    const { telegram_bot_token, telegram_chat_id, telegram_enabled } = settings
-    const cleanToken = String(telegram_bot_token || '').trim()
-    const cleanChatId = String(telegram_chat_id || '').trim()
+    let textToSend = ''
 
-    let telegramSent = false
-    let telegramError = null
-
-    // 2. Format & Send Telegram Alert
-    if (telegram_enabled && cleanToken && cleanChatId) {
-      const itemsList = (order?.items || [])
-        .map((it: any, idx: number) => {
-          const name = it.name || it.product_name || 'Item'
-          const qty = it.quantity || 1
-          const price = Number(it.price || it.unit_price || 0)
-          const options = it.selected_options
-            ? Object.entries(it.selected_options).map(([k, v]) => `${k}: ${v}`).join(', ')
-            : ''
-          return `  ${idx + 1}. *${name}* x${qty} - ₦${(price * qty).toLocaleString()}${options ? `\n     _${options}_` : ''}`
-        })
-        .join('\n')
-
-      const message = isTest
-        ? `🔔 *DEECHOI NOTIFICATION TEST*\n\n✅ Your Telegram notification link is active and working correctly! You will receive instant order alerts directly to this chat.`
-        : `🚨 *NEW ORDER RECEIVED!* 🎂🍲\n\n` +
-          `👤 *Customer:* ${order.customer_name}\n` +
-          `📞 *Phone:* \`${order.customer_phone}\`\n` +
-          `📧 *Email:* ${order.customer_email}\n` +
-          `📍 *Delivery Address:*\n${order.delivery_address}, ${order.delivery_city}\n\n` +
-          `🛒 *Items Ordered:*\n${itemsList || '  (No items parsed)'}\n\n` +
-          `🛵 *Delivery Fee:* ₦${Number(order.delivery_fee || 0).toLocaleString()}\n` +
-          `💰 *Total Amount:* ₦${Number(order.total_amount || 0).toLocaleString()}\n` +
-          `💳 *Payment Method:* ${order.payment_method === 'bank_transfer' ? 'Bank Transfer' : 'Card'}\n` +
-          `🆔 *Order ID:* \`${order.id}\`\n\n` +
-          (order.payment_proof_url ? `📎 [View Payment Proof Receipt](${order.payment_proof_url})\n\n` : '') +
-          `⚡ _Log in to the Admin Dashboard to verify payment and dispatch!_`
-
-      try {
-        const tgRes = await fetch(
-          `https://api.telegram.org/bot${cleanToken}/sendMessage`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: cleanChatId,
-              text: message,
-              parse_mode: 'Markdown',
-              disable_web_page_preview: false,
-            }),
-          }
-        )
-
-        const tgData = await tgRes.json()
-        telegramSent = tgData.ok
-        if (!tgData.ok) {
-          telegramError = tgData.description
-        }
-      } catch (err: any) {
-        telegramError = err.message
-      }
+    if (isTest) {
+      textToSend = `
+🔔 <b>DE-ECHOI TELEGRAM ALERT TEST</b>
+━━━━━━━━━━━━━━━━━━
+✅ Your Telegram bot is active and successfully connected to the De-echoi Storefront!
+⏰ <b>Time:</b> ${new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' })} (WAT)
+━━━━━━━━━━━━━━━━━━
+<i>De-echoi Kitchen System</i>
+`.trim()
+    } else if (orderData) {
+      textToSend = `
+🛍️ <b>NEW STORE ORDER RECEIVED</b>
+━━━━━━━━━━━━━━━━━━
+👤 <b>Customer:</b> ${orderData.customer_name || 'Customer'}
+📱 <b>Phone:</b> ${orderData.customer_phone || 'N/A'}
+💰 <b>Amount:</b> ₦${Number(orderData.total_amount || 0).toLocaleString()}
+📦 <b>Items:</b> ${orderData.items_summary || 'Food Menu Items'}
+━━━━━━━━━━━━━━━━━━
+<i>De-echoi Kitchen Orders</i>
+`.trim()
     }
 
-    return NextResponse.json({
-      success: true,
-      telegramSent,
-      telegramError,
+    const sendRes = await fetch(`https://api.telegram.org/bot${activeBotToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: activeChatId,
+        text: textToSend,
+        parse_mode: 'HTML',
+      }),
     })
-  } catch (error: any) {
-    console.error('Notification dispatch error:', error)
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    )
+
+    const sendData = await sendRes.json()
+
+    if (!sendData.ok) {
+      return NextResponse.json({
+        telegramSent: false,
+        telegramError: sendData.description || 'Failed to deliver message via Telegram.',
+      })
+    }
+
+    return NextResponse.json({ telegramSent: true, success: true })
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Server error'
+    return NextResponse.json({ telegramSent: false, telegramError: errorMsg }, { status: 500 })
   }
 }

@@ -28,7 +28,12 @@ import {
   Sparkles,
   Send,
   Cake,
-  Gift
+  X,
+  Loader2,
+  MessageCircle,
+  ShoppingBag,
+  ArrowUpRight,
+  MapPin
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -198,7 +203,7 @@ const CATEGORIES: CategoryConfig[] = [
   },
   { 
     name: 'Zobo', 
-    icon: <span className="text-xs font-bold">🍝</span>, 
+    icon: <span className="text-xs font-bold">🍷</span>, 
     image: '/zobo.jpeg',
     groups: [
       {
@@ -238,6 +243,16 @@ export default function DesktopHomePage() {
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
 
+  // Mr. Tell AI State
+  const [aiQuery, setAiQuery] = useState('')
+  const [aiSearching, setAiSearching] = useState(false)
+  const [mrTellAnswer, setMrTellAnswer] = useState<{
+    message: string
+    action?: string
+    questionType?: string
+  } | null>(null)
+  const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null)
+
   const [activeHoverCategory, setActiveHoverCategory] = useState<string | null>(null)
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
   const buttonRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -249,6 +264,9 @@ export default function DesktopHomePage() {
 
   useEffect(() => {
     fetchProducts()
+    return () => {
+      if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -269,11 +287,11 @@ export default function DesktopHomePage() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      
+
       const productList = (data || []).filter(
         p => p.category?.toLowerCase() !== 'cakes' && !p.name?.toLowerCase().includes('cake')
       )
-      
+
       setProducts(productList)
       filterData(searchQuery, selectedCategory, productList)
     } catch (error) {
@@ -297,11 +315,80 @@ export default function DesktopHomePage() {
       result = result.filter(
         (product) =>
           product.name.toLowerCase().includes(lowercaseQuery) ||
-          product.description?.toLowerCase().includes(lowercaseQuery)
+          product.description?.toLowerCase().includes(lowercaseQuery) ||
+          product.category?.toLowerCase().includes(lowercaseQuery)
       )
     }
 
     setFilteredProducts(result)
+  }
+
+  // Mr. Tell AI Search Handler
+  const handleAiSmartSearch = async (customPrompt?: string) => {
+    const queryToUse = (typeof customPrompt === 'string' ? customPrompt : aiQuery).trim()
+    if (!queryToUse) return
+
+    if (autoDismissTimerRef.current) {
+      clearTimeout(autoDismissTimerRef.current)
+    }
+
+    try {
+      setAiSearching(true)
+      setMrTellAnswer(null)
+
+      const res = await fetch('/api/ai/store-order-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: queryToUse }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.result) {
+        throw new Error(data.error || 'Unable to retrieve answer from knowledge base.')
+      }
+
+      const result = data.result
+      setMrTellAnswer({
+        message: result.summaryMessage,
+        action: result.action,
+        questionType: result.questionType,
+      })
+
+      setAiQuery('')
+
+      // 20-Second auto dismiss timer
+      autoDismissTimerRef.current = setTimeout(() => {
+        setMrTellAnswer(null)
+      }, 20000)
+
+      // Catalog Filtering
+      if (result.matchedProductIds && result.matchedProductIds.length > 0) {
+        const matched = products.filter((p) => result.matchedProductIds.includes(p.id))
+        if (matched.length > 0) {
+          setFilteredProducts(matched)
+          setSelectedCategory('All')
+        } else {
+          setFilteredProducts(products)
+        }
+      } else if (result.action === 'filter' && result.keywordFilter) {
+        filterData(result.keywordFilter, 'All', products)
+      } else {
+        setFilteredProducts(products)
+      }
+
+      scrollToMenu()
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Could not process query.'
+      setMrTellAnswer({
+        message: `I encountered an issue retrieving the latest information: "${errorMsg}". Please feel free to search our menu items below or chat with us on WhatsApp!`,
+        action: 'general',
+      })
+      setAiQuery('')
+      setFilteredProducts(products)
+      scrollToMenu()
+    } finally {
+      setAiSearching(false)
+    }
   }
 
   const handleSearchChange = (query: string) => {
@@ -366,22 +453,137 @@ export default function DesktopHomePage() {
     }
   }
 
+  const dismissMrTellAnswer = () => {
+    if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current)
+    setMrTellAnswer(null)
+  }
+
   const activeCategoryConfig = CATEGORIES.find((c) => c.name === activeHoverCategory)
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans">
       <StorefrontHeader />
 
-      {/* 1. 10-DAY WAITLIST COUNTDOWN BANNER */}
+      {/* ========================================================================= */}
+      {/* 1. MR. TELL DESKTOP AI CONCIERGE & KNOWLEDGE SEARCH BAR                   */}
+      {/* ========================================================================= */}
+      <section className="bg-gradient-to-r from-[#041a11] via-[#072d1d] to-[#041a11] border-b border-[#EAA823]/30 py-3 text-white relative z-30 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-2.5">
+          
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Title & Badge */}
+            <div className="flex items-center gap-2.5 flex-shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-[#EAA823] text-[#072d1d] flex items-center justify-center font-black shadow-md">
+                <Sparkles className="w-4 h-4 fill-current" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-[#EAA823] uppercase tracking-wider">
+                  Mr. Tell AI Concierge
+                </h4>
+                <p className="text-[10px] text-emerald-200/80">
+                  Ask opening hours, pickup locations, food advice, and dinner ideas
+                </p>
+              </div>
+            </div>
+
+            {/* Smart Search Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                handleAiSmartSearch()
+              }}
+              className="relative flex items-center w-full lg:max-w-xl"
+            >
+              <div className="absolute left-3.5 flex items-center pointer-events-none text-[#EAA823]">
+                {aiSearching ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-[#EAA823]" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+              </div>
+
+              <input
+                type="text"
+                value={aiQuery}
+                onChange={(e) => setAiQuery(e.target.value)}
+                placeholder="Ask Mr. Tell anything (e.g. 'Where is pickup?', 'Best dinner meals?')..."
+                className="w-full bg-[#0a3a26] text-white placeholder-emerald-200/60 text-xs sm:text-sm pl-10 pr-24 py-2.5 rounded-xl border border-emerald-500/30 focus:border-[#EAA823] focus:ring-1 focus:ring-[#EAA823] outline-none shadow-inner transition"
+              />
+
+              <div className="absolute right-1.5 flex items-center gap-1">
+                {aiQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setAiQuery('')}
+                    className="p-1.5 text-gray-400 hover:text-white rounded-full transition cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={aiSearching || !aiQuery.trim()}
+                  className="bg-[#EAA823] hover:bg-white text-[#072d1d] text-xs font-black px-4 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  <span>Ask Mr. Tell</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Quick AI Action Chips */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px] pt-1">
+            <span className="text-[#EAA823] font-bold flex-shrink-0 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              <span>Trending Prompts:</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => handleAiSmartSearch('Where are your pickup locations and delivery points in Port Harcourt?')}
+              className="bg-white/10 hover:bg-white/20 text-emerald-100 px-3 py-1 rounded-full border border-white/10 flex-shrink-0 cursor-pointer whitespace-nowrap transition flex items-center gap-1"
+            >
+              <Truck className="w-3 h-3 text-[#EAA823]" />
+              <span>Pickup &amp; Delivery Locations</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAiSmartSearch('When do you open and close?')}
+              className="bg-white/10 hover:bg-white/20 text-emerald-100 px-3 py-1 rounded-full border border-white/10 flex-shrink-0 cursor-pointer whitespace-nowrap transition flex items-center gap-1"
+            >
+              <Clock className="w-3 h-3 text-[#EAA823]" />
+              <span>Opening Hours</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAiSmartSearch('What is your best meal recommendation for dinner tonight?')}
+              className="bg-white/10 hover:bg-white/20 text-emerald-100 px-3 py-1 rounded-full border border-white/10 flex-shrink-0 cursor-pointer whitespace-nowrap transition"
+            >
+              🍲 Dinner Recommendations
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAiSmartSearch('What are the health benefits of Zobo and ginger?')}
+              className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 px-3 py-1 rounded-full border border-amber-400/30 flex-shrink-0 cursor-pointer whitespace-nowrap transition"
+            >
+              🍷 Health Benefits of Zobo
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+      {/* 2. 10-DAY WAITLIST COUNTDOWN BANNER */}
       <WaitlistCountdownSection />
 
-      {/* 2. Hero Section */}
+      {/* 3. Hero Section */}
       <section className="relative overflow-hidden bg-[#0A2E1D] text-white pt-8 pb-16 lg:pb-24 rounded-b-[40px] md:rounded-b-[60px]">
         <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#EAA823_1px,transparent_1px)] [background-size:16px_16px]" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            
+
             {/* Left Content */}
             <div className="lg:col-span-6 space-y-6">
               <div className="inline-flex items-center gap-2 bg-[#12422C] text-[#EAA823] px-4 py-2 rounded-full border border-[#EAA823]/20 text-sm font-semibold">
@@ -472,7 +674,7 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* 3. Feature Ribbon Bar */}
+      {/* 4. Feature Ribbon Bar */}
       <section className="bg-[#072215] text-white py-4 border-y border-[#EAA823]/20 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-4 text-sm font-medium">
           <div className="flex items-center gap-2 text-[#EAA823]">
@@ -496,11 +698,11 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* 4. Category Navigation Bar */}
+      {/* 5. Category Navigation Bar */}
       <section className="py-6 bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm w-full">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4">
-            
+
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-lg font-extrabold text-[#0A2E1D]">Browse Categories</h3>
@@ -542,8 +744,8 @@ export default function DesktopHomePage() {
                           cat.isCakeRoute 
                             ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
                             : isSelected || isHovered
-                              ? 'bg-[#0A2E1D] text-[#EAA823] border-[#0A2E1D] shadow-md'
-                              : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                            ? 'bg-[#0A2E1D] text-[#EAA823] border-[#0A2E1D] shadow-md'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
                         }`}
                       >
                         {cat.image ? (
@@ -646,17 +848,85 @@ export default function DesktopHomePage() {
         )}
       </section>
 
-      {/* 5. Customer Reviews Section (Desktop Mount) */}
+      {/* 6. Customer Reviews Section */}
       <section className="py-8 bg-[#FDFBF7] border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <CustomerReviewsSection />
         </div>
       </section>
 
-      {/* 6. Food Menu Listing */}
-      <section className="py-16" id="our-menu-section">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 pb-4 border-b border-gray-200">
+      {/* 7. Food Menu Listing & Dynamic Mr. Tell Answer Box */}
+      <section className="py-16 scroll-mt-24" id="our-menu-section">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+
+          {/* DYNAMIC MR. TELL 20-SECOND ANSWER BOX (Desktop) */}
+          {mrTellAnswer && (
+            <div className="relative overflow-hidden bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] text-white p-6 rounded-3xl border-2 border-[#EAA823]/50 shadow-2xl space-y-4 animate-in fade-in slide-in-from-top-3 duration-300">
+              
+              {/* Countdown Expiry Line */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-white/10 overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-[#EAA823] to-amber-300"
+                  style={{ animation: 'shrink 20s linear forwards' }}
+                />
+              </div>
+
+              {/* Header Badge */}
+              <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-[#EAA823] text-[#072d1d] flex items-center justify-center font-black shadow-md">
+                    <Sparkles className="w-4 h-4 fill-current" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-[#EAA823] uppercase tracking-wider">
+                      Mr. Tell&apos;s Response
+                    </h3>
+                    <p className="text-xs text-emerald-200/70">
+                      Live Store Knowledge &bull; Auto-dismisses in 20s
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={dismissMrTellAnswer}
+                  className="p-2 text-gray-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition cursor-pointer"
+                  aria-label="Close answer box"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Message Payload */}
+              <div className="bg-black/30 rounded-2xl p-4 border border-white/10 text-sm text-emerald-50 leading-relaxed whitespace-pre-line font-medium">
+                {mrTellAnswer.message}
+              </div>
+
+              {/* Contextual Action Directives */}
+              {mrTellAnswer.action === 'chat_order' && (
+                <Link href="/my-messages" className="inline-block pt-1">
+                  <Button className="bg-[#EAA823] hover:bg-white text-[#072d1d] font-black text-xs px-6 py-3 rounded-xl flex items-center gap-2 cursor-pointer shadow-md">
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Open Custom Order &amp; Invoice Chat</span>
+                    <ArrowUpRight className="w-4 h-4" />
+                  </Button>
+                </Link>
+              )}
+
+              {mrTellAnswer.action === 'checkout' && (
+                <Link href="/cart" className="inline-block pt-1">
+                  <Button className="bg-[#EAA823] hover:bg-white text-[#072d1d] font-black text-xs px-6 py-3 rounded-xl flex items-center gap-2 cursor-pointer shadow-md">
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>Proceed to Cart &amp; Checkout</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </Link>
+              )}
+            </div>
+          )}
+
+          {/* Food Menu Header */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between pb-4 border-b border-gray-200">
             <div>
               <span className="text-[#EAA823] font-bold text-sm tracking-wider uppercase">Preview Catalog</span>
               <h2 className="text-4xl font-extrabold text-[#0A2E1D] mt-1">
@@ -714,7 +984,7 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* 7. Special Cake Collection Promo Banner */}
+      {/* 8. Special Cake Collection Promo Banner */}
       <section className="py-12 bg-white border-t border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="bg-gradient-to-r from-[#0A2E1D] via-[#12422C] to-[#0A2E1D] rounded-3xl p-8 sm:p-12 text-white border-2 border-[#EAA823]/30 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-8">
@@ -740,54 +1010,6 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* 8. Footer */}
-      <footer className="bg-[#051B10] text-white py-16 border-t border-[#12422C]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-            <div>
-              <h3 className="font-black text-2xl mb-4 text-[#EAA823] tracking-wide">DEECHOI</h3>
-              <p className="text-sm text-gray-400 leading-relaxed">
-                Bringing authentic, fresh, and hygienic culinary delights right to your home with speed and care.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-bold text-lg mb-4 text-white">Quick Links</h4>
-              <ul className="space-y-3 text-sm text-gray-400">
-                <li><Link href="/" className="hover:text-[#EAA823] transition-colors">Home</Link></li>
-                <li><Link href="/cakes" className="text-[#EAA823] font-bold hover:underline transition-colors">Cakes Collection</Link></li>
-                <li><Link href="/about" className="hover:text-[#EAA823] transition-colors">About Us</Link></li>
-                <li><Link href="/contact" className="hover:text-[#EAA823] transition-colors">Contact Us</Link></li>
-                <li><Link href="/services" className="hover:text-[#EAA823] transition-colors">Book Us</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-bold text-lg mb-4 text-white">Contact</h4>
-              <p className="text-sm text-gray-400 mb-2">
-                <a href="mailto:deechoi01@gmail.com" className="hover:text-[#EAA823] transition-colors">
-                  deechoi01@gmail.com
-                </a>
-              </p>
-              <p className="text-sm text-gray-400">
-                <a href="tel:+2347046145982" className="hover:text-[#EAA823] transition-colors">
-                  +234 704 614 5982
-                </a>
-              </p>
-            </div>
-            <div>
-              <h4 className="font-bold text-lg mb-4 text-white">Location</h4>
-              <p className="text-sm text-gray-400 leading-relaxed">
-                Eze Nvuigwe Avenue, Woji<br />
-                Port Harcourt, Rivers State, Nigeria
-              </p>
-            </div>
-          </div>
-
-          <div className="border-t border-white/10 pt-8 text-center text-sm text-gray-500">
-            <p>&copy; 2026 DEECHOI LIMITED. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
-
       {/* Product Detail Modal */}
       {selectedProductId && (
         <ProductDetailModal
@@ -796,6 +1018,18 @@ export default function DesktopHomePage() {
           onClose={() => setShowModal(false)}
         />
       )}
+
+      {/* Auto-dismiss countdown bar keyframes */}
+      <style jsx global>{`
+        @keyframes shrink {
+          from {
+            width: 100%;
+          }
+          to {
+            width: 0%;
+          }
+        }
+      `}</style>
     </div>
   )
 }

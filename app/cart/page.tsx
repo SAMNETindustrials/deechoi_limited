@@ -29,7 +29,7 @@ export default function CartPage() {
         <div className="mb-6 flex items-center justify-between">
           <Link 
             href="/" 
-            className="text-xs sm:text-sm font-bold text-gray-500 hover:text-[#0A2E1D] flex items-center gap-1.5 transition"
+            className="text-xs sm:text-sm font-bold text-gray-500 hover:text-[#0A2E1D] flex items-center gap-1.5 transition active:scale-95"
           >
             <ArrowLeft className="w-4 h-4" />
             Continue Ordering
@@ -37,7 +37,7 @@ export default function CartPage() {
           {items.length > 0 && (
             <button
               onClick={clearCart}
-              className="text-xs text-red-500 font-semibold hover:underline"
+              className="text-xs text-red-500 font-semibold hover:underline cursor-pointer"
             >
               Clear Cart
             </button>
@@ -56,16 +56,16 @@ export default function CartPage() {
             </div>
             <h2 className="text-lg font-bold text-gray-800 mb-1">Your cart is currently empty</h2>
             <p className="text-gray-500 text-xs sm:text-sm mb-6 max-w-xs mx-auto">
-              Explore our freshly baked celebration cakes or delicious hot meals to get started!
+              Explore our freshly baked celebration cakes, parfait treats, and hot meals to get started!
             </p>
             <div className="flex flex-wrap justify-center gap-3">
               <Link href="/cakes">
-                <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs">
+                <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs cursor-pointer">
                   Browse Cakes
                 </Button>
               </Link>
-              <Link href="/">
-                <Button variant="outline" className="border-gray-300 rounded-full px-6 text-xs font-bold">
+              <Link href="/#our-menu-section">
+                <Button variant="outline" className="border-gray-300 rounded-full px-6 text-xs font-bold cursor-pointer">
                   View Food Menu
                 </Button>
               </Link>
@@ -79,7 +79,7 @@ export default function CartPage() {
                 const targetKey: string = String(item.id || item.product_id || '')
                 const unitPrice = item.price ?? item.unit_price ?? item.final_price ?? 0
                 const lineTotal = unitPrice * item.quantity
-                const options = item.selected_options || {}
+                const options = item.selected_options
 
                 return (
                   <div
@@ -87,7 +87,7 @@ export default function CartPage() {
                     className="flex flex-col sm:flex-row gap-4 p-4 sm:p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition"
                   >
                     {/* Item Image */}
-                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 self-center sm:self-start">
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 self-center sm:self-start border border-gray-100">
                       {item.imageUrl ? (
                         <Image
                           src={item.imageUrl}
@@ -97,7 +97,7 @@ export default function CartPage() {
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400">
-                          DEECHOI
+                          DE-ECHOI
                         </div>
                       )}
                     </div>
@@ -112,25 +112,39 @@ export default function CartPage() {
                         ₦{unitPrice.toLocaleString()} each
                       </p>
 
-                      {/* Display Selected Customization Metadata */}
-                      {Object.keys(options).length > 0 && (
-                        <div className="mt-2 text-[11px] bg-gray-50 p-2 rounded-lg border border-gray-100 space-y-0.5">
+                      {/* Display Customization Metadata (Array and Object handling) */}
+                      {Array.isArray(options) && options.length > 0 ? (
+                        <div className="mt-2 text-[11px] bg-[#FDFBF7] p-2.5 rounded-xl border border-gray-100 space-y-1">
+                          {options.map((opt, i) => (
+                            <div key={i} className="flex justify-between sm:justify-start gap-1.5 text-gray-700">
+                              <span className="font-bold text-[#0A2E1D]">{opt.groupName}:</span>
+                              <span>{opt.optionName}</span>
+                              {opt.priceModifier > 0 && (
+                                <span className="text-[10px] text-[#EAA823] font-bold">
+                                  (+₦{opt.priceModifier.toLocaleString()})
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : typeof options === 'object' && options !== null && Object.keys(options).length > 0 ? (
+                        <div className="mt-2 text-[11px] bg-[#FDFBF7] p-2.5 rounded-xl border border-gray-100 space-y-1">
                           {Object.entries(options).map(([k, v]) => (
-                            <div key={k} className="flex justify-between sm:justify-start gap-1.5 text-gray-600">
-                              <span className="font-semibold text-gray-500">{k}:</span>
+                            <div key={k} className="flex justify-between sm:justify-start gap-1.5 text-gray-700">
+                              <span className="font-bold text-[#0A2E1D]">{k}:</span>
                               <span>{String(v)}</span>
                             </div>
                           ))}
                         </div>
-                      )}
+                      ) : null}
                     </div>
 
                     {/* Quantity & Delete Controls */}
                     <div className="flex sm:flex-col items-center justify-between sm:items-end gap-3 pt-2 sm:pt-0 border-t sm:border-0 border-gray-100">
-                      <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-full p-1">
+                      <div className="flex items-center gap-1.5 bg-[#FDFBF7] border border-gray-200 rounded-full p-1 shadow-xs">
                         <button
                           onClick={() => updateQuantity(targetKey, Math.max(1, item.quantity - 1))}
-                          className="p-1 rounded-full hover:bg-white text-gray-600 active:scale-90 transition"
+                          className="p-1 rounded-full hover:bg-white text-gray-600 active:scale-90 transition cursor-pointer"
                           aria-label="Decrease quantity"
                         >
                           <Minus className="w-3.5 h-3.5" />
@@ -140,7 +154,7 @@ export default function CartPage() {
                         </span>
                         <button
                           onClick={() => updateQuantity(targetKey, item.quantity + 1)}
-                          className="p-1 rounded-full hover:bg-white text-gray-600 active:scale-90 transition"
+                          className="p-1 rounded-full hover:bg-white text-gray-600 active:scale-90 transition cursor-pointer"
                           aria-label="Increase quantity"
                         >
                           <Plus className="w-3.5 h-3.5" />
@@ -153,7 +167,7 @@ export default function CartPage() {
                         </span>
                         <button
                           onClick={() => removeItem(targetKey)}
-                          className="text-red-500 hover:text-red-700 p-1.5 rounded-full hover:bg-red-50 transition"
+                          className="text-red-500 hover:text-red-700 p-1.5 rounded-full hover:bg-red-50 transition cursor-pointer"
                           aria-label="Remove item"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -174,7 +188,7 @@ export default function CartPage() {
 
                 <div className="space-y-3 text-xs sm:text-sm">
                   <div className="flex justify-between text-gray-500">
-                    <span>Total Quantity</span>
+                    <span>Total Items</span>
                     <span className="font-bold text-[#0A2E1D]">{itemCount} items</span>
                   </div>
                   <div className="flex justify-between text-gray-500">
@@ -183,7 +197,7 @@ export default function CartPage() {
                   </div>
                   <div className="flex justify-between text-gray-500">
                     <span>Estimated Delivery</span>
-                    <span className="text-green-600 font-semibold">Calculated at Checkout</span>
+                    <span className="text-emerald-700 font-semibold">Calculated at Checkout</span>
                   </div>
                 </div>
 
@@ -195,7 +209,7 @@ export default function CartPage() {
                 </div>
 
                 <Button
-                  className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-extrabold py-6 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                  className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-extrabold py-6 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
                   size="lg"
                   onClick={handleCheckout}
                 >

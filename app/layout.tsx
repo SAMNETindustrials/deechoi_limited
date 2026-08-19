@@ -3,10 +3,18 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { CartProvider } from '@/lib/cart-context'
 import { PWAInstallPrompt } from '@/components/storefront/pwa-install-prompt'
+import { UnifiedFooter } from '@/components/storefront/unified-footer'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const geist = Geist({ 
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+})
+
+const geistMono = Geist_Mono({ 
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+})
 
 export const viewport: Viewport = {
   themeColor: '#072d1d',
@@ -16,8 +24,8 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'DEECHOI LIMITED - Premium Cooked Meals & Snacks',
-  description: 'Order authentic cooked meals and snacks from DEECHOI LIMITED. Fresh, delicious food delivered to your doorstep.',
+  title: 'DEECHOI LIMITED - Premium Cooked Meals, Snacks & Culinary Academy',
+  description: 'Order authentic cooked meals, Shawarma, celebration cakes, and snacks from DEECHOI LIMITED. Fresh, delicious food delivered across Port Harcourt.',
   generator: 'v0.app',
   manifest: '/manifest.json',
   appleWebApp: {
@@ -55,11 +63,19 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/logo.png" />
       </head>
-      <body className="font-sans antialiased">
+      <body className={`${geist.variable} ${geistMono.variable} font-sans antialiased min-h-screen flex flex-col justify-between`}>
         <CartProvider>
-          {children}
+          {/* Main Viewport Content */}
+          <div className="flex-1">
+            {children}
+          </div>
+
+          {/* Unified Desktop Footer + Animated Fluid Mobile Tab Bar with SAMNET Branding */}
+          <UnifiedFooter />
+
           {/* PWA Floating Mini-Icon & Popup Modal */}
           <PWAInstallPrompt />
+          
           {process.env.NODE_ENV === 'production' && <Analytics />}
         </CartProvider>
       </body>

@@ -1,70 +1,73 @@
+// app/api/admin/messages/reply/route.ts
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/client'
+import { createClient } from '@supabase/supabase-js'
 import { sendCustomerMessageEmail } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(request: Request) {
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false },
+  })
+}
+
+export async function POST(req: Request) {
   try {
-    const body = await request.json()
-    const { inquiryId, replyMessage, customerEmail, customerName } = body
+    const body = await req.json()
+    const { inquiryId, to, customerName, message, senderName = 'De-echoi Support' } = body
 
-    if (!inquiryId || !replyMessage) {
-      return NextResponse.json({ error: 'Inquiry ID and message are required' }, { status: 400 })
+    if (!inquiryId || !message?.trim()) {
+      return NextResponse.json({ error: 'Inquiry ID and message are required.' }, { status: 400 })
     }
 
-    const cleanInquiryId = String(inquiryId).trim()
-    const cleanMessage = String(replyMessage).trim()
-    const cleanEmail = customerEmail ? String(customerEmail).trim().toLowerCase() : ''
-    const cleanName = customerName ? String(customerName).trim() : 'Customer'
+    const supabase = getSupabaseClient()
+    const now = new Date().toISOString()
 
-    const supabase = createClient()
+    // 1. Insert message into inquiry_messages
+    const { data: newMsg, error: insertError } = await supabase
+      .from('inquiry_messages')
+      .insert({
+        inquiry_id: inquiryId,
+        sender_type: 'admin',
+        sender_name: senderName,
+        message: message.trim(),
+        type: 'text',
+        created_at: now,
+      })
+      .select('*')
+      .single()
 
-    // 1. Insert admin reply into inquiry_messages
-    const { error: insertErr } = await supabase.from('inquiry_messages').insert({
-      inquiry_id: cleanInquiryId,
-      sender_type: 'admin',
-      sender_name: 'De-echoi Support Team',
-      message: cleanMessage,
-    })
+    if (insertError) throw insertError
 
-    if (insertErr) {
-      console.error('Supabase message insert error:', insertErr)
-      throw new Error(insertErr.message || 'Database rejected message insert')
-    }
+    // 2. Update thread status and timestamp
+    await supabase
+      .from('customer_inquiries')
+      .update({
+        last_message_at: now,
+        status: 'replied',
+      })
+      .eq('id', inquiryId)
 
-    // 2. Update thread status and timestamp (safely)
-    try {
-      await supabase
-        .from('customer_inquiries')
-        .update({
-          last_message_at: new Date().toISOString(),
-          status: 'resolved',
+    // 3. Dispatch Email notification if email exists
+    if (to) {
+      try {
+        await sendCustomerMessageEmail({
+          to,
+          customerName: customerName || 'Customer',
+          message: message.trim(),
+          senderName,
+          inquiryId,
         })
-        .eq('id', cleanInquiryId)
-    } catch (updateErr) {
-      console.warn('Thread update timestamp warning:', updateErr)
+      } catch (mailErr) {
+        console.warn('[Email dispatch notice]:', mailErr)
+      }
     }
 
-    // 3. Dispatch Email to Customer if valid email exists
-    if (cleanEmail && cleanEmail.includes('@')) {
-      sendCustomerMessageEmail({
-        to: cleanEmail,
-        customerName: cleanName,
-        message: cleanMessage,
-        senderName: 'De-echoi Support Team',
-        inquiryId: cleanInquiryId,
-        isAutoReply: false,
-      }).catch((err) => console.warn('Customer reply email background warning:', err))
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Reply recorded and synced successfully.',
-    })
+    return NextResponse.json({ success: true, data: newMsg })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Failed to dispatch reply'
-    console.error('Admin reply API error:', message)
-    return NextResponse.json({ error: message }, { status: 500 })
+    const errorMsg = err instanceof Error ? err.message : 'Server error'
+    return NextResponse.json({ error: errorMsg }, { status: 500 })
   }
 }

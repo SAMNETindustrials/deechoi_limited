@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -11,9 +11,6 @@ import { WaitlistCountdownSection } from '@/components/storefront/waitlist-hero'
 import { 
   ArrowRight, 
   Zap, 
-  ShieldCheck, 
-  Leaf, 
-  Headphones, 
   ChevronRight,
   Utensils,
   Pizza,
@@ -26,7 +23,14 @@ import {
   MessageCircle,
   Instagram,
   Facebook,
-  Phone
+  Phone,
+  Sparkles,
+  Loader2,
+  ShoppingBag,
+  ArrowUpRight,
+  Clock,
+  HelpCircle,
+  Truck
 } from 'lucide-react'
 
 import { ProductCard } from '@/components/storefront/product-card'
@@ -92,22 +96,36 @@ export default function MobileHomePage() {
   const [products, setProducts] = useState<Product[]>([])
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilterLabel, setActiveFilterLabel] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [currentHeroIndex, setCurrentHeroIndex] = useState(0)
   const [isSocialOpen, setIsSocialOpen] = useState(false)
 
+  // Mr. Tell AI State
+  const [aiSearching, setAiSearching] = useState(false)
+  const [mrTellAnswer, setMrTellAnswer] = useState<{
+    message: string
+    action?: string
+    questionType?: string
+  } | null>(null)
+
+  const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
 
   useEffect(() => {
     fetchProducts()
+    return () => {
+      if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current)
+    }
   }, [])
 
   useEffect(() => {
     const search = searchParams.get('search')
     if (search) {
-      handleSearch(search)
+      handleManualFilter(search)
     }
   }, [searchParams])
 
@@ -142,19 +160,123 @@ export default function MobileHomePage() {
     }
   }
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query)
-    if (!query.trim()) {
+  // Normalized Multi-Keyword & Category Mapping (Including Rice & Parfaits)
+  const handleManualFilter = (categoryOrKeyword: string) => {
+    if (!categoryOrKeyword || !categoryOrKeyword.trim()) {
       setFilteredProducts(products)
-    } else {
-      const lowercaseQuery = query.toLowerCase()
-      setFilteredProducts(
-        products.filter(
-          (product) =>
-            product.name.toLowerCase().includes(lowercaseQuery) ||
-            product.description?.toLowerCase().includes(lowercaseQuery)
-        )
+      setActiveFilterLabel(null)
+      return
+    }
+
+    const raw = categoryOrKeyword.toLowerCase().trim()
+
+    // Complete Brand Synonym & Category Dictionary
+    const categoryDictionary: Record<string, string[]> = {
+      'meals': ['meal', 'rice', 'soup', 'stew', 'catfish', 'pepper soup', 'jollof', 'fried rice', 'chicken'],
+      'rice': ['rice', 'jollof', 'fried rice', 'smokey jollof', 'grain', 'meal'],
+      'jollof rice': ['jollof', 'rice', 'smokey jollof'],
+      'fried rice': ['fried rice', 'rice'],
+      'parfait': ['parfait', 'yogurt', 'fruit parfait', 'dessert', 'cakeloaf', 'loaf', 'granola'],
+      'cakeloaf': ['cakeloaf', 'loaf', 'mini cake', 'mini cakeloaf'],
+      'shawarma': ['shawarma', 'wrap', 'roll', 'sausage', 'beef shawarma', 'chicken shawarma'],
+      'pasta': ['pasta', 'spaghetti', 'macaroni', 'alfredo', 'bolognese', 'seafood pasta'],
+      'noodles': ['noodle', 'noodles', 'indomie', 'pasta', 'stir fry', 'spiced noodles', 'stir-fry', 'turkey'],
+      'corndogs': ['corndog', 'corn dog', 'hotdog', 'snack', 'cheese corndog', 'sausage corndog'],
+      'puff & cream': ['puff', 'cream', 'doughnut', 'donut', 'pastry', 'snack', 'puff puff'],
+      'milky doughnut': ['milky', 'doughnut', 'donut', 'glazed', 'pastry', 'sweet', 'ring'],
+      'fresh juice': ['juice', 'drink', 'beverage', 'citrus', 'fruit', 'pineapple', 'watermelon', 'fresh'],
+      'zobo': ['zobo', 'hibiscus', 'ginger', 'drink', 'beverage', 'juice'],
+      'food kombos': ['kombo', 'combo', 'pack', 'set', 'meal', 'feast', 'party pack', 'box'],
+    }
+
+    const keywords = categoryDictionary[raw] || [raw]
+
+    const matched = products.filter((product) => {
+      const pName = (product.name || '').toLowerCase()
+      const pDesc = (product.description || '').toLowerCase()
+      const pCat = (product.category || '').toLowerCase()
+
+      return keywords.some(kw => 
+        pName.includes(kw) || 
+        pDesc.includes(kw) || 
+        pCat.includes(kw) ||
+        pCat === raw
       )
+    })
+
+    setFilteredProducts(matched.length > 0 ? matched : products)
+    setActiveFilterLabel(categoryOrKeyword)
+  }
+
+  // Mr. Tell AI Food Concierge & Intelligence Handler
+  const handleAiSmartSearch = async (customPrompt?: string) => {
+    const queryToUse = (typeof customPrompt === 'string' ? customPrompt : searchQuery).trim()
+    if (!queryToUse) return
+
+    if (autoDismissTimerRef.current) {
+      clearTimeout(autoDismissTimerRef.current)
+    }
+
+    try {
+      setAiSearching(true)
+      setMrTellAnswer(null)
+
+      const res = await fetch('/api/ai/store-order-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: queryToUse }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || !data.result) {
+        throw new Error(data.error || 'Failed to generate response.')
+      }
+
+      const result = data.result
+
+      setMrTellAnswer({
+        message: result.summaryMessage,
+        action: result.action,
+        questionType: result.questionType,
+      })
+
+      setSearchQuery('')
+
+      // Auto-dismiss response box after 20 seconds
+      autoDismissTimerRef.current = setTimeout(() => {
+        setMrTellAnswer(null)
+      }, 20000)
+
+      // Catalog Filtering Logic
+      if (result.matchedProductIds && result.matchedProductIds.length > 0) {
+        const matched = products.filter((p) => result.matchedProductIds.includes(p.id))
+        if (matched.length > 0) {
+          setFilteredProducts(matched)
+          setActiveFilterLabel(queryToUse)
+        } else {
+          setFilteredProducts(products)
+          setActiveFilterLabel(null)
+        }
+      } else if (result.action === 'filter' && result.keywordFilter) {
+        handleManualFilter(result.keywordFilter)
+      } else {
+        setFilteredProducts(products)
+        setActiveFilterLabel(null)
+      }
+
+      scrollToMenu()
+    } catch (err: unknown) {
+      console.warn('[AI Search Notice]:', err)
+      setMrTellAnswer({
+        message: `I'm happy to help! De-echoi is located at Eze Nvuigwe Avenue, Woji, Port Harcourt. We deliver freshly cooked Smokey Jollof & Fried Rice, Catfish Pepper Soup, Parfaits, Shawarma, and Celebration Cakes across Port Harcourt.`,
+        action: 'general',
+      })
+      setSearchQuery('')
+      setFilteredProducts(products)
+      setActiveFilterLabel(null)
+      scrollToMenu()
+    } finally {
+      setAiSearching(false)
     }
   }
 
@@ -162,7 +284,7 @@ export default function MobileHomePage() {
     if (categoryName.toLowerCase() === 'cakes') {
       router.push('/cakes')
     } else {
-      handleSearch(categoryName)
+      handleManualFilter(categoryName)
       scrollToMenu()
     }
   }
@@ -173,109 +295,206 @@ export default function MobileHomePage() {
   }
 
   const scrollToMenu = () => {
-    const menuElement = document.getElementById('our-menu-section')
-    if (menuElement) {
-      menuElement.scrollIntoView({ behavior: 'smooth' })
-    }
+    setTimeout(() => {
+      const menuElement = document.getElementById('our-menu-section')
+      if (menuElement) {
+        menuElement.scrollIntoView({ behavior: 'smooth' })
+      }
+    }, 100)
   }
 
+  const dismissMrTellAnswer = () => {
+    if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current)
+    setMrTellAnswer(null)
+  }
+
+  const clearFilter = () => {
+    setFilteredProducts(products)
+    setActiveFilterLabel(null)
+  }
+
+  // Expanded Categories (Including Rice & Parfaits)
   const categories = [
+    { name: 'Rice', icon: <span className="text-xs font-bold">🍚</span>, image: '/jollof.jpeg' },
+    { name: 'Parfait', icon: <span className="text-xs font-bold">🍓</span>, image: '/parfait.jpeg' },
     { name: 'Meals', icon: <Utensils className="w-4 h-4" />, image: '/Recipe2.jpg' },
     { name: 'Cakes', icon: <Cake className="w-4 h-4 text-amber-400" />, image: '/cakes.jpg' },
     { name: 'Shawarma', icon: <span className="text-xs font-bold">🫔</span>, image: '/shawarma.jpeg' },
     { name: 'Pasta', icon: <span className="text-xs font-bold">🍝</span>, image: '/pasta.jpeg' },
     { name: 'Noodles', icon: <Drumstick className="w-4 h-4" />, image: '/noodles.jpeg' },
     { name: 'Corndogs', icon: <Pizza className="w-4 h-4" />, image: '/corndog.webp' },
-    { name: 'Puff & Cream', icon: <span className="text-xs font-bold">🍝</span>, image: '/puff_cream.jpeg' },
+    { name: 'Puff & Cream', icon: <span className="text-xs font-bold">🍩</span>, image: '/puff_cream.jpeg' },
     { name: 'Milky Doughnut', icon: <Drumstick className="w-4 h-4" />, image: '/milky_d.jpg.webp' },
     { name: 'Fresh Juice', icon: <Pizza className="w-4 h-4" />, image: '/fresh_juice.png' },
-    { name: 'Zobo', icon: <span className="text-xs font-bold">🍝</span>, image: '/zobo.jpeg' },
+    { name: 'Zobo', icon: <span className="text-xs font-bold">🍷</span>, image: '/zobo.jpeg' },
     { name: 'Food Kombos', icon: <Drumstick className="w-4 h-4" />, image: '/kombos.jpeg' },
   ]
 
   return (
-    <div className="min-h-screen bg-[#072d1d] text-slate-800 font-sans pb-12 relative">
-      
-      {/* 1. STOREFRONT HEADER */}
-      <StorefrontHeader />
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative">
 
-      {/* 2. 10-DAY WAITLIST COUNTDOWN BANNER */}
-      <WaitlistCountdownSection />
+      {/* 1. STICKY TOP APP HEADER & MR. TELL SMART SEARCH */}
+      <div className="sticky top-0 z-40 w-full bg-[#072d1d] shadow-md border-b border-[#EAA823]/25">
+        <StorefrontHeader />
 
-      {/* 3. HERO SECTION */}
-      <section className="relative px-5 pt-4 pb-4 max-w-md mx-auto overflow-hidden min-h-[220px]">
-        <div className="relative z-10 space-y-3 max-w-[60%]">
-          <h1 className="text-3xl font-extrabold text-white leading-tight">
-            Good Food. <br />
-            <span className="text-amber-500">Great Experience.</span> <br />
-            Delivered to <br />
-            <span className="font-serif italic font-normal underline decoration-amber-500">You.</span>
-          </h1>
-          <p className="text-xs text-emerald-100/80 leading-relaxed pr-2">
-            Explore our delicious menu during the 10-day launch preview. Join the waitlist for priority access!
-          </p>
-        </div>
-
-        <div className="absolute right-[-15px] top-0 w-[58%] h-full pointer-events-none">
-          {HERO_IMAGES.map((item, index) => (
-            <div
-              key={item.src}
-              className={`absolute inset-0 transition-opacity duration-500 ease-in-out ${
-                index === currentHeroIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
-              }`}
+        <div className="w-full bg-gradient-to-b from-[#072d1d] to-[#041a11] px-3.5 pt-2 pb-3.5 relative z-30">
+          <div className="max-w-md mx-auto space-y-2.5">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleAiSmartSearch()
+              }}
+              className="relative flex items-center w-full z-30 pointer-events-auto"
             >
-              <Image 
-                src={item.src} 
-                alt={item.alt} 
-                fill
-                className="object-contain object-right"
-                priority={index === 0}
+              <div className="absolute left-3.5 flex items-center pointer-events-none text-amber-400 z-10">
+                {aiSearching ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+              </div>
+
+              <input
+                ref={searchInputRef}
+                type="text"
+                inputMode="text"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck="false"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="Ask Mr. Tell (e.g. 'Smokey Jollof', 'Parfait prices', 'Pickup')..."
+                className="w-full bg-[#0a3a26] text-white placeholder-emerald-200/60 text-xs sm:text-sm pl-10 pr-24 py-3 rounded-xl border border-emerald-500/40 focus:border-[#EAA823] focus:ring-2 focus:ring-[#EAA823]/30 outline-none shadow-inner transition cursor-text pointer-events-auto z-20"
               />
-            </div>
-          ))}
-        </div>
 
-        <div className="mt-4 bg-[#0a3a26]/90 border border-emerald-600/30 backdrop-blur-md rounded-2xl p-2.5 flex items-center gap-3 w-fit ml-auto shadow-lg relative z-10">
-          <div className="bg-amber-500 p-1.5 rounded-lg text-[#072d1d]">
-            <Zap className="w-4 h-4 fill-current" />
-          </div>
-          <div>
-            <p className="text-[11px] font-bold text-amber-400 leading-none">Fast Delivery</p>
-            <p className="text-[9px] text-white/80">At Your Doorstep</p>
-          </div>
-        </div>
-      </section>
+              <div className="absolute right-1.5 flex items-center gap-1 z-30">
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setSearchQuery('')
+                      searchInputRef.current?.focus()
+                    }}
+                    className="p-1.5 text-gray-300 hover:text-white rounded-full transition cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
 
-      {/* 4. MAIN BODY CONTAINER */}
-      <main className="bg-slate-50 rounded-t-[32px] pt-6 px-4 space-y-6 max-w-md mx-auto min-h-screen">
-        
-        {/* Features Bar */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 grid grid-cols-4 gap-2 text-center">
-          <div className="flex flex-col items-center gap-1.5 border-r border-slate-100 pr-1">
-            <div className="p-2 bg-slate-100 rounded-full text-[#072d1d]">
-              <Zap className="w-4 h-4" />
+                <button
+                  type="submit"
+                  disabled={aiSearching || !searchQuery.trim()}
+                  className="bg-[#EAA823] hover:bg-white text-[#072d1d] text-[11px] font-black px-3.5 py-1.5 rounded-lg flex items-center gap-1 shadow-md transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  <span>Mr. Tell</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+            </form>
+
+            {/* Smart Chips with Rice & Parfait Additions */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5 text-[10px] relative z-20">
+              <span className="text-amber-400 font-bold flex-shrink-0 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                <span>Ask:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => handleAiSmartSearch('Tell me about your Smokey Jollof and Fried Rice options')}
+                className="bg-white/10 hover:bg-white/20 text-emerald-100 px-2.5 py-1 rounded-full border border-white/10 flex-shrink-0 cursor-pointer whitespace-nowrap transition active:scale-95"
+              >
+                🍚 Jollof &amp; Fried Rice
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiSmartSearch('What parfait flavors and mini cakeloaves do you have?')}
+                className="bg-white/10 hover:bg-white/20 text-emerald-100 px-2.5 py-1 rounded-full border border-white/10 flex-shrink-0 cursor-pointer whitespace-nowrap transition active:scale-95"
+              >
+                🍓 Parfaits &amp; Cakeloaf
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiSmartSearch('Where are your pickup locations and delivery points in Port Harcourt?')}
+                className="bg-white/10 hover:bg-white/20 text-emerald-100 px-2.5 py-1 rounded-full border border-white/10 flex-shrink-0 cursor-pointer whitespace-nowrap transition flex items-center gap-1 active:scale-95"
+              >
+                <Truck className="w-2.5 h-2.5 text-amber-400" />
+                <span>Pickup &amp; Delivery Hubs</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiSmartSearch('When do you open and close?')}
+                className="bg-white/10 hover:bg-white/20 text-emerald-100 px-2.5 py-1 rounded-full border border-white/10 flex-shrink-0 cursor-pointer whitespace-nowrap transition flex items-center gap-1 active:scale-95"
+              >
+                <Clock className="w-2.5 h-2.5 text-amber-400" />
+                <span>Opening Hours</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAiSmartSearch('Tell me the health benefits of Hibiscus Zobo and ginger')}
+                className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 px-2.5 py-1 rounded-full border border-amber-400/30 flex-shrink-0 cursor-pointer whitespace-nowrap transition flex items-center gap-1 active:scale-95"
+              >
+                <HelpCircle className="w-2.5 h-2.5" />
+                <span>Zobo Health Benefits</span>
+              </button>
             </div>
-            <span className="text-[10px] font-semibold text-slate-700 leading-tight">Lightning Fast Delivery</span>
-          </div>
-          <div className="flex flex-col items-center gap-1.5 border-r border-slate-100 pr-1">
-            <div className="p-2 bg-slate-100 rounded-full text-[#072d1d]">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <span className="text-[10px] font-semibold text-slate-700 leading-tight">Safe & Secure Payments</span>
-          </div>
-          <div className="flex flex-col items-center gap-1.5 border-r border-slate-100 pr-1">
-            <div className="p-2 bg-slate-100 rounded-full text-[#072d1d]">
-              <Leaf className="w-4 h-4" />
-            </div>
-            <span className="text-[10px] font-semibold text-slate-700 leading-tight">Fresh Ingredients</span>
-          </div>
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="p-2 bg-slate-100 rounded-full text-[#072d1d]">
-              <Headphones className="w-4 h-4" />
-            </div>
-            <span className="text-[10px] font-semibold text-slate-700 leading-tight">24/7 Support</span>
           </div>
         </div>
+      </div>
+
+      {/* 2. TOP BRAND HERO */}
+      <div className="bg-[#072d1d]">
+        <WaitlistCountdownSection />
+
+        <section className="relative px-5 pt-4 pb-4 max-w-md mx-auto overflow-hidden min-h-[220px]">
+          <div className="relative z-10 space-y-3 max-w-[60%]">
+            <h1 className="text-3xl font-extrabold text-white leading-tight">
+              Good Food. <br />
+              <span className="text-amber-500">Great Experience.</span> <br />
+              Delivered to <br />
+              <span className="font-serif italic font-normal underline decoration-amber-500">You.</span>
+            </h1>
+            <p className="text-xs text-emerald-100/80 leading-relaxed pr-2">
+              Explore our delicious menu during the launch preview. Enjoy swift delivery across Port Harcourt.
+            </p>
+          </div>
+
+          <div className="absolute right-[-15px] top-0 w-[58%] h-full pointer-events-none">
+            {HERO_IMAGES.map((item, index) => (
+              <div
+                key={item.src}
+                className={`absolute inset-0 transition-opacity duration-500 ease-in-out ${
+                  index === currentHeroIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+                }`}
+              >
+                <Image 
+                  src={item.src} 
+                  alt={item.alt} 
+                  fill
+                  className="object-contain object-right"
+                  priority={index === 0}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 bg-[#0a3a26]/90 border border-emerald-600/30 backdrop-blur-md rounded-2xl p-2.5 flex items-center gap-3 w-fit ml-auto shadow-lg relative z-10">
+            <div className="bg-amber-500 p-1.5 rounded-lg text-[#072d1d]">
+              <Zap className="w-4 h-4 fill-current" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-amber-400 leading-none">Fast Delivery</p>
+              <p className="text-[9px] text-white/80">At Your Doorstep</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* 3. MAIN BODY & POPULAR CATEGORIES */}
+      <main className="bg-slate-50 pt-5 px-4 pb-32 space-y-6 max-w-md mx-auto min-h-screen relative z-10 shadow-sm">
 
         {/* Popular Categories */}
         <section className="space-y-3">
@@ -293,10 +512,11 @@ export default function MobileHomePage() {
             {categories.map((cat, idx) => (
               <button 
                 key={idx} 
+                type="button"
                 onClick={() => handleCategoryClick(cat.name)}
-                className="flex-shrink-0 flex flex-col items-center focus:outline-none group cursor-pointer"
+                className="flex-shrink-0 flex flex-col items-center focus:outline-none group cursor-pointer active:scale-95 transition-transform"
               >
-                <div className="relative w-20 h-24 rounded-2xl overflow-hidden shadow-sm border border-slate-200/60">
+                <div className="relative w-20 h-24 rounded-2xl overflow-hidden shadow-sm border border-slate-200/60 bg-white">
                   <Image 
                     src={cat.image} 
                     alt={cat.name} 
@@ -320,26 +540,24 @@ export default function MobileHomePage() {
           </div>
         </section>
 
-        {/* Live Tracking Feature Card */}
+        {/* Live Route Tracking Card */}
         <section className="bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] rounded-3xl p-4 text-white relative overflow-hidden shadow-xl border border-emerald-600/30">
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
-          
           <div className="grid grid-cols-12 gap-3 items-center relative z-10">
             <div className="col-span-6 space-y-2.5">
               <div className="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/40 text-amber-300 font-bold text-[9px] uppercase px-2.5 py-1 rounded-full shadow-sm backdrop-blur-sm">
                 <Navigation className="w-3 h-3 text-amber-400 animate-pulse" />
                 <span>Live Route Tracking</span>
               </div>
-              
+
               <h3 className="text-sm font-extrabold leading-snug tracking-tight text-white">
                 Live Order <br />
-                <span className="text-amber-400 italic">Fast Pickup & Delivery</span>
+                <span className="text-amber-400 italic">Fast Pickup &amp; Delivery</span>
               </h3>
-              
+
               <p className="text-[10px] text-emerald-100/80 leading-relaxed font-medium">
                 Track your order in real-time from our kitchen directly to your doorstep.
               </p>
-              
+
               <button 
                 onClick={scrollToMenu}
                 className="mt-1 bg-amber-500 hover:bg-amber-400 text-[#072d1d] text-[11px] font-bold py-2 px-3.5 rounded-full flex items-center gap-1.5 shadow-md transition active:scale-95 group cursor-pointer"
@@ -353,15 +571,12 @@ export default function MobileHomePage() {
 
             <div className="col-span-6 relative flex justify-end">
               <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden border border-emerald-500/30 shadow-2xl group bg-[#041a11]">
-                <div className="absolute inset-0 z-10 pointer-events-none bg-gradient-to-t from-[#072d1d]/80 via-transparent to-[#072d1d]/30" />
-                <div className="absolute inset-0 z-10 pointer-events-none border border-emerald-400/20 rounded-2xl" />
-
                 <video
                   autoPlay
                   loop
                   muted
                   playsInline
-                  className="w-full h-full object-cover rounded-2xl scale-105 group-hover:scale-110 transition-transform duration-700 ease-out filter brightness-105 contrast-105"
+                  className="w-full h-full object-cover rounded-2xl scale-105 filter brightness-105 contrast-105"
                 >
                   <source src="/pickup.mp4" type="video/mp4" />
                 </video>
@@ -371,16 +586,12 @@ export default function MobileHomePage() {
                   <MapPin className="w-2.5 h-2.5 text-amber-400" />
                   <span className="text-[8px] font-bold text-emerald-100">Woji Delivery Hub</span>
                 </div>
-
-                <div className="absolute bottom-2 right-2 z-20 bg-amber-500 text-[#072d1d] text-[8px] font-black px-2 py-0.5 rounded-md shadow-md backdrop-blur-md">
-                  ~12 Mins Away
-                </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Dedicated Cakes Feature Link Card */}
+        {/* Dedicated Cakes Feature */}
         <section 
           onClick={() => router.push('/cakes')}
           className="bg-gradient-to-r from-[#072d1d] via-[#0a3a26] to-[#072d1d] rounded-2xl p-4 text-white border border-amber-400/30 shadow-md flex items-center justify-between cursor-pointer active:scale-95 transition"
@@ -390,54 +601,127 @@ export default function MobileHomePage() {
               Bespoke Bakes
             </span>
             <h4 className="text-sm font-extrabold text-white">Looking for Cakes?</h4>
-            <p className="text-[10px] text-emerald-100/80">Customize 6&quot; & 7&quot; tiered flavors on our dedicated Cake page.</p>
+            <p className="text-[10px] text-emerald-100/80">Customize 6&quot; &amp; 7&quot; tiered flavors on our dedicated Cake page.</p>
           </div>
           <div className="bg-amber-500 text-[#072d1d] p-2.5 rounded-full">
             <Cake className="w-5 h-5" />
           </div>
         </section>
 
-        {/* Customer Reviews & Star Ratings Section (Mobile Mount) */}
+        {/* Customer Reviews */}
         <CustomerReviewsSection />
 
-        {/* Food Menu Preview Listing */}
-        <section id="our-menu-section" className="pt-4 scroll-mt-36">
-          <div className="mb-4 flex items-center justify-between">
+        {/* 4. MENU & DYNAMIC MR. TELL INTELLIGENCE CARD */}
+        <section id="our-menu-section" className="pt-4 scroll-mt-52 space-y-4">
+          
+          {mrTellAnswer && (
+            <div className="relative overflow-hidden bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] text-white p-4 sm:p-5 rounded-3xl border-2 border-amber-400/50 shadow-2xl space-y-3 animate-in fade-in slide-in-from-top-3 duration-300">
+              
+              {/* Countdown Bar */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-white/10 overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-amber-400 to-[#EAA823]"
+                  style={{ animation: 'shrink 20s linear forwards' }}
+                />
+              </div>
+
+              {/* Header Badge */}
+              <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-amber-400 text-[#072d1d] flex items-center justify-center font-black shadow-md">
+                    <Sparkles className="w-4 h-4 fill-current" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black text-amber-300 uppercase tracking-wider">
+                      Mr. Tell&apos;s Knowledge &amp; Guidance
+                    </h3>
+                    <p className="text-[10px] text-emerald-200/70">
+                      Live Store Intelligence &bull; De-echoi AI Concierge
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={dismissMrTellAnswer}
+                  className="p-1.5 text-gray-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition cursor-pointer"
+                  aria-label="Close answer box"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Answer Content */}
+              <div className="bg-black/30 rounded-2xl p-3.5 border border-white/10 text-xs sm:text-sm text-emerald-50 leading-relaxed whitespace-pre-line font-medium">
+                {mrTellAnswer.message}
+              </div>
+
+              {/* Contextual Action Buttons */}
+              {mrTellAnswer.action === 'chat_order' && (
+                <Link href="/my-messages" className="block pt-1">
+                  <Button className="w-full bg-[#EAA823] hover:bg-white text-[#072d1d] font-black text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-md">
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Open Custom Order &amp; Invoice Chat</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              )}
+
+              {mrTellAnswer.action === 'checkout' && (
+                <Link href="/cart" className="block pt-1">
+                  <Button className="w-full bg-[#EAA823] hover:bg-white text-[#072d1d] font-black text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-md">
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>Proceed to Cart &amp; Checkout</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              )}
+            </div>
+          )}
+
+          {/* Menu Header */}
+          <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-slate-900">Food Menu</h2>
               <p className="text-xs text-slate-500">
-                {filteredProducts.length} preview meal{filteredProducts.length !== 1 ? 's' : ''} available
+                {filteredProducts.length} meal{filteredProducts.length !== 1 ? 's' : ''} available
+                {activeFilterLabel && (
+                  <span className="text-amber-600 font-semibold ml-1">
+                    matching &ldquo;{activeFilterLabel}&rdquo;
+                  </span>
+                )}
               </p>
             </div>
-            {searchQuery && (
+            {activeFilterLabel && (
               <button 
-                onClick={() => handleSearch('')}
+                onClick={clearFilter}
                 className="text-xs text-amber-600 font-medium hover:underline cursor-pointer"
               >
-                Clear Search
+                Show All Menu
               </button>
             )}
           </div>
 
+          {/* Products Grid */}
           {loading ? (
             <div className="flex justify-center items-center py-12">
-              <p className="text-xs text-slate-500">Loading delicious preview catalog...</p>
+              <p className="text-xs text-slate-500">Loading catalog...</p>
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center bg-white rounded-2xl p-6 border border-slate-100">
               <p className="text-sm text-slate-600 mb-3">
-                {searchQuery
-                  ? `No meals found matching "${searchQuery}".`
+                {activeFilterLabel
+                  ? `No meals found matching "${activeFilterLabel}".`
                   : 'No food products available yet.'}
               </p>
-              {searchQuery && (
+              {activeFilterLabel && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleSearch('')}
+                  onClick={clearFilter}
                   className="cursor-pointer"
                 >
-                  Clear Search
+                  Show Full Menu
                 </Button>
               )}
             </div>
@@ -460,53 +744,10 @@ export default function MobileHomePage() {
           )}
         </section>
 
-        {/* Footer */}
-        <footer id="contact" className="bg-[#072d1d] text-white rounded-2xl p-6 space-y-6 mt-8">
-          <div className="space-y-2">
-            <h3 className="font-bold text-lg text-amber-400">DEECHOI</h3>
-            <p className="text-xs text-emerald-100/80">
-              Bringing authentic flavors to your table with quality and care.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div>
-              <h4 className="font-semibold text-amber-400 mb-2">Quick Links</h4>
-              <ul className="space-y-1 text-emerald-100/80">
-                <li><Link href="/" className="hover:text-amber-400 transition">Home</Link></li>
-                <li><Link href="/cakes" className="text-amber-400 font-bold transition">Cakes Collection</Link></li>
-                <li><Link href="/about" className="hover:text-amber-400 transition">About Us</Link></li>
-                <li><Link href="/contact" className="hover:text-amber-400 transition">Contact</Link></li>
-                <li><Link href="/services" className="hover:text-amber-400 transition">Book Us</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-amber-400 mb-2">Contact</h4>
-              <p className="text-emerald-100/80">
-                <a href="mailto:deechoi01@gmail.com" className="hover:text-amber-400 block">
-                  deechoi01@gmail.com
-                </a>
-                <a href="tel:+2347046145982" className="hover:text-amber-400 block mt-1">
-                  +234 704 614 5982
-                </a>
-              </p>
-            </div>
-          </div>
-
-          <div className="border-t border-emerald-800/60 pt-4 text-xs text-emerald-100/80 space-y-1">
-            <h4 className="font-semibold text-amber-400">Location</h4>
-            <p>Eze Nvuigwe Avenue, Woji, Port Harcourt, Rivers State, Nigeria</p>
-          </div>
-
-          <div className="border-t border-emerald-800/60 pt-4 text-center text-[10px] text-emerald-200/60">
-            <p>&copy; 2026 DEECHOI LIMITED. All rights reserved.</p>
-          </div>
-        </footer>
-
       </main>
 
       {/* Floating Action Social Bar */}
-      <div className="fixed right-4 bottom-8 z-50 flex flex-col items-end gap-2.5 pointer-events-none">
+      <div className="fixed right-4 bottom-24 z-40 flex flex-col items-end gap-2.5 pointer-events-none">
         <div 
           className={`flex flex-col gap-2.5 items-end transition-all duration-300 ease-in-out pointer-events-auto ${
             isSocialOpen 
@@ -553,7 +794,6 @@ export default function MobileHomePage() {
         </button>
       </div>
 
-      {/* Product Detail Modal */}
       {selectedProductId && (
         <ProductDetailModal
           productId={selectedProductId}
@@ -561,6 +801,17 @@ export default function MobileHomePage() {
           onClose={() => setShowModal(false)}
         />
       )}
+
+      <style jsx global>{`
+        @keyframes shrink {
+          from {
+            width: 100%;
+          }
+          to {
+            width: 0%;
+          }
+        }
+      `}</style>
     </div>
   )
 }
