@@ -3,24 +3,27 @@ import nodemailer from 'nodemailer'
 interface SendWaitlistEmailParams {
   toEmail: string
   customerName: string
-  promoCode: string
-  favoriteDish: string
+  promoCode?: string
+  favoriteDish?: string
 }
 
-export async function sendWaitlistConfirmationEmail({
-  toEmail,
-  customerName,
-  promoCode,
-  favoriteDish,
-}: SendWaitlistEmailParams) {
-  const senderEmail = (process.env.GMAIL_SENDER_EMAIL || 'nwaobisikesamuel@gmail.com').trim()
+export interface CustomerMessageEmailParams {
+  to: string
+  customerName?: string
+  message: string
+  subject?: string
+}
+
+function getTransporter() {
+  const senderEmail = (process.env.GMAIL_SENDER_EMAIL || process.env.EMAIL_FROM || 'nwaobisikesamuel@gmail.com').trim()
   const rawPass = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '').trim()
 
   if (!rawPass) {
-    throw new Error('GMAIL_APP_PASSWORD is not configured in .env.local')
+    console.warn('[Email Warning] GMAIL_APP_PASSWORD is not configured in environment variables. Emails will be logged.')
+    return null
   }
 
-  const transporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
     secure: true,
@@ -30,8 +33,38 @@ export async function sendWaitlistConfirmationEmail({
     },
     connectionTimeout: 10000,
   })
+}
 
-  // 1. Plain Text Alternative (Crucial to prevent spam filter triggers)
+/**
+ * 1. Waitlist Priority Access Confirmation Email
+ */
+export async function sendWaitlistConfirmationEmail(
+  paramsOrEmail: SendWaitlistEmailParams | string,
+  maybeName?: string
+) {
+  let toEmail = ''
+  let customerName = 'Valued Customer'
+  let promoCode = 'DEECHOI15'
+  let favoriteDish = 'Gourmet Kitchen Selection'
+
+  if (typeof paramsOrEmail === 'string') {
+    toEmail = paramsOrEmail
+    customerName = maybeName || 'Valued Customer'
+  } else {
+    toEmail = paramsOrEmail.toEmail
+    customerName = paramsOrEmail.customerName || 'Valued Customer'
+    promoCode = paramsOrEmail.promoCode || 'DEECHOI15'
+    favoriteDish = paramsOrEmail.favoriteDish || 'Gourmet Kitchen Selection'
+  }
+
+  const senderEmail = (process.env.GMAIL_SENDER_EMAIL || 'nwaobisikesamuel@gmail.com').trim()
+  const transporter = getTransporter()
+
+  if (!transporter) {
+    console.log(`[Mock Waitlist Email] Sent to ${toEmail} for ${customerName} (Code: ${promoCode})`)
+    return { success: true, mocked: true }
+  }
+
   const textContent = `Hello ${customerName},
 
 Welcome to De-echoi Limited VIP Priority List!
@@ -49,7 +82,6 @@ Thank you for choosing De-echoi Limited. We look forward to serving you on launc
 Best regards,
 The De-echoi Team`
 
-  // 2. High-Deliverability Responsive HTML Template
   const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -64,7 +96,7 @@ The De-echoi Team`
       <td align="center">
         <table role="presentation" width="100%" style="max-width: 560px; background-color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #e2e8e0; box-shadow: 0 4px 20px rgba(0,0,0,0.04);">
           
-          <!-- Clean Header -->
+          <!-- Header -->
           <tr>
             <td style="background-color: #072d1d; padding: 28px 24px; text-align: center;">
               <h1 style="color: #EAA823; font-size: 22px; margin: 0; font-weight: 800; letter-spacing: 0.5px;">DE-ECHOI LIMITED</h1>
@@ -123,21 +155,97 @@ The De-echoi Team`
 </html>
 `
 
-  // 3. Clean Subject & Professional Deliverability Headers
-  const info = await transporter.sendMail({
-    from: `"De-echoi Limited" <${senderEmail}>`,
-    to: toEmail,
-    replyTo: senderEmail,
-    subject: `De-echoi Launch Confirmation - Code: ${promoCode}`,
-    text: textContent,
-    html: htmlContent,
-    headers: {
-      'X-Priority': '1',
-      'X-MSMail-Priority': 'High',
-      'Importance': 'high',
-      'X-Entity-Ref-ID': `DE-${Date.now()}`,
-    },
-  })
+  try {
+    const info = await transporter.sendMail({
+      from: `"De-echoi Limited" <${senderEmail}>`,
+      to: toEmail,
+      replyTo: senderEmail,
+      subject: `De-echoi Launch Confirmation - Code: ${promoCode}`,
+      text: textContent,
+      html: htmlContent,
+      headers: {
+        'X-Priority': '1',
+        'X-MSMail-Priority': 'High',
+        'Importance': 'high',
+        'X-Entity-Ref-ID': `DE-${Date.now()}`,
+      },
+    })
+    return { success: true, data: info }
+  } catch (error: any) {
+    console.error('[Email Error] Failed to send waitlist confirmation:', error)
+    return { success: false, error: error.message }
+  }
+}
 
-  return info
+/**
+ * 2. Customer Support Desk Message & Inquiry Reply Email
+ */
+export async function sendCustomerMessageEmail({
+  to,
+  customerName = 'Valued Customer',
+  message,
+  subject = 'New Message from De-echoi Support',
+}: CustomerMessageEmailParams) {
+  const senderEmail = (process.env.GMAIL_SENDER_EMAIL || 'nwaobisikesamuel@gmail.com').trim()
+  const transporter = getTransporter()
+
+  if (!transporter) {
+    console.log(`[Mock Support Reply Email] Sent to ${to} (${customerName}): "${message}"`)
+    return { success: true, mocked: true }
+  }
+
+  const plainText = `Hello ${customerName},
+
+${message}
+
+---
+De-echoi Limited Customer Support Desk
+Eze Nvuigwe Avenue, Woji, Port Harcourt, Rivers State, Nigeria.
+Phone: +234 703 138 5337`
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>De-echoi Support Reply</title>
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #FDFBF7; padding: 20px; color: #0A2E1D; margin: 0;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #EAA823; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+    <div style="background-color: #072d1d; text-align: center; padding: 22px; border-bottom: 1px solid #e5e7eb;">
+      <h1 style="color: #EAA823; margin: 0; font-size: 22px; font-weight: 900;">DE-ECHOI LIMITED</h1>
+      <p style="color: #d1fae5; font-size: 11px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Customer Support Desk</p>
+    </div>
+
+    <div style="padding: 24px;">
+      <p style="font-size: 15px; font-weight: bold; margin-bottom: 16px;">Hello ${customerName},</p>
+      <div style="font-size: 14px; line-height: 1.6; color: #374151; white-space: pre-line; background-color: #FDFBF7; padding: 16px; border-radius: 12px; border: 1px solid #e5e7eb;">
+        ${message}
+      </div>
+    </div>
+
+    <div style="text-align: center; padding: 16px 20px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280;">
+      <p style="margin: 0;">De-echoi Limited &bull; Eze Nvuigwe Avenue, Woji, Port Harcourt</p>
+      <p style="margin: 4px 0 0 0;">Tel: +234 703 138 5337</p>
+    </div>
+  </div>
+</body>
+</html>
+`
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"De-echoi Support Desk" <${senderEmail}>`,
+      to,
+      replyTo: senderEmail,
+      subject,
+      text: plainText,
+      html,
+    })
+    return { success: true, data: info }
+  } catch (error: any) {
+    console.error('[Email Error] Failed to send support reply email:', error)
+    return { success: false, error: error.message }
+  }
 }
