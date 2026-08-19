@@ -14,6 +14,23 @@ export interface CustomerMessageEmailParams {
   subject?: string
 }
 
+export interface SendOrderEmailParams {
+  toEmail: string
+  customerName: string
+  orderId: string
+  items: Array<{
+    name: string
+    quantity: number
+    price: number
+    selected_options?: any
+  }>
+  totalAmount: number
+  deliveryFee: number
+  deliveryAddress: string
+  paymentMethod: string
+  transactionCode?: string
+}
+
 function getTransporter() {
   const senderEmail = (
     process.env.GMAIL_SENDER_EMAIL ||
@@ -24,25 +41,28 @@ function getTransporter() {
 
   if (!rawPass) {
     console.warn(
-      '[Email Service Warning] GMAIL_APP_PASSWORD is not configured in environment variables. Email will be logged.'
+      '[Email Service Alert] GMAIL_APP_PASSWORD is not configured in environment variables. Mocking email delivery.'
     )
     return null
   }
 
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    port: 587,
+    secure: false, // STARTTLS
     auth: {
       user: senderEmail,
       pass: rawPass,
     },
-    connectionTimeout: 10000,
+    tls: {
+      rejectUnauthorized: false,
+    },
+    connectionTimeout: 15000,
   })
 }
 
 /**
- * 1. Customer Support Desk Message & Inquiry Reply Email
+ * 1. Customer Support Desk Inquiry Reply Email
  */
 export async function sendCustomerMessageEmail({
   to,
@@ -74,7 +94,6 @@ Phone: +234 703 138 5337`
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>De-echoi Support Reply</title>
 </head>
 <body style="font-family: Arial, sans-serif; background-color: #FDFBF7; padding: 20px; color: #0A2E1D; margin: 0;">
@@ -172,7 +191,6 @@ The De-echoi Team`
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>De-echoi VIP Launch Confirmation</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f6f8f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1a1a1a;">
@@ -245,6 +263,144 @@ The De-echoi Team`
     return { success: true, data: info }
   } catch (error: any) {
     console.error('[Email Error] Failed to send waitlist confirmation:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * 3. Customer Order Confirmation Email
+ */
+export async function sendOrderConfirmationEmail({
+  toEmail,
+  customerName,
+  orderId,
+  items,
+  totalAmount,
+  deliveryFee,
+  deliveryAddress,
+  paymentMethod,
+  transactionCode,
+}: SendOrderEmailParams) {
+  const senderEmail = (
+    process.env.GMAIL_SENDER_EMAIL || 'nwaobisikesamuel@gmail.com'
+  ).trim()
+  const transporter = getTransporter()
+
+  if (!transporter) {
+    console.log(`[Mock Order Email] Dispatched to ${toEmail} for Order #${orderId}`)
+    return { success: true, mocked: true }
+  }
+
+  const itemsHtml = items
+    .map(
+      (item) => `
+      <tr style="border-bottom: 1px solid #f3f4f6;">
+        <td style="padding: 12px 0; font-size: 13px; color: #1f2937;">
+          <strong>${item.name}</strong> x ${item.quantity}
+          ${
+            item.selected_options &&
+            Array.isArray(item.selected_options) &&
+            item.selected_options.length > 0
+              ? `<br/><span style="font-size: 11px; color: #6b7280;">${item.selected_options
+                  .map((o: any) => `${o.groupName}: ${o.optionName}`)
+                  .join(', ')}</span>`
+              : ''
+          }
+        </td>
+        <td style="padding: 12px 0; font-size: 13px; text-align: right; font-weight: bold; color: #0A2E1D;">
+          ₦${(item.price * item.quantity).toLocaleString()}
+        </td>
+      </tr>
+    `
+    )
+    .join('')
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Order Confirmation - De-echoi Limited</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f6f8f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1a1a1a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f6f8f5; padding: 25px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 580px; background-color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #e2e8e0; box-shadow: 0 4px 20px rgba(0,0,0,0.04);">
+          <tr>
+            <td style="background-color: #072d1d; padding: 26px 20px; text-align: center;">
+              <h1 style="color: #EAA823; font-size: 22px; margin: 0; font-weight: 900; letter-spacing: 0.5px;">DE-ECHOI LIMITED</h1>
+              <p style="color: #d1fae5; font-size: 12px; margin: 4px 0 0 0; font-weight: bold; text-transform: uppercase;">Order Confirmation & Receipt</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 22px;">
+              <h2 style="color: #072d1d; font-size: 17px; margin: 0 0 10px 0;">Hello ${customerName},</h2>
+              <p style="color: #4b5563; font-size: 13px; line-height: 1.6; margin: 0 0 18px 0;">
+                Your order has been received and is being prepared in our kitchen!
+              </p>
+              <div style="background-color: #FDFBF7; border: 1px solid #e5e7eb; border-radius: 14px; padding: 16px; margin-bottom: 20px;">
+                <table width="100%" style="font-size: 12px; color: #4b5563;">
+                  <tr>
+                    <td style="padding-bottom: 6px;"><strong>Order ID:</strong> #${orderId.slice(0, 8)}</td>
+                    <td style="text-align: right; padding-bottom: 6px;"><strong>Payment:</strong> ${paymentMethod.toUpperCase()}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Delivery Destination:</strong> ${deliveryAddress}</td>
+                    ${
+                      transactionCode
+                        ? `<td style="text-align: right;"><strong>5-Digit PIN:</strong> <code style="font-size: 14px; font-weight: bold; color: #0A2E1D;">${transactionCode}</code></td>`
+                        : ''
+                    }
+                  </tr>
+                </table>
+              </div>
+              <h3 style="color: #072d1d; font-size: 14px; margin: 0 0 10px 0; text-transform: uppercase; font-weight: 800;">Order Items Summary</h3>
+              <table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 20px;">
+                ${itemsHtml}
+              </table>
+              <div style="background-color: #f9fafb; border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 13px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 6px; color: #6b7280;">
+                  <span>Delivery Fee:</span>
+                  <span style="font-weight: bold; color: #111827;">₦${deliveryFee.toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; color: #072d1d; border-top: 1px solid #e5e7eb; padding-top: 8px;">
+                  <span>Total Paid / Payable:</span>
+                  <span style="color: #072d1d;">₦${totalAmount.toLocaleString()}</span>
+                </div>
+              </div>
+              <p style="color: #6b7280; font-size: 12px; line-height: 1.5; margin: 0;">
+                📍 <strong>Kitchen Location:</strong> Eze Nvuigwe Avenue, Woji, Port Harcourt, Rivers State.<br/>
+                🕒 <strong>Service Hours:</strong> Monday – Friday: 9:00 AM – 5:30 PM | Sundays: 12:00 PM – 5:30 PM.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f9fafb; padding: 18px; text-align: center; border-top: 1px solid #e5e7eb; font-size: 11px; color: #9ca3af;">
+              De-echoi Limited &bull; Quality made just for You &bull; Tel: +234 703 138 5337
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"De-echoi Limited" <${senderEmail}>`,
+      to: toEmail,
+      replyTo: senderEmail,
+      subject: `Order Confirmed #${orderId.slice(0, 8)} - De-echoi Limited`,
+      text: `Hello ${customerName}, your order #${orderId.slice(0, 8)} for ₦${totalAmount.toLocaleString()} has been received and is being prepared for delivery to ${deliveryAddress}.`,
+      html: htmlContent,
+    })
+    console.log(`[Order Email Success] Sent to ${toEmail} for #${orderId}`)
+    return { success: true, data: info }
+  } catch (error: any) {
+    console.error('[Order Email Error]:', error)
     return { success: false, error: error.message }
   }
 }
