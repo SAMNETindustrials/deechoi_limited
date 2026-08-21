@@ -14,18 +14,19 @@ import {
   Cake, 
   Layers, 
   Sparkles, 
-  Save,
-  Utensils,
-  Eye,
-  CheckCircle2,
-  Settings2,
-  Package,
-  Clock,
-  Users,
-  ShieldAlert,
-  Loader2,
+  Save, 
+  Utensils, 
+  Eye, 
+  CheckCircle2, 
+  Settings2, 
+  Package, 
+  Clock, 
+  Users, 
+  ShieldAlert, 
+  Loader2, 
   Upload,
-  Image as ImageIcon
+  Fish,
+  Tag
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -59,12 +60,17 @@ interface Option {
   description?: string
   has_counter?: boolean
   unit_price?: number
+  has_cuts_selection?: boolean // Allows selection of Head, Middle, Tail, Drumstick, etc.
+  allowed_cuts?: string[]       // e.g. ['Head Piece', 'Middle Cut', 'Tail Piece']
+  min_cuts_selection?: number   // Minimum parts customer must pick (e.g. at least 1 piece)
+  max_cuts_selection?: number   // Maximum parts customer can pick (e.g. up to 2 pieces)
 }
 
 interface OptionGroup {
   name: string
   is_required: boolean
   type?: 'radio' | 'checkbox'
+  price_mode?: 'standalone' | 'addon' // standalone = exact item price (replaces base price); addon = add-on fee
   options: Option[]
 }
 
@@ -111,12 +117,56 @@ const DEFAULT_7INCH_TIERS: CakeTierPrice[] = [
   { layers: 3, price: 55000, label: '3 Layers' },
 ]
 
+const DEFAULT_FISH_CUTS = ['Head Piece', 'Middle Cut', 'Tail Piece']
+
 const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
+  'Catfish Pepper Soup (Portions & Cuts)': [
+    {
+      name: 'Portion Size & Cuts',
+      is_required: true,
+      type: 'radio',
+      price_mode: 'standalone',
+      options: [
+        { 
+          name: 'Full Catfish Bowl (1 Liter)', 
+          price_modifier: 16000, 
+          is_available: true, 
+          description: 'Full fresh fish with native Ehuru, Uda & Scent leaf herbs',
+          has_cuts_selection: true,
+          allowed_cuts: ['Full Fish (All Parts)', 'Extra Head + Middle', 'Middle Cuts Only', 'Tail + Middle'],
+          min_cuts_selection: 1,
+          max_cuts_selection: 1
+        },
+        { 
+          name: 'Catfish Cuts (Piece Selection)', 
+          price_modifier: 9000, 
+          is_available: true, 
+          description: 'Pick your preferred cuts from fresh daily catch',
+          has_cuts_selection: true,
+          allowed_cuts: ['Head Piece', 'Middle Cut', 'Tail Piece'],
+          min_cuts_selection: 1,
+          max_cuts_selection: 2
+        },
+      ]
+    },
+    {
+      name: 'Spice & Pepper Level',
+      is_required: true,
+      type: 'radio',
+      price_mode: 'addon',
+      options: [
+        { name: 'Medium Native Spice', price_modifier: 0, is_available: true },
+        { name: 'Extra Hot & Peppery', price_modifier: 0, is_available: true },
+        { name: 'Mild Pepper', price_modifier: 0, is_available: true },
+      ]
+    }
+  ],
   'Shawarma Customization': [
     {
       name: 'Shawarma Size',
       is_required: true,
       type: 'radio',
+      price_mode: 'standalone',
       options: [
         { name: 'Medium size', price_modifier: 5000, is_available: true, description: 'Classic single sausage roll' },
         { name: 'Jumbo size', price_modifier: 12000, is_available: true, description: 'Double sausage + extra meat' },
@@ -126,6 +176,7 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
       name: 'Spice & Pepper Level',
       is_required: true,
       type: 'radio',
+      price_mode: 'addon',
       options: [
         { name: 'Mild', price_modifier: 0, is_available: true },
         { name: 'Medium Spicy', price_modifier: 0, is_available: true },
@@ -136,6 +187,7 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
       name: 'Add-on Extras',
       is_required: false,
       type: 'checkbox',
+      price_mode: 'addon',
       options: [
         { name: 'Extra Mozzarella Cheese', price_modifier: 1000, is_available: true },
         { name: 'Extra Creamy Mayo', price_modifier: 400, is_available: true },
@@ -147,8 +199,18 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
       name: 'Choice of Protein',
       is_required: true,
       type: 'radio',
+      price_mode: 'standalone',
       options: [
-        { name: 'Full Turkey', price_modifier: 6000, is_available: true, description: 'Crispy fried large turkey cut' },
+        { 
+          name: 'Full Turkey Cut', 
+          price_modifier: 6000, 
+          is_available: true, 
+          description: 'Crispy fried large turkey cut',
+          has_cuts_selection: true,
+          allowed_cuts: ['Turkey Wing', 'Turkey Lap / Drumstick', 'Turkey Breast'],
+          min_cuts_selection: 1,
+          max_cuts_selection: 1
+        },
         { name: 'Turkey Cubes', price_modifier: 2000, is_available: true, description: 'Tender diced turkey chunks', has_counter: true, unit_price: 2000 },
       ],
     },
@@ -156,6 +218,7 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
       name: 'Spice Level',
       is_required: true,
       type: 'radio',
+      price_mode: 'addon',
       options: [
         { name: 'Standard Pepper', price_modifier: 0, is_available: true },
         { name: 'Extra Spiced Pepper', price_modifier: 0, is_available: true },
@@ -168,6 +231,7 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
       name: 'Rice Preparation Style',
       is_required: true,
       type: 'radio',
+      price_mode: 'standalone',
       options: [
         { name: 'Smokey Jollof Rice', price_modifier: 3000, is_available: true, description: 'Authentic firewood-style reduction' },
         { name: 'Signature Fried Rice', price_modifier: 3000, is_available: true, description: 'Wok-tossed sweet corn & garden veggies' },
@@ -178,9 +242,26 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
       name: 'Protein Add-on',
       is_required: false,
       type: 'radio',
+      price_mode: 'addon',
       options: [
-        { name: 'Fried Chicken Cut', price_modifier: 2000, is_available: true },
-        { name: 'Grilled Fish', price_modifier: 2500, is_available: true },
+        { 
+          name: 'Fried Chicken Cut', 
+          price_modifier: 2000, 
+          is_available: true,
+          has_cuts_selection: true,
+          allowed_cuts: ['Chicken Lap / Drumstick', 'Chicken Breast', 'Chicken Wings'],
+          min_cuts_selection: 1,
+          max_cuts_selection: 1
+        },
+        { 
+          name: 'Grilled Fish Cut', 
+          price_modifier: 2500, 
+          is_available: true,
+          has_cuts_selection: true,
+          allowed_cuts: ['Fish Head', 'Middle Cut', 'Fish Tail'],
+          min_cuts_selection: 1,
+          max_cuts_selection: 1
+        },
         { name: 'Full Turkey Cut', price_modifier: 6000, is_available: true },
         { name: 'Assorted Meat', price_modifier: 1500, is_available: true },
       ],
@@ -189,6 +270,7 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
       name: 'Side Dishes',
       is_required: false,
       type: 'checkbox',
+      price_mode: 'addon',
       options: [
         { name: 'Fried Plantain (Dodo)', price_modifier: 800, is_available: true },
         { name: 'Coleslaw Salad', price_modifier: 700, is_available: true },
@@ -198,9 +280,10 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
   ],
   'Parfait & Cakeloaves': [
     {
-      name: 'Parfait Category',
+      name: 'Parfait Size & Variation',
       is_required: true,
       type: 'radio',
+      price_mode: 'standalone',
       options: [
         { name: 'Classic Parfait (350ml)', price_modifier: 5500, is_available: true, description: 'Yogurt, apples, grapes, granola, coconut flakes & cashew' },
         { name: 'Classic Parfait (1 Liter)', price_modifier: 13000, is_available: true, description: '1L Family Tub with full fruit & nut layers' },
@@ -215,22 +298,12 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
       name: 'Mini Cakeloaf Add-on',
       is_required: false,
       type: 'checkbox',
+      price_mode: 'addon',
       options: [
         { name: 'Chocolate Cakeloaf', price_modifier: 4000, is_available: true },
         { name: 'Vanilla Cakeloaf', price_modifier: 4300, is_available: true },
         { name: 'Red Velvet Cakeloaf', price_modifier: 4500, is_available: true },
         { name: '2 Mixed Flavours Cakeloaf', price_modifier: 4600, is_available: true },
-      ]
-    }
-  ],
-  'Catfish Pepper Soup': [
-    {
-      name: 'Portion Size',
-      is_required: true,
-      type: 'radio',
-      options: [
-        { name: 'Full Catfish Bowl (1 Liter)', price_modifier: 16000, is_available: true, description: 'Prepared fresh with aromatic native Ehuru, Uda & Scent leaf herbs' },
-        { name: 'Standard Medium Portion', price_modifier: 9000, is_available: true, description: 'Half portion freshly prepared' },
       ]
     }
   ]
@@ -255,12 +328,12 @@ export default function StoreInventoryPage() {
   const [isCustomCategory, setIsCustomCategory] = useState(false)
   const [customCategoryInput, setCustomCategoryInput] = useState('')
 
-  // Upload & Drag-and-drop state
+  // Upload state
   const [uploadingImage, setUploadingImage] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Customization & Specs State
+  // Customization State
   const [optionGroups, setOptionGroups] = useState<OptionGroup[]>([])
   const [ingredients, setIngredients] = useState<string[]>([])
   const [allergens, setAllergens] = useState<string[]>([])
@@ -268,14 +341,16 @@ export default function StoreInventoryPage() {
   const [servings, setServings] = useState<string | number>(1)
   const [storageInstructions, setStorageInstructions] = useState('')
 
-  // Tag inputs
+  // Cut input tracker
+  const [newCutInput, setNewCutInput] = useState<Record<string, string>>({})
+
   const [newIngredient, setNewIngredient] = useState('')
   const [newAllergen, setNewAllergen] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
   const [activeTab, setActiveTab] = useState<'basic' | 'customization' | 'cake_tiers'>('basic')
 
-  // Cake Customization State
+  // Cake State
   const [cakeSize, setCakeSize] = useState<'6 inches' | '7 inches'>('6 inches')
   const [cakeFlavor, setCakeFlavor] = useState<'Vanilla' | 'Chocolate' | 'Red Velvet' | 'Multi-Flavor Combo'>('Vanilla')
   const [cakeTiers, setCakeTiers] = useState<CakeTierPrice[]>(DEFAULT_6INCH_TIERS)
@@ -346,7 +421,19 @@ export default function StoreInventoryPage() {
     setIsCustomCategory(!isStandardCat)
     setCustomCategoryInput(!isStandardCat ? product.category : '')
 
-    setOptionGroups(Array.isArray(product.customization_options) ? product.customization_options : [])
+    // Normalize option groups with default price_mode and min/max cuts structure
+    const normalizedGroups = (Array.isArray(product.customization_options) ? product.customization_options : []).map(g => ({
+      ...g,
+      price_mode: g.price_mode || (g.type === 'checkbox' ? 'addon' : 'standalone'),
+      options: (g.options || []).map(opt => ({
+        ...opt,
+        allowed_cuts: opt.allowed_cuts || (opt.has_cuts_selection ? DEFAULT_FISH_CUTS : []),
+        min_cuts_selection: opt.min_cuts_selection ?? (opt.has_cuts_selection ? 1 : 0),
+        max_cuts_selection: opt.max_cuts_selection || 1,
+      }))
+    }))
+
+    setOptionGroups(normalizedGroups)
     setIngredients(Array.isArray(product.ingredients) ? product.ingredients : [])
     setAllergens(Array.isArray(product.allergens) ? product.allergens : [])
     setPrepTime(product.preparation_time_minutes || 20)
@@ -394,7 +481,6 @@ export default function StoreInventoryPage() {
     }
   }
 
-  // Upload handling with Drag & Drop
   const handleFileUpload = async (file: File) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
@@ -415,7 +501,6 @@ export default function StoreInventoryPage() {
         })
 
       if (error) {
-        // Fallback to local base64 preview if bucket upload throws restriction
         const reader = new FileReader()
         reader.onload = (e) => {
           setFormData(prev => ({ ...prev, image_url: e.target?.result as string }))
@@ -448,7 +533,6 @@ export default function StoreInventoryPage() {
     }
   }
 
-  // Preset Applier
   const applyPreset = (presetKey: string) => {
     const preset = WAITLIST_PRESETS[presetKey]
     if (preset) {
@@ -456,9 +540,8 @@ export default function StoreInventoryPage() {
     }
   }
 
-  // Option Groups helper methods
   const addOptionGroup = () => {
-    setOptionGroups([...optionGroups, { name: '', is_required: true, type: 'radio', options: [] }])
+    setOptionGroups([...optionGroups, { name: '', is_required: true, type: 'radio', price_mode: 'standalone', options: [] }])
   }
 
   const removeOptionGroup = (index: number) => {
@@ -473,7 +556,16 @@ export default function StoreInventoryPage() {
 
   const addOption = (groupIndex: number) => {
     const updated = [...optionGroups]
-    updated[groupIndex].options.push({ name: '', price_modifier: 0, is_available: true, description: '' })
+    updated[groupIndex].options.push({ 
+      name: '', 
+      price_modifier: 0, 
+      is_available: true, 
+      description: '',
+      has_cuts_selection: false,
+      allowed_cuts: [],
+      min_cuts_selection: 1,
+      max_cuts_selection: 1
+    })
     setOptionGroups(updated)
   }
 
@@ -489,6 +581,27 @@ export default function StoreInventoryPage() {
       ...updated[groupIndex].options[optionIndex],
       [field]: value,
     }
+    setOptionGroups(updated)
+  }
+
+  const addCutToOption = (groupIndex: number, optionIndex: number) => {
+    const key = `${groupIndex}-${optionIndex}`
+    const cutName = (newCutInput[key] || '').trim()
+    if (!cutName) return
+
+    const updated = [...optionGroups]
+    const currentCuts = updated[groupIndex].options[optionIndex].allowed_cuts || []
+    if (!currentCuts.includes(cutName)) {
+      updated[groupIndex].options[optionIndex].allowed_cuts = [...currentCuts, cutName]
+      setOptionGroups(updated)
+    }
+    setNewCutInput({ ...newCutInput, [key]: '' })
+  }
+
+  const removeCutFromOption = (groupIndex: number, optionIndex: number, cutIndex: number) => {
+    const updated = [...optionGroups]
+    const currentCuts = updated[groupIndex].options[optionIndex].allowed_cuts || []
+    updated[groupIndex].options[optionIndex].allowed_cuts = currentCuts.filter((_, idx) => idx !== cutIndex)
     setOptionGroups(updated)
   }
 
@@ -561,7 +674,7 @@ export default function StoreInventoryPage() {
           .eq('id', editingId)
 
         if (error) throw error
-        alert('Product, customizations, and culinary details updated successfully!')
+        alert('Product, portion prices, and minimum/maximum cut limits saved successfully!')
       } else {
         const { data: newProd, error } = await supabase
           .from('store_products')
@@ -571,7 +684,7 @@ export default function StoreInventoryPage() {
 
         if (error) throw error
         setEditingId(newProd.id)
-        alert('New product and all interactive options published live to storefront!')
+        alert('New product, custom portion prices, and cut limits published live to storefront!')
       }
 
       fetchProducts()
@@ -617,7 +730,7 @@ export default function StoreInventoryPage() {
               <h1 className="text-2xl sm:text-3xl font-extrabold">Store Inventory &amp; Customization Admin</h1>
             </div>
             <p className="text-gray-300 text-xs sm:text-sm mt-1">
-              Configure food products, waitlist-style option groups (Shawarma sizes, Noodles with turkey counters, Parfaits), cake matrices, and ingredients.
+              Configure food products, independent portion pricing (Half/Full Catfish, Shawarma sizes), part cut options (Head, Middle, Tail), min/max limits, and cake matrices.
             </p>
           </div>
           <Link href="/admin/dashboard">
@@ -687,7 +800,7 @@ export default function StoreInventoryPage() {
                   )}
                 </h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Configure basic info, interactive waitlist choices, ingredients, and pricing.
+                  Configure basic info, custom portion prices (Half vs Full), piece cuts (Head/Middle/Tail), min/max selection bounds, add-ons, and specs.
                 </p>
               </div>
               <button
@@ -725,7 +838,7 @@ export default function StoreInventoryPage() {
                 }`}
               >
                 <Settings2 className="w-4 h-4 text-emerald-700" />
-                2. Custom Options ({optionGroups.length}) &amp; Specs
+                2. Custom Options, Cuts &amp; Specs ({optionGroups.length})
               </button>
 
               {isCurrentCategoryCake && (
@@ -758,16 +871,21 @@ export default function StoreInventoryPage() {
                       required
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g. Jumbo Shawarma, Smokey Jollof Rice, Classic Parfait, Red Velvet Cake"
+                      placeholder="e.g. Catfish Pepper Soup, Jumbo Shawarma, Classic Parfait"
                       className="rounded-xl border-gray-300 font-bold"
                     />
                   </div>
 
                   {/* Base Price */}
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
-                      Base Price (₦ Naira) *
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
+                        Base / Starting Price (₦ Naira) *
+                      </label>
+                      <span className="text-[10px] text-gray-400 font-medium">
+                        (Overridden if portion has exact price)
+                      </span>
+                    </div>
                     <div className="relative">
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">₦</span>
                       <Input
@@ -776,7 +894,7 @@ export default function StoreInventoryPage() {
                         step="any"
                         value={formData.price}
                         onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                        placeholder="3000"
+                        placeholder="9000"
                         className="pl-8 rounded-xl border-gray-300 font-black text-base text-[#0A2E1D]"
                       />
                     </div>
@@ -844,7 +962,7 @@ export default function StoreInventoryPage() {
                     />
                   </div>
 
-                  {/* Image Upload Area with Drag & Drop */}
+                  {/* Image Upload Area */}
                   <div className="space-y-2 md:col-span-2">
                     <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
                       Product Picture (Upload, Drag or Enter Path)
@@ -946,7 +1064,7 @@ export default function StoreInventoryPage() {
                         type="text"
                         value={formData.image_url}
                         onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-                        placeholder="Or enter image URL/path (e.g. /shawarma.jpeg, /jollof.jpeg, /parfait.jpeg)"
+                        placeholder="Or enter image URL/path (e.g. /catfish.jpg, /shawarma.jpeg, /jollof.jpeg)"
                         className="rounded-xl border-gray-200 text-xs bg-white"
                       />
                     </div>
@@ -983,7 +1101,7 @@ export default function StoreInventoryPage() {
               </div>
             )}
 
-            {/* TAB 2: Custom Options, Ingredients, Allergens (Harmonized Color Theme) */}
+            {/* TAB 2: Custom Options, Portion Prices & Cuts Selection */}
             {activeTab === 'customization' && (
               <div className="space-y-6 bg-[#FDFBF7] text-[#0A2E1D] p-5 sm:p-7 rounded-3xl border border-gray-200 shadow-sm">
                 
@@ -991,7 +1109,7 @@ export default function StoreInventoryPage() {
                 <div className="bg-white p-4 rounded-2xl border border-gray-200 space-y-2.5 shadow-xs">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[#0A2E1D] flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-[#EAA823]" />
-                    1-Click Waitlist Presets (Click to Auto-Fill Options):
+                    1-Click Presets with Cuts &amp; Sizes (Click to Auto-Fill):
                   </span>
                   <div className="flex flex-wrap gap-2">
                     {Object.keys(WAITLIST_PRESETS).map((presetKey) => (
@@ -1009,9 +1127,14 @@ export default function StoreInventoryPage() {
 
                 {/* Option Groups Header */}
                 <div className="flex items-center justify-between pt-1">
-                  <span className="text-xs font-bold text-[#0A2E1D] uppercase tracking-wider">
-                    Interactive Option Groups ({optionGroups.length})
-                  </span>
+                  <div>
+                    <span className="text-xs font-bold text-[#0A2E1D] uppercase tracking-wider block">
+                      Interactive Option Groups ({optionGroups.length})
+                    </span>
+                    <span className="text-[11px] text-gray-500">
+                      Configure <b>Exact Portion Prices</b>, <b>Add-on Fees</b>, and <b>Min/Max Cuts (Head, Middle, Tail)</b>.
+                    </span>
+                  </div>
                   <Button
                     type="button"
                     onClick={addOptionGroup}
@@ -1026,138 +1149,286 @@ export default function StoreInventoryPage() {
                   <div className="text-center py-8 bg-white border border-dashed border-gray-300 rounded-2xl space-y-2">
                     <p className="text-sm font-semibold text-gray-700">No option groups added yet.</p>
                     <p className="text-xs text-gray-500 max-w-md mx-auto">
-                      Click a 1-click preset above (e.g. Shawarma sizes, Noodles with turkey counters, Rice styles, Parfait tiers) or tap &quot;Add Option Group&quot; to configure custom options.
+                      Click a 1-click preset above (e.g. Catfish with Head/Middle/Tail, Parfaits, Shawarmas) or tap &quot;Add Option Group&quot; to configure custom options.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {optionGroups.map((group, groupIndex) => (
-                      <div key={groupIndex} className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
-                          <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
-                            <Input
-                              placeholder="Group Name (e.g., Shawarma Size, Protein Choice, Rice Style)"
-                              value={group.name}
-                              onChange={(e) => updateOptionGroup(groupIndex, 'name', e.target.value)}
-                              className="bg-[#FDFBF7] border-gray-300 text-[#0A2E1D] font-bold text-xs sm:text-sm rounded-xl"
-                            />
+                    {optionGroups.map((group, groupIndex) => {
+                      const isStandalone = (group.price_mode || 'standalone') === 'standalone'
 
-                            <div className="flex items-center gap-4">
-                              <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 cursor-pointer whitespace-nowrap">
-                                <input
-                                  type="checkbox"
-                                  checked={group.is_required}
-                                  onChange={(e) => updateOptionGroup(groupIndex, 'is_required', e.target.checked)}
-                                  className="w-4 h-4 rounded text-[#0A2E1D] focus:ring-[#0A2E1D]"
-                                />
-                                Required
-                              </label>
+                      return (
+                        <div key={groupIndex} className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+                            
+                            {/* Group Name */}
+                            <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-3">
+                              <Input
+                                placeholder="Group Name (e.g., Portion Size, Choice of Protein)"
+                                value={group.name}
+                                onChange={(e) => updateOptionGroup(groupIndex, 'name', e.target.value)}
+                                className="bg-[#FDFBF7] border-gray-300 text-[#0A2E1D] font-bold text-xs sm:text-sm rounded-xl flex-1"
+                              />
 
-                              <select
-                                value={group.type || 'radio'}
-                                onChange={(e) => updateOptionGroup(groupIndex, 'type', e.target.value)}
-                                className="bg-[#FDFBF7] border border-gray-300 text-[#0A2E1D] text-xs p-2 rounded-xl outline-none font-medium"
-                              >
-                                <option value="radio">Single Choice (Radio)</option>
-                                <option value="checkbox">Multi-Choice (Checkbox)</option>
-                              </select>
+                              {/* Price Mode Selector (Standalone vs Add-on) */}
+                              <div className="flex items-center gap-2">
+                                <label className="text-[11px] font-bold text-gray-600 uppercase whitespace-nowrap">Pricing Type:</label>
+                                <select
+                                  value={group.price_mode || 'standalone'}
+                                  onChange={(e) => updateOptionGroup(groupIndex, 'price_mode', e.target.value)}
+                                  className={`text-xs font-bold p-2 rounded-xl border outline-none cursor-pointer ${
+                                    isStandalone
+                                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                      : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                                  }`}
+                                >
+                                  <option value="standalone">Exact Portion Price (Overrides Base)</option>
+                                  <option value="addon">+ Add-on Fee (Adds to Base)</option>
+                                </select>
+                              </div>
+
+                              {/* Required & Type */}
+                              <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 cursor-pointer whitespace-nowrap">
+                                  <input
+                                    type="checkbox"
+                                    checked={group.is_required}
+                                    onChange={(e) => updateOptionGroup(groupIndex, 'is_required', e.target.checked)}
+                                    className="w-4 h-4 rounded text-[#0A2E1D] focus:ring-[#0A2E1D]"
+                                  />
+                                  Required
+                                </label>
+
+                                <select
+                                  value={group.type || 'radio'}
+                                  onChange={(e) => updateOptionGroup(groupIndex, 'type', e.target.value)}
+                                  className="bg-[#FDFBF7] border border-gray-300 text-[#0A2E1D] text-xs p-2 rounded-xl outline-none font-medium"
+                                >
+                                  <option value="radio">Single Choice (Radio)</option>
+                                  <option value="checkbox">Multi-Choice (Checkbox)</option>
+                                </select>
+                              </div>
                             </div>
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeOptionGroup(groupIndex)}
+                              className="text-red-500 hover:bg-red-50 p-2 rounded-xl self-end lg:self-auto cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </div>
 
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeOptionGroup(groupIndex)}
-                            className="text-red-500 hover:bg-red-50 p-2 rounded-xl self-end sm:self-auto cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                          {/* Options List */}
+                          <div className="space-y-3 pl-2 sm:pl-4 border-l-2 border-[#0A2E1D]/20">
+                            {group.options.map((option, optionIndex) => {
+                              const cutInputKey = `${groupIndex}-${optionIndex}`
 
-                        {/* Options List */}
-                        <div className="space-y-3 pl-2 sm:pl-4 border-l-2 border-[#0A2E1D]/20">
-                          {group.options.map((option, optionIndex) => (
-                            <div key={optionIndex} className="bg-[#FDFBF7] p-3 rounded-xl border border-gray-200 space-y-2">
-                              <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
-                                <Input
-                                  placeholder="Option title (e.g., Medium size, Full Turkey, Jollof)"
-                                  value={option.name}
-                                  onChange={(e) => updateOption(groupIndex, optionIndex, 'name', e.target.value)}
-                                  className="bg-white border-gray-300 text-[#0A2E1D] text-xs rounded-xl flex-1 min-w-[140px]"
-                                />
+                              return (
+                                <div key={optionIndex} className="bg-[#FDFBF7] p-3.5 rounded-xl border border-gray-200 space-y-2.5">
+                                  
+                                  {/* Row 1: Title, Price, Availability, Delete */}
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
+                                    <Input
+                                      placeholder="Option Title (e.g., Catfish Cuts, Full Catfish 1L, Half Portion)"
+                                      value={option.name}
+                                      onChange={(e) => updateOption(groupIndex, optionIndex, 'name', e.target.value)}
+                                      className="bg-white border-gray-300 text-[#0A2E1D] text-xs rounded-xl flex-1 min-w-[150px] font-semibold"
+                                    />
 
-                                <div className="flex items-center gap-1">
-                                  <span className="text-xs text-[#0A2E1D] font-mono font-bold">₦</span>
-                                  <Input
-                                    type="number"
-                                    step="any"
-                                    placeholder="Price"
-                                    value={option.price_modifier}
-                                    onChange={(e) => updateOption(groupIndex, optionIndex, 'price_modifier', parseFloat(e.target.value) || 0)}
-                                    className="w-28 bg-white border-gray-300 text-[#0A2E1D] text-xs rounded-xl font-bold"
-                                  />
+                                    {/* Price Input */}
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-xs text-[#0A2E1D] font-mono font-bold">
+                                        {isStandalone ? '₦' : '+₦'}
+                                      </span>
+                                      <Input
+                                        type="number"
+                                        step="any"
+                                        placeholder={isStandalone ? 'Exact Price' : 'Extra Fee'}
+                                        value={option.price_modifier}
+                                        onChange={(e) => updateOption(groupIndex, optionIndex, 'price_modifier', parseFloat(e.target.value) || 0)}
+                                        className="w-32 bg-white border-gray-300 text-[#0A2E1D] text-xs rounded-xl font-bold"
+                                      />
+                                      <span className="text-[10px] text-gray-400 font-bold hidden sm:inline">
+                                        {isStandalone ? '(Exact)' : '(Add)'}
+                                      </span>
+                                    </div>
+
+                                    <label className="flex items-center gap-1 text-[11px] text-gray-700 whitespace-nowrap cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={option.is_available}
+                                        onChange={(e) => updateOption(groupIndex, optionIndex, 'is_available', e.target.checked)}
+                                        className="w-3.5 h-3.5 rounded text-[#0A2E1D]"
+                                      />
+                                      Available
+                                    </label>
+
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => removeOption(groupIndex, optionIndex)}
+                                      className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </div>
+
+                                  {/* Row 2: Subtitle & Multiplier Counter Toggle */}
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-3 items-center pt-1">
+                                    <Input
+                                      placeholder="Subtitle (e.g. 'Prepared fresh with aromatic native herbs', '1L family bowl')"
+                                      value={option.description || ''}
+                                      onChange={(e) => updateOption(groupIndex, optionIndex, 'description', e.target.value)}
+                                      className="bg-white border-gray-300 text-gray-600 text-[11px] rounded-lg flex-1"
+                                    />
+
+                                    <label className="flex items-center gap-1.5 text-[10px] text-[#0A2E1D] font-semibold whitespace-nowrap cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!option.has_counter}
+                                        onChange={(e) => updateOption(groupIndex, optionIndex, 'has_counter', e.target.checked)}
+                                        className="w-3.5 h-3.5 rounded text-[#0A2E1D]"
+                                      />
+                                      Has Multiplier Counter (e.g. ₦2,000/cube)
+                                    </label>
+                                  </div>
+
+                                  {/* Row 3: Sub-Cuts & Piece Parts Selection with Min & Max Constraints */}
+                                  <div className="p-3 bg-white rounded-xl border border-gray-200/80 space-y-2.5 mt-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <label className="flex items-center gap-2 text-xs font-bold text-[#0A2E1D] cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={!!option.has_cuts_selection}
+                                          onChange={(e) => {
+                                            const checked = e.target.checked
+                                            updateOption(groupIndex, optionIndex, 'has_cuts_selection', checked)
+                                            if (checked && (!option.allowed_cuts || option.allowed_cuts.length === 0)) {
+                                              updateOption(groupIndex, optionIndex, 'allowed_cuts', DEFAULT_FISH_CUTS)
+                                            }
+                                            if (checked && (option.min_cuts_selection === undefined || option.min_cuts_selection === null)) {
+                                              updateOption(groupIndex, optionIndex, 'min_cuts_selection', 1)
+                                            }
+                                          }}
+                                          className="w-4 h-4 rounded text-[#0A2E1D] focus:ring-[#0A2E1D]"
+                                        />
+                                        <Fish className="w-3.5 h-3.5 text-[#EAA823]" />
+                                        <span>Allow Customers to Pick Specific Cuts (Head, Middle, Tail, Wings, etc.)</span>
+                                      </label>
+
+                                      {option.has_cuts_selection && (
+                                        <div className="flex items-center gap-3 text-[11px] font-semibold text-gray-600">
+                                          {/* Minimum Selectable */}
+                                          <div className="flex items-center gap-1.5">
+                                            <span>Min cuts:</span>
+                                            <Input
+                                              type="number"
+                                              min="0"
+                                              value={option.min_cuts_selection ?? 1}
+                                              onChange={(e) => {
+                                                const val = Math.max(0, parseInt(e.target.value, 10) || 0)
+                                                updateOption(groupIndex, optionIndex, 'min_cuts_selection', val)
+                                              }}
+                                              className="w-14 h-7 text-center font-bold text-xs bg-[#FDFBF7] border-gray-300"
+                                              title="Minimum number of piece cuts the customer MUST select"
+                                            />
+                                          </div>
+
+                                          {/* Maximum Selectable */}
+                                          <div className="flex items-center gap-1.5">
+                                            <span>Max cuts:</span>
+                                            <Input
+                                              type="number"
+                                              min="1"
+                                              value={option.max_cuts_selection || 1}
+                                              onChange={(e) => {
+                                                const val = Math.max(1, parseInt(e.target.value, 10) || 1)
+                                                updateOption(groupIndex, optionIndex, 'max_cuts_selection', val)
+                                              }}
+                                              className="w-14 h-7 text-center font-bold text-xs bg-[#FDFBF7] border-gray-300"
+                                              title="Maximum number of piece cuts the customer can select"
+                                            />
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Configurable Cuts Chips & Input */}
+                                    {option.has_cuts_selection && (
+                                      <div className="space-y-2 pt-1 border-t border-gray-100">
+                                        <div className="flex gap-2">
+                                          <Input
+                                            type="text"
+                                            placeholder="Add cut part (e.g., Head, Middle Cut, Tail, Wings)..."
+                                            value={newCutInput[cutInputKey] || ''}
+                                            onChange={(e) => setNewCutInput({ ...newCutInput, [cutInputKey]: e.target.value })}
+                                            className="bg-[#FDFBF7] border-gray-200 text-xs rounded-lg flex-1"
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                                addCutToOption(groupIndex, optionIndex)
+                                              }
+                                            }}
+                                          />
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={() => addCutToOption(groupIndex, optionIndex)}
+                                            className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white text-xs font-bold rounded-lg cursor-pointer"
+                                          >
+                                            <Plus className="w-3.5 h-3.5 mr-1" /> Add Cut
+                                          </Button>
+                                        </div>
+
+                                        {/* Display Active Cuts */}
+                                        <div className="flex flex-wrap gap-1.5 pt-1">
+                                          {(option.allowed_cuts || []).map((cut, cutIdx) => (
+                                            <span 
+                                              key={cutIdx} 
+                                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-200 text-xs font-medium"
+                                            >
+                                              <Tag className="w-3 h-3 text-[#EAA823]" />
+                                              <span>{cut}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => removeCutFromOption(groupIndex, optionIndex, cutIdx)}
+                                                className="text-gray-400 hover:text-red-500 cursor-pointer ml-0.5"
+                                              >
+                                                <X className="w-3 h-3" />
+                                              </button>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
                                 </div>
+                              )
+                            })}
 
-                                <label className="flex items-center gap-1 text-[11px] text-gray-700 whitespace-nowrap cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={option.is_available}
-                                    onChange={(e) => updateOption(groupIndex, optionIndex, 'is_available', e.target.checked)}
-                                    className="w-3.5 h-3.5 rounded text-[#0A2E1D]"
-                                  />
-                                  Available
-                                </label>
-
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeOption(groupIndex, optionIndex)}
-                                  className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </div>
-
-                              <div className="flex flex-wrap sm:flex-nowrap gap-3 items-center pt-1">
-                                <Input
-                                  placeholder="Subtitle (e.g. 'Classic single roll', 'Wok-tossed with sweet corn')"
-                                  value={option.description || ''}
-                                  onChange={(e) => updateOption(groupIndex, optionIndex, 'description', e.target.value)}
-                                  className="bg-white border-gray-300 text-gray-600 text-[11px] rounded-lg flex-1"
-                                />
-
-                                <label className="flex items-center gap-1.5 text-[10px] text-[#0A2E1D] font-semibold whitespace-nowrap cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!option.has_counter}
-                                    onChange={(e) => updateOption(groupIndex, optionIndex, 'has_counter', e.target.checked)}
-                                    className="w-3.5 h-3.5 rounded text-[#0A2E1D]"
-                                  />
-                                  Has Multiplier Counter (e.g. ₦2,000/cube)
-                                </label>
-                              </div>
-                            </div>
-                          ))}
-
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => addOption(groupIndex)}
-                            className="w-full mt-2 border-dashed border-gray-300 text-gray-700 hover:text-[#0A2E1D] hover:border-[#0A2E1D] text-xs font-semibold rounded-xl cursor-pointer bg-white"
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1" />
-                            Add Choice to &quot;{group.name || 'Group'}&quot;
-                          </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => addOption(groupIndex)}
+                              className="w-full mt-2 border-dashed border-gray-300 text-gray-700 hover:text-[#0A2E1D] hover:border-[#0A2E1D] text-xs font-semibold rounded-xl cursor-pointer bg-white"
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1" />
+                              Add Portion / Choice to &quot;{group.name || 'Group'}&quot;
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
 
-                {/* Culinary Specs, Prep Time, Servings */}
+                {/* Culinary Specs */}
                 <div className="pt-4 border-t border-gray-200 space-y-4">
                   <span className="text-xs font-bold text-[#0A2E1D] uppercase tracking-wider block">
                     Culinary Specs &amp; Health Details
@@ -1215,7 +1486,7 @@ export default function StoreInventoryPage() {
                         type="text"
                         value={newIngredient}
                         onChange={(e) => setNewIngredient(e.target.value)}
-                        placeholder="e.g. Long-grain Rice, Plum Tomatoes, Scent Leaf, Greek Yogurt"
+                        placeholder="e.g. Fresh Catfish, Ehuru, Uda, Scent Leaf, Long-grain Rice"
                         className="bg-white border-gray-300 text-[#0A2E1D] text-xs rounded-xl"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
@@ -1252,7 +1523,7 @@ export default function StoreInventoryPage() {
                         type="text"
                         value={newAllergen}
                         onChange={(e) => setNewAllergen(e.target.value)}
-                        placeholder="e.g. Dairy, Cashews, Peanuts, Gluten"
+                        placeholder="e.g. Fish, Dairy, Cashews, Peanuts, Gluten"
                         className="bg-white border-gray-300 text-[#0A2E1D] text-xs rounded-xl"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
@@ -1376,7 +1647,7 @@ export default function StoreInventoryPage() {
             {/* Sticky Save Action Bar */}
             <div className="pt-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="text-xs text-muted-foreground">
-                All basic info, option groups, and culinary specs will be saved together.
+                All basic info, portion prices, cuts selection, and culinary specs will be saved together.
               </span>
 
               <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -1443,8 +1714,8 @@ export default function StoreInventoryPage() {
                 <tr>
                   <th className="px-4 py-3.5 text-left font-bold text-xs uppercase tracking-wider text-[#0A2E1D]">Product</th>
                   <th className="px-4 py-3.5 text-left font-bold text-xs uppercase tracking-wider text-[#0A2E1D]">Category</th>
-                  <th className="px-4 py-3.5 text-left font-bold text-xs uppercase tracking-wider text-[#0A2E1D]">Base Price</th>
-                  <th className="px-4 py-3.5 text-left font-bold text-xs uppercase tracking-wider text-[#0A2E1D]">Interactive Customizations</th>
+                  <th className="px-4 py-3.5 text-left font-bold text-xs uppercase tracking-wider text-[#0A2E1D]">Starting Price</th>
+                  <th className="px-4 py-3.5 text-left font-bold text-xs uppercase tracking-wider text-[#0A2E1D]">Portion &amp; Cut Customizations</th>
                   <th className="px-4 py-3.5 text-left font-bold text-xs uppercase tracking-wider text-[#0A2E1D]">Status</th>
                   <th className="px-4 py-3.5 text-center font-bold text-xs uppercase tracking-wider text-[#0A2E1D]">Actions</th>
                 </tr>
@@ -1497,7 +1768,7 @@ export default function StoreInventoryPage() {
                               {product.customization_options!.length} Option Group{product.customization_options!.length > 1 ? 's' : ''} Configured
                             </span>
                             <span className="text-[10px] text-gray-500 truncate block max-w-xs">
-                              {product.customization_options!.map(g => g.name).join(', ')}
+                              {product.customization_options!.map(g => `${g.name} (${g.price_mode === 'addon' ? 'Add-on' : 'Portion'})`).join(', ')}
                             </span>
                           </div>
                         ) : (

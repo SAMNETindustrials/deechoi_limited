@@ -24,9 +24,11 @@ import {
   KeyRound,
   Sparkles,
   UserCheck,
-  RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  Mail,
+  HelpCircle,
+  ArrowRight
 } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -125,15 +127,28 @@ export default function CheckoutPage() {
 
   // 5-Digit Transaction Code State & Modal
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [isReturningCustomer, setIsReturningCustomer] = useState(false)
+  const [authMode, setAuthMode] = useState<'verify' | 'create' | 'recover'>('verify')
   const [authLoading, setAuthLoading] = useState(false)
-  const [transactionCode, setTransactionCode] = useState(['', '', '', '', ''])
+  
+  // Verify mode state
+  const [verifyCode, setVerifyCode] = useState(['', '', '', '', ''])
+  
+  // Create mode state
+  const [newEmail, setNewEmail] = useState('')
+  const [newTransactionCode, setNewTransactionCode] = useState(['', '', '', '', ''])
   const [confirmTransactionCode, setConfirmTransactionCode] = useState(['', '', '', '', ''])
+  
+  // Recover mode state
+  const [recoverEmail, setRecoverEmail] = useState('')
+  const [recoveringLoading, setRecoveringLoading] = useState(false)
+
   const [authError, setAuthError] = useState<string | null>(null)
   const [existingStoredHash, setExistingStoredHash] = useState<string | null>(null)
   const [showPin, setShowPin] = useState(false)
-  const codeInputsRef = useRef<(HTMLInputElement | null)[]>([])
-  const confirmCodeInputsRef = useRef<(HTMLInputElement | null)[]>([])
+
+  const verifyInputsRef = useRef<(HTMLInputElement | null)[]>([])
+  const createInputsRef = useRef<(HTMLInputElement | null)[]>([])
+  const confirmInputsRef = useRef<(HTMLInputElement | null)[]>([])
 
   // Auto-fill from returning customer session if available
   useEffect(() => {
@@ -346,7 +361,7 @@ export default function CheckoutPage() {
   }
 
   // ==========================================================================
-  // CUSTOMER VERIFICATION & 5-DIGIT CODE POPUP TRIGGER
+  // CHECKOUT TRANSACTION CODE MODAL TRIGGER
   // ==========================================================================
   const handleProceedToPayment = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -362,161 +377,241 @@ export default function CheckoutPage() {
 
     setAuthError(null)
     setAuthLoading(true)
-    setTransactionCode(['', '', '', '', ''])
+    setVerifyCode(['', '', '', '', ''])
+    setNewTransactionCode(['', '', '', '', ''])
     setConfirmTransactionCode(['', '', '', '', ''])
 
     try {
       const normalizedEmail = customerInfo.email.trim().toLowerCase()
-      const normalizedPhone = customerInfo.phone.trim()
 
-      // Check if user already exists in customer profile database
-      const { data: customerRecord, error } = await supabase
-        .from('customer_profiles')
-        .select('id, email, phone, transaction_code, first_name, last_name')
-        .or(`email.eq.${normalizedEmail},phone.eq.${normalizedPhone}`)
+      // Check if user already exists in customer_accounts database
+      const { data: accountRecord, error } = await supabase
+        .from('customer_accounts')
+        .select('id, customer_email, transaction_code')
+        .ilike('customer_email', normalizedEmail)
         .maybeSingle()
 
-      if (customerRecord && customerRecord.transaction_code) {
-        setIsReturningCustomer(true)
-        setExistingStoredHash(customerRecord.transaction_code)
+      if (accountRecord && accountRecord.transaction_code) {
+        setAuthMode('verify')
+        setExistingStoredHash(accountRecord.transaction_code)
       } else {
-        setIsReturningCustomer(false)
+        setAuthMode('create')
+        setNewEmail(normalizedEmail)
         setExistingStoredHash(null)
       }
 
       setShowAuthModal(true)
-      setTimeout(() => codeInputsRef.current[0]?.focus(), 150)
+      setTimeout(() => verifyInputsRef.current[0]?.focus(), 150)
     } catch (err) {
-      console.warn('Customer lookup notice:', err)
-      // If table is not present yet, default to setup mode
-      setIsReturningCustomer(false)
+      console.warn('Customer account lookup notice:', err)
+      setAuthMode('create')
+      setNewEmail(customerInfo.email.trim().toLowerCase())
       setShowAuthModal(true)
     } finally {
       setAuthLoading(false)
     }
   }
 
-  const handleCodeChange = (
+  const handleDigitInput = (
     index: number,
     val: string,
-    isConfirm: boolean = false
+    targetType: 'verify' | 'create' | 'confirm'
   ) => {
     const cleanDigit = val.replace(/\D/g, '').slice(-1)
-    if (isConfirm) {
-      const newConfirm = [...confirmTransactionCode]
-      newConfirm[index] = cleanDigit
-      setConfirmTransactionCode(newConfirm)
-      if (cleanDigit && index < 4) {
-        confirmCodeInputsRef.current[index + 1]?.focus()
-      }
-    } else {
-      const newCode = [...transactionCode]
-      newCode[index] = cleanDigit
-      setTransactionCode(newCode)
-      if (cleanDigit && index < 4) {
-        codeInputsRef.current[index + 1]?.focus()
-      }
+
+    if (targetType === 'verify') {
+      const next = [...verifyCode]
+      next[index] = cleanDigit
+      setVerifyCode(next)
+      if (cleanDigit && index < 4) verifyInputsRef.current[index + 1]?.focus()
+    } else if (targetType === 'create') {
+      const next = [...newTransactionCode]
+      next[index] = cleanDigit
+      setNewTransactionCode(next)
+      if (cleanDigit && index < 4) createInputsRef.current[index + 1]?.focus()
+    } else if (targetType === 'confirm') {
+      const next = [...confirmTransactionCode]
+      next[index] = cleanDigit
+      setConfirmTransactionCode(next)
+      if (cleanDigit && index < 4) confirmInputsRef.current[index + 1]?.focus()
     }
   }
 
-  const handleCodeKeyDown = (
+  const handleKeyNavigation = (
     index: number,
     e: React.KeyboardEvent<HTMLInputElement>,
-    isConfirm: boolean = false
+    targetType: 'verify' | 'create' | 'confirm'
   ) => {
     if (e.key === 'Backspace') {
-      if (isConfirm) {
-        if (!confirmTransactionCode[index] && index > 0) {
-          confirmCodeInputsRef.current[index - 1]?.focus()
-        }
-      } else {
-        if (!transactionCode[index] && index > 0) {
-          codeInputsRef.current[index - 1]?.focus()
-        }
+      if (targetType === 'verify' && !verifyCode[index] && index > 0) {
+        verifyInputsRef.current[index - 1]?.focus()
+      } else if (targetType === 'create' && !newTransactionCode[index] && index > 0) {
+        createInputsRef.current[index - 1]?.focus()
+      } else if (targetType === 'confirm' && !confirmTransactionCode[index] && index > 0) {
+        confirmInputsRef.current[index - 1]?.focus()
       }
     }
   }
 
   const generateRandomCode = () => {
-    const randomDigits = Math.floor(10000 + Math.random() * 90000)
-      .toString()
-      .split('')
-    setTransactionCode(randomDigits)
+    const randomDigits = Math.floor(10000 + Math.random() * 90000).toString().split('')
+    setNewTransactionCode(randomDigits)
     setConfirmTransactionCode(randomDigits)
     setAuthError(null)
   }
 
-  const handleVerifyOrSaveCode = async () => {
-    const fullCode = transactionCode.join('')
-    setAuthError(null)
+  const sendEmailNotification = async (email: string, subject: string, message: string) => {
+    try {
+      await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, subject, message }),
+      })
+    } catch (err) {
+      console.warn('Email dispatch warning:', err)
+    }
+  }
 
-    if (fullCode.length !== 5) {
-      setAuthError('Please enter a complete 5-digit transaction code.')
+  // Handle Code Verification or Creation on Checkout
+  const handleVerifyOrAuthCode = async () => {
+    setAuthError(null)
+    const normalizedEmail = customerInfo.email.trim().toLowerCase()
+    const fullName = `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`.trim()
+
+    if (authMode === 'verify') {
+      const fullCode = verifyCode.join('')
+      if (fullCode.length !== 5) {
+        setAuthError('Please enter your complete 5-digit transaction code.')
+        return
+      }
+
+      setAuthLoading(true)
+      try {
+        const { data: account } = await supabase
+          .from('customer_accounts')
+          .select('transaction_code')
+          .ilike('customer_email', normalizedEmail)
+          .maybeSingle()
+
+        if (account && account.transaction_code !== fullCode) {
+          setAuthError('Incorrect 5-digit transaction code. Please try again.')
+          setAuthLoading(false)
+          return
+        }
+
+        // Save session & proceed
+        localStorage.setItem('deechoi_customer_email', normalizedEmail)
+        localStorage.setItem('deechoi_customer_session', JSON.stringify({ email: normalizedEmail, name: fullName }))
+
+        setShowAuthModal(false)
+        setStep(2)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      } catch (err) {
+        console.warn('Verification error:', err)
+        setShowAuthModal(false)
+        setStep(2)
+      } finally {
+        setAuthLoading(false)
+      }
+    } else if (authMode === 'create') {
+      const codeStr = newTransactionCode.join('')
+      const confirmStr = confirmTransactionCode.join('')
+      const emailToUse = (newEmail || normalizedEmail).trim().toLowerCase()
+
+      if (!emailToUse || codeStr.length !== 5) {
+        setAuthError('Please provide a valid email and 5-digit code.')
+        return
+      }
+
+      if (codeStr !== confirmStr) {
+        setAuthError('The confirmation code does not match.')
+        return
+      }
+
+      setAuthLoading(true)
+      try {
+        // Ensure code is unique
+        const { data: existingCode } = await supabase
+          .from('customer_accounts')
+          .select('id')
+          .eq('transaction_code', codeStr)
+          .maybeSingle()
+
+        if (existingCode) {
+          setAuthError('This 5-digit code is already taken. Please choose another one.')
+          setAuthLoading(false)
+          return
+        }
+
+        const { error } = await supabase
+          .from('customer_accounts')
+          .insert([{ customer_email: emailToUse, transaction_code: codeStr }])
+
+        if (error && error.code !== '23505') {
+          setAuthError('Could not create account. Please try again.')
+          setAuthLoading(false)
+          return
+        }
+
+        // Send confirmation email
+        await sendEmailNotification(
+          emailToUse,
+          'Your De-echoi 5-Digit Transaction Code',
+          `Hello ${fullName},\n\nYour 5-digit transaction code has been created successfully during checkout.\n\nYour Code: ${codeStr}\n\nUse this code for future checkouts and logins.\n\nThank you!`
+        )
+
+        localStorage.setItem('deechoi_customer_email', emailToUse)
+        localStorage.setItem('deechoi_customer_session', JSON.stringify({ email: emailToUse, name: fullName }))
+
+        setShowAuthModal(false)
+        setStep(2)
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      } catch (err) {
+        console.error('Creation error:', err)
+        setShowAuthModal(false)
+        setStep(2)
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+  }
+
+  // Handle Code Recovery Request during Checkout
+  const handleRecoverCodeAction = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const emailToRecover = recoverEmail.trim().toLowerCase() || customerInfo.email.trim().toLowerCase()
+    if (!emailToRecover) {
+      alert('Please enter your email address.')
       return
     }
 
-    setAuthLoading(true)
-
+    setRecoveringLoading(true)
     try {
-      const normalizedEmail = customerInfo.email.trim().toLowerCase()
-      const normalizedPhone = customerInfo.phone.trim()
-      const fullName = `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`.trim()
+      const { data: account } = await supabase
+        .from('customer_accounts')
+        .select('transaction_code')
+        .ilike('customer_email', emailToRecover)
+        .maybeSingle()
 
-      if (isReturningCustomer) {
-        // Verify existing customer PIN
-        if (existingStoredHash && existingStoredHash !== fullCode) {
-          setAuthError('Incorrect 5-digit code. Please enter the transaction code you set previously.')
-          setAuthLoading(false)
-          return
-        }
-      } else {
-        // Verify confirmation match for new customer
-        const fullConfirm = confirmTransactionCode.join('')
-        if (fullConfirm !== fullCode) {
-          setAuthError('The confirmation code does not match. Please re-check your 5 digits.')
-          setAuthLoading(false)
-          return
-        }
-
-        // Save or update customer profile with their new 5-digit transaction code
-        await supabase
-          .from('customer_profiles')
-          .upsert({
-            email: normalizedEmail,
-            phone: normalizedPhone,
-            first_name: customerInfo.firstName.trim(),
-            last_name: customerInfo.lastName.trim(),
-            address: customerInfo.address.trim(),
-            transaction_code: fullCode,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'email' })
+      if (!account) {
+        alert('No transaction code found associated with this email address.')
+        setRecoveringLoading(false)
+        return
       }
 
-      // Persist local customer session
-      const customerSession = {
-        name: fullName,
-        firstName: customerInfo.firstName.trim(),
-        lastName: customerInfo.lastName.trim(),
-        email: normalizedEmail,
-        phone: normalizedPhone,
-        address: customerInfo.address.trim(),
-        transactionCode: fullCode,
-        authenticated: true,
-        lastActive: new Date().toISOString(),
-      }
-      localStorage.setItem('deechoi_customer_session', JSON.stringify(customerSession))
+      await sendEmailNotification(
+        emailToRecover,
+        'Your De-echoi Transaction Code Recovery',
+        `Hello,\n\nYou requested to recover your 5-digit transaction code.\n\nYour Code is: ${account.transaction_code}\n\nKeep this code secure!`
+      )
 
-      setShowAuthModal(false)
-      setStep(2)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    } catch (err: any) {
-      console.error('Auth verification error:', err)
-      // Allow progression with local authentication fallback
-      setShowAuthModal(false)
-      setStep(2)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      alert(`Success! Your transaction code has been sent to ${emailToRecover}.`)
+      setAuthMode('verify')
+      setRecoverEmail('')
+    } catch (err) {
+      alert('An unexpected error occurred during code recovery.')
     } finally {
-      setAuthLoading(false)
+      setRecoveringLoading(false)
     }
   }
 
@@ -538,7 +633,6 @@ export default function CheckoutPage() {
         return
       }
 
-      // Step 1: Scan receipt for authenticity and match details
       setIsScanning(true)
       try {
         const verifyData = new FormData()
@@ -554,7 +648,7 @@ export default function CheckoutPage() {
         const verifyJson = await verifyRes.json()
 
         if (!verifyRes.ok || !verifyJson.valid) {
-          setValidationError(verifyJson.message || 'Receipt validation failed. Please ensure the exact amount, reference, and date/time are visible on your receipt.')
+          setValidationError(verifyJson.message || 'Receipt validation failed.')
           setIsScanning(false)
           return
         }
@@ -564,14 +658,13 @@ export default function CheckoutPage() {
           verified: true,
         })
       } catch (err: any) {
-        setValidationError('Failed to connect to the receipt scanner. Please try again.')
+        setValidationError('Failed to connect to receipt validator.')
         setIsScanning(false)
         return
       }
       setIsScanning(false)
     }
 
-    // Step 2: Upload file and record order
     setLoading(true)
     try {
       let proofUrl: string | null = null
@@ -636,32 +729,29 @@ export default function CheckoutPage() {
       }
 
       if (!order?.id) {
-        throw new Error('Order was placed but no order ID was returned.')
+        throw new Error('Order placed but no ID returned.')
       }
 
-      // Persist Customer Account & Order ID in Local Storage
       try {
         const existingOrders = JSON.parse(localStorage.getItem('deechoi_customer_orders') || '[]')
         const updatedOrders = Array.from(new Set([order.id, ...existingOrders]))
         localStorage.setItem('deechoi_customer_orders', JSON.stringify(updatedOrders))
-
         window.dispatchEvent(new Event('deechoi_order_placed'))
       } catch (storageErr) {
-        console.warn('Storage persistence warning:', storageErr)
+        console.warn('Storage warning:', storageErr)
       }
 
-      // Dispatch Telegram Alert in Background
       fetch('/api/notifications/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order }),
-      }).catch((err) => console.warn('Notification trigger warning:', err))
+      }).catch((err) => console.warn('Notification warning:', err))
 
       clearCart()
       router.push(`/order-confirmation/${order.id}`)
     } catch (error: any) {
-      console.error('Full Order Submission Error:', error)
-      alert(error.message || 'Failed to place order. Please check your connection and try again.')
+      console.error('Order Submission Error:', error)
+      alert(error.message || 'Failed to place order.')
     } finally {
       setLoading(false)
     }
@@ -1035,7 +1125,6 @@ export default function CheckoutPage() {
                           )}
                         </div>
 
-                        {/* Validation Error Alert */}
                         {validationError && (
                           <div className="mt-3 p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-2 animate-in fade-in">
                             <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
@@ -1046,7 +1135,6 @@ export default function CheckoutPage() {
                           </div>
                         )}
 
-                        {/* Verified Success Confirmation */}
                         {verificationDetails?.verified && (
                           <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 animate-in fade-in">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
@@ -1173,13 +1261,12 @@ export default function CheckoutPage() {
       </div>
 
       {/* ===================================================================== */}
-      {/* 5-DIGIT TRANSACTION CODE / CUSTOMER AUTHENTICATION POPUP MODAL        */}
+      {/* 5-DIGIT TRANSACTION CODE POPUP MODAL (Verify / Create / Recover)        */}
       {/* ===================================================================== */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="relative w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-gray-100 space-y-6 text-[#0A2E1D] animate-in zoom-in-95 duration-200">
             
-            {/* Close Button */}
             <button
               onClick={() => setShowAuthModal(false)}
               className="absolute top-4 right-4 p-2 text-gray-400 hover:text-[#0A2E1D] rounded-full hover:bg-gray-100 transition cursor-pointer"
@@ -1187,149 +1274,264 @@ export default function CheckoutPage() {
               <X className="w-5 h-5" />
             </button>
 
-            {/* Header Icon & Title */}
+            {/* Header */}
             <div className="text-center space-y-2">
               <div className="w-14 h-14 bg-gradient-to-tr from-[#0A2E1D] to-[#12422C] text-[#EAA823] rounded-2xl flex items-center justify-center mx-auto shadow-md border border-[#EAA823]/30">
-                {isReturningCustomer ? (
+                {authMode === 'verify' ? (
                   <UserCheck className="w-7 h-7" />
-                ) : (
+                ) : authMode === 'create' ? (
                   <Lock className="w-7 h-7" />
+                ) : (
+                  <HelpCircle className="w-7 h-7" />
                 )}
               </div>
               <h3 className="text-xl font-black text-[#0A2E1D]">
-                {isReturningCustomer
-                  ? 'Welcome Back! Enter 5-Digit Code'
-                  : 'Set Up Your 5-Digit Transaction Code'}
+                {authMode === 'verify'
+                  ? 'Enter Your 5-Digit Code'
+                  : authMode === 'create'
+                  ? 'Create 5-Digit Transaction Code'
+                  : 'Recover Transaction Code'}
               </h3>
               <p className="text-xs text-gray-500 max-w-xs mx-auto leading-relaxed">
-                {isReturningCustomer
-                  ? 'Enter your 5-digit transaction code to instantly authorize your order and sync your history.'
-                  : 'Create a unique 5-digit code. You will use this code to log in whenever you place future orders.'}
+                {authMode === 'verify'
+                  ? `An account exists for ${customerInfo.email}. Please enter your 5-digit transaction code to continue.`
+                  : authMode === 'create'
+                  ? 'Set up a secure 5-digit code for your new account. A confirmation email will be sent to you.'
+                  : 'Enter your email address and we will send your 5-digit transaction code instantly.'}
               </p>
             </div>
 
-            {/* 5-Digit PIN Input Fields */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-bold text-gray-700 uppercase">
-                    {isReturningCustomer ? 'Your 5-Digit Code' : 'Enter 5-Digit Code'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowPin(!showPin)}
-                    className="text-[#0A2E1D] font-bold flex items-center gap-1 hover:underline text-[11px] cursor-pointer"
-                  >
-                    {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-[#EAA823]" />}
-                    <span>{showPin ? 'Hide' : 'Show'}</span>
-                  </button>
-                </div>
+            {/* ================= VERIFY MODE ================= */}
+            {authMode === 'verify' && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-gray-700 uppercase">5-Digit Code</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowPin(!showPin)}
+                      className="text-[#0A2E1D] font-bold flex items-center gap-1 hover:underline text-[11px] cursor-pointer"
+                    >
+                      {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 text-[#EAA823]" />}
+                      <span>{showPin ? 'Hide' : 'Show'}</span>
+                    </button>
+                  </div>
 
-                <div className="flex justify-center gap-2.5 sm:gap-3">
-                  {transactionCode.map((digit, index) => (
-                    <input
-                      key={index}
-                      ref={(el) => { codeInputsRef.current[index] = el }}
-                      type={showPin ? 'text' : 'password'}
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => handleCodeChange(index, e.target.value, false)}
-                      onKeyDown={(e) => handleCodeKeyDown(index, e, false)}
-                      className="w-12 h-13 sm:w-14 sm:h-14 text-center font-black text-xl sm:text-2xl border-2 border-gray-200 rounded-2xl bg-[#FDFBF7] text-[#0A2E1D] focus:border-[#EAA823] focus:ring-2 focus:ring-[#EAA823]/20 focus:outline-none transition shadow-xs"
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Confirm PIN Field for New Customers */}
-              {!isReturningCustomer && (
-                <div className="space-y-2 pt-2 border-t border-gray-100">
-                  <span className="block font-bold text-xs text-gray-700 uppercase">
-                    Confirm 5-Digit Code
-                  </span>
                   <div className="flex justify-center gap-2.5 sm:gap-3">
-                    {confirmTransactionCode.map((digit, index) => (
+                    {verifyCode.map((digit, index) => (
                       <input
                         key={index}
-                        ref={(el) => { confirmCodeInputsRef.current[index] = el }}
+                        ref={(el) => { verifyInputsRef.current[index] = el }}
                         type={showPin ? 'text' : 'password'}
                         inputMode="numeric"
                         maxLength={1}
                         value={digit}
-                        onChange={(e) => handleCodeChange(index, e.target.value, true)}
-                        onKeyDown={(e) => handleCodeKeyDown(index, e, true)}
+                        onChange={(e) => handleDigitInput(index, e.target.value, 'verify')}
+                        onKeyDown={(e) => handleKeyNavigation(index, e, 'verify')}
                         className="w-12 h-13 sm:w-14 sm:h-14 text-center font-black text-xl sm:text-2xl border-2 border-gray-200 rounded-2xl bg-[#FDFBF7] text-[#0A2E1D] focus:border-[#EAA823] focus:ring-2 focus:ring-[#EAA823]/20 focus:outline-none transition shadow-xs"
                       />
                     ))}
                   </div>
                 </div>
-              )}
 
-              {/* Quick Actions (Random Code Generator) */}
-              {!isReturningCustomer && (
+                {authError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600" />
+                    <p className="leading-tight font-medium">{authError}</p>
+                  </div>
+                )}
+
+                <div className="space-y-2 pt-2">
+                  <Button
+                    onClick={handleVerifyOrAuthCode}
+                    disabled={authLoading || verifyCode.join('').length !== 5}
+                    className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black py-6 rounded-2xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {authLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound className="w-4 h-4 text-[#EAA823]" />
+                        <span>Authorize & Proceed</span>
+                      </>
+                    )}
+                  </Button>
+
+                  <div className="flex justify-between items-center px-1 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('create')}
+                      className="text-[11px] text-gray-500 hover:text-[#0A2E1D] underline cursor-pointer font-semibold"
+                    >
+                      New here? Create code
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('recover'); setRecoverEmail(customerInfo.email); }}
+                      className="text-[11px] text-amber-700 hover:underline font-bold cursor-pointer"
+                    >
+                      Forgot code?
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= CREATE MODE ================= */}
+            {authMode === 'create' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Email Address</label>
+                  <div className="flex items-center gap-2 bg-[#FDFBF7] border border-gray-200 rounded-xl px-3 py-2.5">
+                    <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      required
+                      className="bg-transparent outline-none text-xs text-[#0A2E1D] w-full font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="block text-[10px] font-bold uppercase text-gray-500">Choose 5-Digit Code</span>
+                  <div className="flex justify-center gap-2">
+                    {newTransactionCode.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={(el) => { createInputsRef.current[index] = el }}
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleDigitInput(index, e.target.value, 'create')}
+                        onKeyDown={(e) => handleKeyNavigation(index, e, 'create')}
+                        className="w-11 h-12 text-center font-black text-lg border-2 border-gray-200 rounded-xl bg-[#FDFBF7] text-[#0A2E1D] focus:border-[#EAA823] focus:outline-none"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="block text-[10px] font-bold uppercase text-gray-500">Confirm 5-Digit Code</span>
+                  <div className="flex justify-center gap-2">
+                    {confirmTransactionCode.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={(el) => { confirmInputsRef.current[index] = el }}
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleDigitInput(index, e.target.value, 'confirm')}
+                        onKeyDown={(e) => handleKeyNavigation(index, e, 'confirm')}
+                        className="w-11 h-12 text-center font-black text-lg border-2 border-gray-200 rounded-xl bg-[#FDFBF7] text-[#0A2E1D] focus:border-[#EAA823] focus:outline-none"
+                      />
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex justify-center">
                   <button
                     type="button"
                     onClick={generateRandomCode}
-                    className="inline-flex items-center gap-1.5 text-xs text-[#0A2E1D] font-bold bg-amber-50 border border-amber-200/80 px-3.5 py-1.5 rounded-full hover:bg-amber-100 transition active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs text-[#0A2E1D] font-bold bg-amber-50 border border-amber-200 px-3.5 py-1.5 rounded-full hover:bg-amber-100 cursor-pointer"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-[#EAA823]" />
-                    <span>Auto-generate 5-digit code</span>
+                    <span>Auto-generate code</span>
                   </button>
                 </div>
-              )}
 
-              {/* Error Message */}
-              {authError && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2 animate-in fade-in">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600" />
-                  <p className="leading-tight font-medium">{authError}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-2 pt-2">
-              <Button
-                onClick={handleVerifyOrSaveCode}
-                disabled={authLoading || transactionCode.join('').length !== 5}
-                className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black py-6 rounded-2xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {authLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Authenticating...</span>
-                  </>
-                ) : (
-                  <>
-                    <KeyRound className="w-4 h-4 text-[#EAA823]" />
-                    <span>
-                      {isReturningCustomer
-                        ? 'Authorize & Continue to Payment'
-                        : 'Save Code & Continue to Payment'}
-                    </span>
-                  </>
+                {authError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600" />
+                    <p className="leading-tight font-medium">{authError}</p>
+                  </div>
                 )}
-              </Button>
 
-              {isReturningCustomer && (
-                <div className="text-center">
+                <div className="space-y-2 pt-2">
+                  <Button
+                    onClick={handleVerifyOrAuthCode}
+                    disabled={authLoading || newTransactionCode.join('').length !== 5}
+                    className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black py-6 rounded-2xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {authLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Creating Account...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Create & Proceed</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </Button>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('verify')}
+                      className="text-[11px] text-gray-500 hover:text-[#0A2E1D] underline cursor-pointer font-semibold"
+                    >
+                      Already have a code? Enter it here
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= RECOVER MODE ================= */}
+            {authMode === 'recover' && (
+              <form onSubmit={handleRecoverCodeAction} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Registered Email Address</label>
+                  <div className="flex items-center gap-2 bg-[#FDFBF7] border border-gray-200 rounded-xl px-3 py-2.5">
+                    <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <input
+                      type="email"
+                      placeholder="e.g. user@example.com"
+                      value={recoverEmail}
+                      onChange={(e) => setRecoverEmail(e.target.value)}
+                      required
+                      className="bg-transparent outline-none text-xs text-[#0A2E1D] w-full font-medium"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={recoveringLoading}
+                  className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black py-6 rounded-2xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {recoveringLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Sending Code...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Send Code to Email</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </Button>
+
+                <div className="text-center pt-1">
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsReturningCustomer(false)
-                      setTransactionCode(['', '', '', '', ''])
-                      setConfirmTransactionCode(['', '', '', '', ''])
-                      setAuthError(null)
-                    }}
-                    className="text-[11px] text-gray-500 hover:text-[#0A2E1D] underline cursor-pointer"
+                    onClick={() => setAuthMode('verify')}
+                    className="text-[11px] text-gray-500 hover:text-[#0A2E1D] underline cursor-pointer font-semibold"
                   >
-                    Forgot code or setting up a new account? Tap here to reset.
+                    Back to Enter Code
                   </button>
                 </div>
-              )}
-            </div>
+              </form>
+            )}
 
           </div>
         </div>

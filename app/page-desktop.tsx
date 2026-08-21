@@ -5,6 +5,7 @@ import { ProductCard } from '@/components/storefront/product-card'
 import { ProductDetailModal } from '@/components/storefront/product-detail-modal'
 import { CustomerReviewsSection } from '@/components/storefront/customer-reviews'
 import { WaitlistCountdownSection } from '@/components/storefront/waitlist-hero'
+import { EventPromoModal } from '@/components/storefront/event-promo-modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useState, useEffect, useRef } from 'react'
@@ -323,7 +324,6 @@ export default function DesktopHomePage() {
     setFilteredProducts(result)
   }
 
-  // Mr. Tell AI Search Handler
   const handleAiSmartSearch = async (customPrompt?: string) => {
     const queryToUse = (typeof customPrompt === 'string' ? customPrompt : aiQuery).trim()
     if (!queryToUse) return
@@ -356,12 +356,10 @@ export default function DesktopHomePage() {
 
       setAiQuery('')
 
-      // 20-Second auto dismiss timer
       autoDismissTimerRef.current = setTimeout(() => {
         setMrTellAnswer(null)
       }, 20000)
 
-      // Catalog Filtering
       if (result.matchedProductIds && result.matchedProductIds.length > 0) {
         const matched = products.filter((p) => result.matchedProductIds.includes(p.id))
         if (matched.length > 0) {
@@ -462,16 +460,17 @@ export default function DesktopHomePage() {
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans">
+      
+      {/* PROMOTIONAL & CELEBRATION POPUP MODAL */}
+      <EventPromoModal />
+
       <StorefrontHeader />
 
-      {/* ========================================================================= */}
-      {/* 1. MR. TELL DESKTOP AI CONCIERGE & KNOWLEDGE SEARCH BAR                   */}
-      {/* ========================================================================= */}
+      {/* 1. MR. TELL DESKTOP AI CONCIERGE & KNOWLEDGE SEARCH BAR */}
       <section className="bg-gradient-to-r from-[#041a11] via-[#072d1d] to-[#041a11] border-b border-[#EAA823]/30 py-3 text-white relative z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-2.5">
           
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            {/* Title & Badge */}
             <div className="flex items-center gap-2.5 flex-shrink-0">
               <div className="w-8 h-8 rounded-xl bg-[#EAA823] text-[#072d1d] flex items-center justify-center font-black shadow-md">
                 <Sparkles className="w-4 h-4 fill-current" />
@@ -486,7 +485,6 @@ export default function DesktopHomePage() {
               </div>
             </div>
 
-            {/* Smart Search Form */}
             <form
               onSubmit={(e) => {
                 e.preventDefault()
@@ -533,7 +531,6 @@ export default function DesktopHomePage() {
             </form>
           </div>
 
-          {/* Quick AI Action Chips */}
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px] pt-1">
             <span className="text-[#EAA823] font-bold flex-shrink-0 flex items-center gap-1">
               <Sparkles className="w-3 h-3" />
@@ -552,7 +549,7 @@ export default function DesktopHomePage() {
               onClick={() => handleAiSmartSearch('When do you open and close?')}
               className="bg-white/10 hover:bg-white/20 text-emerald-100 px-3 py-1 rounded-full border border-white/10 flex-shrink-0 cursor-pointer whitespace-nowrap transition flex items-center gap-1"
             >
-              <Clock className="w-3 h-3 text-[#EAA823]" />
+              <Clock className="w-3.5 h-3.5 text-[#EAA823]" />
               <span>Opening Hours</span>
             </button>
             <button
@@ -584,7 +581,6 @@ export default function DesktopHomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
 
-            {/* Left Content */}
             <div className="lg:col-span-6 space-y-6">
               <div className="inline-flex items-center gap-2 bg-[#12422C] text-[#EAA823] px-4 py-2 rounded-full border border-[#EAA823]/20 text-sm font-semibold">
                 <Truck className="w-4 h-4 text-[#EAA823]" />
@@ -644,7 +640,6 @@ export default function DesktopHomePage() {
               </div>
             </div>
 
-            {/* Right Hero Image */}
             <div className="lg:col-span-6 relative flex justify-center items-center">
               <div className="relative w-full max-w-lg aspect-square">
                 <div className="absolute inset-0 bg-[#EAA823] rounded-full opacity-20 filter blur-3xl transform scale-90" />
@@ -859,11 +854,9 @@ export default function DesktopHomePage() {
       <section className="py-16 scroll-mt-24" id="our-menu-section">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
-          {/* DYNAMIC MR. TELL 20-SECOND ANSWER BOX (Desktop) */}
           {mrTellAnswer && (
             <div className="relative overflow-hidden bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] text-white p-6 rounded-3xl border-2 border-[#EAA823]/50 shadow-2xl space-y-4 animate-in fade-in slide-in-from-top-3 duration-300">
               
-              {/* Countdown Expiry Line */}
               <div className="absolute top-0 left-0 right-0 h-1.5 bg-white/10 overflow-hidden">
                 <div 
                   className="h-full bg-gradient-to-r from-[#EAA823] to-amber-300"
@@ -871,7 +864,6 @@ export default function DesktopHomePage() {
                 />
               </div>
 
-              {/* Header Badge */}
               <div className="flex items-center justify-between pt-1">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-xl bg-[#EAA823] text-[#072d1d] flex items-center justify-center font-black shadow-md">
@@ -897,18 +889,16 @@ export default function DesktopHomePage() {
                 </button>
               </div>
 
-              {/* Message Payload */}
               <div className="bg-black/30 rounded-2xl p-4 border border-white/10 text-sm text-emerald-50 leading-relaxed whitespace-pre-line font-medium">
                 {mrTellAnswer.message}
               </div>
 
-              {/* Contextual Action Directives */}
               {mrTellAnswer.action === 'chat_order' && (
                 <Link href="/my-messages" className="inline-block pt-1">
                   <Button className="bg-[#EAA823] hover:bg-white text-[#072d1d] font-black text-xs px-6 py-3 rounded-xl flex items-center gap-2 cursor-pointer shadow-md">
                     <MessageCircle className="w-4 h-4" />
                     <span>Open Custom Order &amp; Invoice Chat</span>
-                    <ArrowUpRight className="w-4 h-4" />
+                    <ArrowUpRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
               )}
@@ -918,7 +908,7 @@ export default function DesktopHomePage() {
                   <Button className="bg-[#EAA823] hover:bg-white text-[#072d1d] font-black text-xs px-6 py-3 rounded-xl flex items-center gap-2 cursor-pointer shadow-md">
                     <ShoppingBag className="w-4 h-4" />
                     <span>Proceed to Cart &amp; Checkout</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
               )}

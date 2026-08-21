@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { StorefrontHeader } from '@/components/storefront/header'
 import { CustomerReviewsSection } from '@/components/storefront/customer-reviews'
 import { WaitlistCountdownSection } from '@/components/storefront/waitlist-hero'
+import { EventPromoModal } from '@/components/storefront/event-promo-modal'
 import { 
   ArrowRight, 
   Zap, 
@@ -160,7 +161,6 @@ export default function MobileHomePage() {
     }
   }
 
-  // Normalized Multi-Keyword & Category Mapping (Including Rice & Parfaits)
   const handleManualFilter = (categoryOrKeyword: string) => {
     if (!categoryOrKeyword || !categoryOrKeyword.trim()) {
       setFilteredProducts(products)
@@ -170,7 +170,6 @@ export default function MobileHomePage() {
 
     const raw = categoryOrKeyword.toLowerCase().trim()
 
-    // Complete Brand Synonym & Category Dictionary
     const categoryDictionary: Record<string, string[]> = {
       'meals': ['meal', 'rice', 'soup', 'stew', 'catfish', 'pepper soup', 'jollof', 'fried rice', 'chicken'],
       'rice': ['rice', 'jollof', 'fried rice', 'smokey jollof', 'grain', 'meal'],
@@ -208,7 +207,6 @@ export default function MobileHomePage() {
     setActiveFilterLabel(categoryOrKeyword)
   }
 
-  // Mr. Tell AI Food Concierge & Intelligence Handler
   const handleAiSmartSearch = async (customPrompt?: string) => {
     const queryToUse = (typeof customPrompt === 'string' ? customPrompt : searchQuery).trim()
     if (!queryToUse) return
@@ -242,12 +240,10 @@ export default function MobileHomePage() {
 
       setSearchQuery('')
 
-      // Auto-dismiss response box after 20 seconds
       autoDismissTimerRef.current = setTimeout(() => {
         setMrTellAnswer(null)
       }, 20000)
 
-      // Catalog Filtering Logic
       if (result.matchedProductIds && result.matchedProductIds.length > 0) {
         const matched = products.filter((p) => result.matchedProductIds.includes(p.id))
         if (matched.length > 0) {
@@ -313,7 +309,6 @@ export default function MobileHomePage() {
     setActiveFilterLabel(null)
   }
 
-  // Expanded Categories (Including Rice & Parfaits)
   const categories = [
     { name: 'Rice', icon: <span className="text-xs font-bold">🍚</span>, image: '/jollof.jpeg' },
     { name: 'Parfait', icon: <span className="text-xs font-bold">🍓</span>, image: '/parfait.jpeg' },
@@ -333,6 +328,9 @@ export default function MobileHomePage() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative">
 
+      {/* PROMOTIONAL & CELEBRATION POPUP MODAL */}
+      <EventPromoModal />
+
       {/* 1. STICKY TOP APP HEADER & MR. TELL SMART SEARCH */}
       <div className="sticky top-0 z-40 w-full bg-[#072d1d] shadow-md border-b border-[#EAA823]/25">
         <StorefrontHeader />
@@ -347,7 +345,7 @@ export default function MobileHomePage() {
               }}
               className="relative flex items-center w-full z-30 pointer-events-auto"
             >
-              <div className="absolute left-3.5 flex items-center pointer-events-none text-amber-400 z-10">
+              <div className="absolute left-3.5 flex items-center pointer-none text-amber-400 z-10">
                 {aiSearching ? (
                   <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
                 ) : (
@@ -396,7 +394,6 @@ export default function MobileHomePage() {
               </div>
             </form>
 
-            {/* Smart Chips with Rice & Parfait Additions */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5 text-[10px] relative z-20">
               <span className="text-amber-400 font-bold flex-shrink-0 flex items-center gap-1">
                 <Sparkles className="w-3 h-3" />
@@ -617,7 +614,6 @@ export default function MobileHomePage() {
           {mrTellAnswer && (
             <div className="relative overflow-hidden bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] text-white p-4 sm:p-5 rounded-3xl border-2 border-amber-400/50 shadow-2xl space-y-3 animate-in fade-in slide-in-from-top-3 duration-300">
               
-              {/* Countdown Bar */}
               <div className="absolute top-0 left-0 right-0 h-1 bg-white/10 overflow-hidden">
                 <div 
                   className="h-full bg-gradient-to-r from-amber-400 to-[#EAA823]"
@@ -625,7 +621,6 @@ export default function MobileHomePage() {
                 />
               </div>
 
-              {/* Header Badge */}
               <div className="flex items-center justify-between pt-1">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-xl bg-amber-400 text-[#072d1d] flex items-center justify-center font-black shadow-md">
@@ -651,12 +646,10 @@ export default function MobileHomePage() {
                 </button>
               </div>
 
-              {/* Answer Content */}
               <div className="bg-black/30 rounded-2xl p-3.5 border border-white/10 text-xs sm:text-sm text-emerald-50 leading-relaxed whitespace-pre-line font-medium">
                 {mrTellAnswer.message}
               </div>
 
-              {/* Contextual Action Buttons */}
               {mrTellAnswer.action === 'chat_order' && (
                 <Link href="/my-messages" className="block pt-1">
                   <Button className="w-full bg-[#EAA823] hover:bg-white text-[#072d1d] font-black text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-md">
