@@ -34,7 +34,8 @@ import {
   MessageCircle,
   ShoppingBag,
   ArrowUpRight,
-  MapPin
+  MapPin,
+  AlertTriangle
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -244,6 +245,9 @@ export default function DesktopHomePage() {
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
 
+  // Storefront live vs Pre-Order state
+  const [isStoreLive, setIsStoreLive] = useState(true)
+
   // Mr. Tell AI State
   const [aiQuery, setAiQuery] = useState('')
   const [aiSearching, setAiSearching] = useState(false)
@@ -264,9 +268,20 @@ export default function DesktopHomePage() {
   const supabase = createClient()
 
   useEffect(() => {
+    // Check storefront active status
+    const checkStoreStatus = () => {
+      const storeStatus = localStorage.getItem('deechoi_storefront_active')
+      if (storeStatus !== null) {
+        setIsStoreLive(storeStatus === 'true')
+      }
+    }
+    checkStoreStatus()
+    window.addEventListener('storage', checkStoreStatus)
+
     fetchProducts()
     return () => {
       if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current)
+      window.removeEventListener('storage', checkStoreStatus)
     }
   }, [])
 
@@ -461,12 +476,19 @@ export default function DesktopHomePage() {
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans">
       
-      {/* PROMOTIONAL & CELEBRATION POPUP MODAL */}
       <EventPromoModal />
 
       <StorefrontHeader />
 
-      {/* 1. MR. TELL DESKTOP AI CONCIERGE & KNOWLEDGE SEARCH BAR */}
+      {/* Pre-Order Mode Banner Notice if Store is Offline */}
+      {!isStoreLive && (
+        <div className="bg-amber-600 text-white px-4 py-2.5 text-center text-xs font-black uppercase tracking-wider sticky top-20 z-50 shadow-md flex items-center justify-center gap-2">
+          <AlertTriangle className="w-4 h-4 animate-bounce" />
+          <span>Notice: Storefront is currently in <span className="underline">Pre-Order Mode</span>. Live sales are closed for the day. You can still schedule pre-orders!</span>
+        </div>
+      )}
+
+      {/* Mr. Tell Desktop AI Concierge & Knowledge Search Bar */}
       <section className="bg-gradient-to-r from-[#041a11] via-[#072d1d] to-[#041a11] border-b border-[#EAA823]/30 py-3 text-white relative z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-2.5">
           
@@ -571,10 +593,9 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* 2. 10-DAY WAITLIST COUNTDOWN BANNER */}
       <WaitlistCountdownSection />
 
-      {/* 3. Hero Section */}
+      {/* Hero Section */}
       <section className="relative overflow-hidden bg-[#0A2E1D] text-white pt-8 pb-16 lg:pb-24 rounded-b-[40px] md:rounded-b-[60px]">
         <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#EAA823_1px,transparent_1px)] [background-size:16px_16px]" />
 
@@ -652,16 +673,6 @@ export default function DesktopHomePage() {
                     e.currentTarget.src = '/mobile_bike.png'
                   }}
                 />
-
-                <div className="absolute -top-4 -right-4 bg-white p-2 rounded-full shadow-xl border-2 border-[#EAA823] z-20 hover:scale-110 transition-transform">
-                  <img src="/Recipe2.jpg" alt="Dish" className="w-20 h-20 rounded-full object-cover" />
-                </div>
-                <div className="absolute top-1/3 -left-6 bg-white p-2 rounded-full shadow-xl border-2 border-[#EAA823] z-20 hover:scale-110 transition-transform">
-                  <img src="/shawarma.jpeg" alt="Shawarma" className="w-16 h-16 rounded-full object-cover" />
-                </div>
-                <div className="absolute -bottom-2 left-12 bg-white p-2 rounded-full shadow-xl border-2 border-[#EAA823] z-20 hover:scale-110 transition-transform cursor-pointer" onClick={() => router.push('/cakes')}>
-                  <img src="/cakes.jpg" alt="Cakes" className="w-16 h-16 rounded-full object-cover" />
-                </div>
               </div>
             </div>
 
@@ -669,7 +680,7 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* 4. Feature Ribbon Bar */}
+      {/* Feature Ribbon Bar */}
       <section className="bg-[#072215] text-white py-4 border-y border-[#EAA823]/20 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-4 text-sm font-medium">
           <div className="flex items-center gap-2 text-[#EAA823]">
@@ -693,8 +704,8 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* 5. Category Navigation Bar */}
-      <section className="py-6 bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm w-full">
+      {/* Category Navigation Bar */}
+      <section className="py-6 bg-white border-b border-gray-100 sticky top-20 z-40 shadow-sm w-full">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4">
 
@@ -768,7 +779,6 @@ export default function DesktopHomePage() {
           </div>
         </div>
 
-        {/* Global Mega Menu Dropdown */}
         {activeCategoryConfig?.groups && activeCategoryConfig.groups.length > 0 && dropdownPosition && (
           <div
             style={{
@@ -843,14 +853,13 @@ export default function DesktopHomePage() {
         )}
       </section>
 
-      {/* 6. Customer Reviews Section */}
       <section className="py-8 bg-[#FDFBF7] border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <CustomerReviewsSection />
         </div>
       </section>
 
-      {/* 7. Food Menu Listing & Dynamic Mr. Tell Answer Box */}
+      {/* Food Menu Listing */}
       <section className="py-16 scroll-mt-24" id="our-menu-section">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
@@ -915,7 +924,6 @@ export default function DesktopHomePage() {
             </div>
           )}
 
-          {/* Food Menu Header */}
           <div className="flex flex-col md:flex-row md:items-end justify-between pb-4 border-b border-gray-200">
             <div>
               <span className="text-[#EAA823] font-bold text-sm tracking-wider uppercase">Preview Catalog</span>
@@ -940,19 +948,6 @@ export default function DesktopHomePage() {
                   ? 'No meals matching your selected category filters.'
                   : 'No food products available at the moment.'}
               </p>
-              {(searchQuery || selectedCategory !== 'All') && (
-                <Button
-                  variant="outline"
-                  className="mt-4 rounded-full border-[#0A2E1D] text-[#0A2E1D] hover:bg-[#0A2E1D] hover:text-white font-bold cursor-pointer"
-                  onClick={() => {
-                    setSearchQuery('')
-                    setSelectedCategory('All')
-                    filterData('', 'All', products)
-                  }}
-                >
-                  Reset Filters
-                </Button>
-              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
@@ -974,33 +969,6 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* 8. Special Cake Collection Promo Banner */}
-      <section className="py-12 bg-white border-t border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-gradient-to-r from-[#0A2E1D] via-[#12422C] to-[#0A2E1D] rounded-3xl p-8 sm:p-12 text-white border-2 border-[#EAA823]/30 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-8">
-            <div className="space-y-3 max-w-xl text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 bg-[#EAA823]/20 border border-[#EAA823]/40 text-[#EAA823] text-xs font-bold px-3 py-1 rounded-full">
-                <Cake className="w-4 h-4" />
-                Celebration Bakes
-              </div>
-              <h3 className="text-3xl sm:text-4xl font-extrabold">Looking for Custom Cakes?</h3>
-              <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
-                Explore our dedicated Cakes Collection featuring 6&quot; and 7&quot; tiered cakes, multi-flavor combinations, and our interactive event booking assistant.
-              </p>
-            </div>
-
-            <Button
-              onClick={() => router.push('/cakes')}
-              className="bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-extrabold px-8 py-6 rounded-full text-base shadow-xl flex items-center gap-2 cursor-pointer"
-            >
-              Explore Cakes Collection
-              <ArrowRight className="w-5 h-5" />
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      {/* Product Detail Modal */}
       {selectedProductId && (
         <ProductDetailModal
           productId={selectedProductId}
@@ -1009,7 +977,6 @@ export default function DesktopHomePage() {
         />
       )}
 
-      {/* Auto-dismiss countdown bar keyframes */}
       <style jsx global>{`
         @keyframes shrink {
           from {

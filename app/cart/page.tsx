@@ -19,7 +19,9 @@ import {
   Info, 
   Loader2,
   ShieldCheck,
-  X
+  X,
+  AlertTriangle,
+  Clock
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -30,10 +32,19 @@ export default function CartPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Hydration safeguard for cart values
+  // Hydration safeguard for cart values & Storefront Pre-Order status
   const [isMounted, setIsMounted] = useState(false)
+  const [isStoreLive, setIsStoreLive] = useState(true)
+
   useEffect(() => {
     setIsMounted(true)
+
+    // Check if storefront is in live or pre-order mode
+    const storeStatus = localStorage.getItem('deechoi_storefront_active')
+    if (storeStatus !== null) {
+      setIsStoreLive(storeStatus === 'true')
+    }
+
     checkAccountStatus()
     checkStoredVoucher()
   }, [])
@@ -129,7 +140,6 @@ export default function CartPage() {
     localStorage.removeItem('active_checkout_voucher')
   }
 
-  // Safe numeric calculations preventing NaN
   const rawSubtotal = Number(total) || items.reduce((acc, item) => {
     const unitPrice = Number(item.price ?? item.unit_price ?? item.final_price ?? 0)
     const qty = Number(item.quantity) || 1
@@ -160,6 +170,14 @@ export default function CartPage() {
     <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans pb-24">
       <StorefrontHeader />
 
+      {/* Pre-Order Mode Notification Banner */}
+      {!isStoreLive && (
+        <div className="bg-amber-600 text-white px-4 py-3 text-center text-xs font-black uppercase tracking-wider sticky top-20 z-50 shadow-md flex items-center justify-center gap-2">
+          <AlertTriangle className="w-4 h-4 animate-bounce" />
+          <span>Notice: Storefront is in <span className="underline">Pre-Order Mode</span>. Items added to your cart will be processed as scheduled pre-orders.</span>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         
         {/* Navigation Breadcrumb */}
@@ -181,10 +199,19 @@ export default function CartPage() {
           )}
         </div>
 
-        <h1 className="text-2xl sm:text-4xl font-black text-[#0A2E1D] mb-6 flex items-center gap-2.5">
-          <ShoppingBag className="w-7 h-7 text-[#EAA823]" />
-          Your Shopping Cart
-        </h1>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <h1 className="text-2xl sm:text-4xl font-black text-[#0A2E1D] flex items-center gap-2.5">
+            <ShoppingBag className="w-7 h-7 text-[#EAA823]" />
+            Your Shopping Cart
+          </h1>
+
+          {!isStoreLive && (
+            <div className="inline-flex items-center gap-1.5 bg-amber-100 border border-amber-300 text-amber-900 px-3 py-1.5 rounded-2xl text-xs font-extrabold">
+              <Clock className="w-4 h-4 text-amber-700" />
+              <span>Pre-Order Mode Active</span>
+            </div>
+          )}
+        </div>
 
         {items.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200 p-8 shadow-sm">
@@ -213,6 +240,17 @@ export default function CartPage() {
             
             {/* Left: Cart Items List */}
             <div className="lg:col-span-7 space-y-4">
+              
+              {!isStoreLive && (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 flex items-start gap-3">
+                  <Info className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block mb-0.5">Pre-Order Notice</span>
+                    <span>The kitchen has closed live orders for today. Items in your cart will be booked as scheduled pre-orders for fulfillment upon the next active shift.</span>
+                  </div>
+                </div>
+              )}
+
               {items.map((item) => {
                 const targetKey: string = String(item.id || item.product_id || '')
                 const unitPrice = Number(item.price ?? item.unit_price ?? item.final_price ?? 0)
@@ -225,7 +263,6 @@ export default function CartPage() {
                     key={targetKey}
                     className="flex flex-col sm:flex-row gap-4 p-4 sm:p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition"
                   >
-                    {/* Item Image */}
                     <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 self-center sm:self-start border border-gray-100">
                       {item.imageUrl ? (
                         <Image
@@ -241,17 +278,22 @@ export default function CartPage() {
                       )}
                     </div>
 
-                    {/* Item Info & Option Metadata */}
                     <div className="flex-1 space-y-1 text-center sm:text-left">
-                      <h3 className="font-extrabold text-[#0A2E1D] text-sm sm:text-base leading-tight">
-                        {item.name ?? item.product_name}
-                      </h3>
+                      <div className="flex items-center justify-between sm:justify-start gap-2">
+                        <h3 className="font-extrabold text-[#0A2E1D] text-sm sm:text-base leading-tight">
+                          {item.name ?? item.product_name}
+                        </h3>
+                        {!isStoreLive && (
+                          <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                            Pre-Order
+                          </span>
+                        )}
+                      </div>
 
                       <p className="text-xs font-black text-[#EAA823]">
                         ₦{unitPrice.toLocaleString()} each
                       </p>
 
-                      {/* Display Customization Metadata */}
                       {Array.isArray(options) && options.length > 0 ? (
                         <div className="mt-2 text-[11px] bg-[#FDFBF7] p-2.5 rounded-xl border border-gray-100 space-y-1">
                           {options.map((opt, i) => (
@@ -266,19 +308,9 @@ export default function CartPage() {
                             </div>
                           ))}
                         </div>
-                      ) : typeof options === 'object' && options !== null && Object.keys(options).length > 0 ? (
-                        <div className="mt-2 text-[11px] bg-[#FDFBF7] p-2.5 rounded-xl border border-gray-100 space-y-1">
-                          {Object.entries(options).map(([k, v]) => (
-                            <div key={k} className="flex justify-between sm:justify-start gap-1.5 text-gray-700">
-                              <span className="font-bold text-[#0A2E1D]">{k}:</span>
-                              <span>{String(v)}</span>
-                            </div>
-                          ))}
-                        </div>
                       ) : null}
                     </div>
 
-                    {/* Quantity & Delete Controls */}
                     <div className="flex sm:flex-col items-center justify-between sm:items-end gap-3 pt-2 sm:pt-0 border-t sm:border-0 border-gray-100">
                       <div className="flex items-center gap-1.5 bg-[#FDFBF7] border border-gray-200 rounded-full p-1 shadow-xs">
                         <button
@@ -322,11 +354,10 @@ export default function CartPage() {
             <div className="lg:col-span-5 space-y-4">
               <div className="sticky top-20 bg-white border border-gray-200/80 rounded-3xl p-6 shadow-sm space-y-5">
                 <h2 className="text-lg font-black text-[#0A2E1D] pb-3 border-b border-gray-100 flex items-center justify-between">
-                  <span>Order Summary</span>
+                  <span>{!isStoreLive ? 'Pre-Order Summary' : 'Order Summary'}</span>
                   <span className="text-xs text-gray-400 font-semibold">{itemCount} items</span>
                 </h2>
 
-                {/* Voucher Redemption Form */}
                 <div className="bg-[#FDFBF7] p-4 rounded-2xl border border-gray-200/80 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-[#0A2E1D] flex items-center gap-1.5">
@@ -375,7 +406,6 @@ export default function CartPage() {
                   )}
                 </div>
 
-                {/* Cost Breakdown */}
                 <div className="space-y-2.5 text-xs sm:text-sm">
                   <div className="flex justify-between text-gray-500">
                     <span>Items Subtotal</span>
@@ -393,12 +423,11 @@ export default function CartPage() {
                   )}
 
                   <div className="flex justify-between text-gray-500">
-                    <span>Estimated Delivery</span>
-                    <span className="text-emerald-700 font-semibold">Calculated at Checkout</span>
+                    <span>Estimated Fulfillment</span>
+                    <span className="text-amber-700 font-semibold">{!isStoreLive ? 'Scheduled Pre-Order' : 'Standard Delivery'}</span>
                   </div>
                 </div>
 
-                {/* Total */}
                 <div className="pt-3 border-t border-gray-100 flex justify-between items-baseline">
                   <span className="text-sm font-bold text-gray-600">Total Payable:</span>
                   <span className="text-2xl font-black text-[#0A2E1D]">
@@ -406,24 +435,16 @@ export default function CartPage() {
                   </span>
                 </div>
 
-                {/* Account / Wallet Notice */}
-                <div className="p-3 bg-amber-50/60 border border-amber-200/60 rounded-xl text-[11px] text-amber-900 leading-tight flex items-start gap-2">
-                  <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p>
-                    {hasAccount ? (
-                      <>You are recognized! View and manage all your active discount codes in your <Link href="/account/vouchers" className="underline font-bold">Voucher Wallet</Link>.</>
-                    ) : (
-                      <>Guest checkout active. Your permanent customer dashboard and discount wallet will be automatically established upon placing your first order.</>
-                    )}
-                  </p>
-                </div>
-
                 <Button
-                  className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-extrabold py-6 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className={`w-full text-white font-extrabold py-6 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    !isStoreLive 
+                      ? 'bg-amber-600 hover:bg-amber-700' 
+                      : 'bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D]'
+                  }`}
                   size="lg"
                   onClick={handleCheckout}
                 >
-                  Proceed to Checkout
+                  <span>{!isStoreLive ? 'Checkout Pre-Order' : 'Proceed to Checkout'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </Button>
               </div>

@@ -9,7 +9,7 @@ import {
   ArrowUpRight, ArrowDownRight, ChevronRight, Search, Clock, CheckCircle2, Truck,
   MessageSquare, Layers, Sparkles, Sun, Moon, CloudSun, Users, UserCheck, Lightbulb, Flame, Award,
   Target, LineChart, Megaphone, HelpCircle, Wind, Droplets, Gauge, CloudRain, MapPin, Power, PlayCircle,
-  Grid, Plus, Check, SlidersHorizontal, Eye, EyeOff, ShieldCheck, Zap, Activity
+  Grid, Plus, Check, SlidersHorizontal, Eye, EyeOff, ShieldCheck, Zap, Activity, Store, Ban
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -59,7 +59,6 @@ export default function AdminDashboardPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(true)
 
-  // Active widgets list loaded from localStorage
   const [activeWidgets, setActiveWidgets] = useState<Record<string, boolean>>({
     weather: true,
     sales_graph: true,
@@ -70,11 +69,10 @@ export default function AdminDashboardPage() {
     promo_banner: true
   })
 
-  // Shift & End-of-Day Sales State
   const [salesSessionActive, setSalesSessionActive] = useState(true)
+  const [storefrontActive, setStorefrontActive] = useState(true)
   const [lastClosedDate, setLastClosedDate] = useState<string | null>(null)
 
-  // Time & Location state
   const [timeGreeting, setTimeGreeting] = useState('Good day')
   const [userLocation, setUserLocation] = useState({ city: 'Port Harcourt', region: 'Rivers State', isPortHarcourt: true })
 
@@ -97,7 +95,6 @@ export default function AdminDashboardPage() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [mrTellOpen, setMrTellOpen] = useState(false)
 
-  // Weather Monitor State
   const [weatherTab, setWeatherTab] = useState<'hourly' | 'daily' | 'graph'>('graph')
   const [weatherData, setWeatherData] = useState({
     location: 'Port Harcourt, Woji',
@@ -124,7 +121,6 @@ export default function AdminDashboardPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    // Load enabled widgets status map from localStorage
     const savedWidgets = localStorage.getItem('deechoi_admin_widgets')
     if (savedWidgets) {
       try {
@@ -138,13 +134,12 @@ export default function AdminDashboardPage() {
     }
 
     const savedShiftStatus = localStorage.getItem('deechoi_sales_session_active')
+    const savedStoreStatus = localStorage.getItem('deechoi_storefront_active')
     const savedCloseDate = localStorage.getItem('deechoi_last_closed_date')
-    if (savedShiftStatus !== null) {
-      setSalesSessionActive(savedShiftStatus === 'true')
-    }
-    if (savedCloseDate) {
-      setLastClosedDate(savedCloseDate)
-    }
+
+    if (savedShiftStatus !== null) setSalesSessionActive(savedShiftStatus === 'true')
+    if (savedStoreStatus !== null) setStorefrontActive(savedStoreStatus === 'true')
+    if (savedCloseDate) setLastClosedDate(savedCloseDate)
 
     const currentHour = new Date().getHours()
     if (currentHour < 12) {
@@ -188,7 +183,7 @@ export default function AdminDashboardPage() {
   }
 
   const handleCloseSales = () => {
-    if (confirm('Are you sure you want to close sales for today? This will archive today\'s shift totals.')) {
+    if (confirm('Are you sure you want to close dashboard sales for today?')) {
       setSalesSessionActive(false)
       const todayStr = new Date().toLocaleDateString()
       setLastClosedDate(todayStr)
@@ -200,6 +195,17 @@ export default function AdminDashboardPage() {
   const handleStartSales = () => {
     setSalesSessionActive(true)
     localStorage.setItem('deechoi_sales_session_active', 'true')
+  }
+
+  const handleToggleStorefront = () => {
+    const newState = !storefrontActive
+    setStorefrontActive(newState)
+    localStorage.setItem('deechoi_storefront_active', String(newState))
+    if (!newState) {
+      alert('Storefront turned OFF. Customers can now only make PRE-ORDERS.')
+    } else {
+      alert('Storefront turned ON. Live ordering is now active.')
+    }
   }
 
   useEffect(() => {
@@ -511,10 +517,10 @@ export default function AdminDashboardPage() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className={`h-20 border-b ${darkMode ? 'border-[#EAA823]/20 bg-gradient-to-r from-[#1a1f2e] to-[#131821]' : 'border-gray-200 bg-white shadow-xs'} flex items-center justify-between px-4 md:px-8 sticky top-0 z-40 shadow-lg`}>
+        <header className={`h-20 border-b ${darkMode ? 'border-[#EAA823]/20 bg-gradient-to-r from-[#1a1f2e] to-[#131821]' : 'border-gray-200 bg-white shadow-xs'} flex items-center justify-between px-4 md:px-8 sticky top-0 z-40 shadow-lg gap-4`}>
           
-          {/* Replaced Admin Title with Widgets Store Button linking to separate /admin/widgets page */}
-          <div className="flex items-center gap-3">
+          {/* 1. Search Bar on the Left */}
+          <div className="flex items-center gap-3 flex-1 max-w-md">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className={`p-2 rounded-lg transition-colors hidden md:block cursor-pointer ${darkMode ? 'hover:bg-[#EAA823]/20 text-[#EAA823]' : 'hover:bg-gray-100 text-[#0A2E1D]'}`}
@@ -522,36 +528,66 @@ export default function AdminDashboardPage() {
               <Menu className="h-5 w-5" />
             </button>
 
-            <Link href="/admin/widgets">
-              <button className="bg-gradient-to-r from-[#EAA823] to-amber-500 hover:from-amber-500 hover:to-[#EAA823] text-[#0A2E1D] font-black text-xs sm:text-sm px-4 py-2.5 rounded-2xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95">
-                <Grid className="w-4 h-4" />
-                <span>Widgets Store (50 Widgets)</span>
+            <div className={`flex items-center gap-2 rounded-full px-4 py-2.5 flex-1 border ${darkMode ? 'bg-[#EAA823]/10 border-[#EAA823]/20 text-white' : 'bg-gray-50 border-gray-200 text-slate-800'}`}>
+              <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              <button
+                type="button"
+                onClick={() => setMrTellOpen(true)}
+                className="shrink-0 rounded-full focus-visible:outline-none cursor-pointer"
+                title="Ask Mr. Tell"
+              >
+                <Image src="/Mr_tell.jpeg" alt="Mr. Tell" width={18} height={18} className="rounded-full object-cover" />
               </button>
-            </Link>
+              <input
+                type="text"
+                placeholder="Search orders, dishes or ask Mr. Tell..."
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="bg-transparent text-xs placeholder-gray-400 outline-none w-full"
+              />
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            
+          {/* 2. Middle Sales & Storefront Toggles */}
+          <div className="flex items-center gap-2.5 flex-shrink-0">
             {salesSessionActive ? (
               <Button
                 onClick={handleCloseSales}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl px-3.5 h-9 gap-1.5 cursor-pointer shadow-xs"
-                title="Archive today's sales shift"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl px-3 h-9 gap-1.5 cursor-pointer shadow-xs"
+                title="Close sales for today"
               >
                 <Power className="w-3.5 h-3.5" />
-                <span>Close Sales for Today</span>
+                <span className="hidden sm:inline">Sales: </span><span className="font-black">ON</span>
               </Button>
             ) : (
               <Button
                 onClick={handleStartSales}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl px-4 h-9 gap-1.5 cursor-pointer shadow-md animate-pulse"
-                title="Start a new daily sales shift"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl px-3.5 h-9 gap-1.5 cursor-pointer shadow-md animate-pulse"
+                title="Start sales for today"
               >
                 <PlayCircle className="w-4 h-4" />
-                <span>Start Sales for Today</span>
+                <span className="hidden sm:inline">Sales: </span><span className="font-black">OFF (Start)</span>
               </Button>
             )}
 
+            <Button
+              onClick={handleToggleStorefront}
+              className={`font-extrabold text-xs rounded-xl px-3.5 h-9 gap-1.5 cursor-pointer shadow-xs transition-colors ${
+                storefrontActive 
+                  ? 'bg-[#0A2E1D] text-emerald-400 hover:bg-emerald-950 border border-emerald-500/40' 
+                  : 'bg-red-600 text-white hover:bg-red-700 animate-pulse'
+              }`}
+              title="Toggle Storefront live ordering vs Pre-orders"
+            >
+              {storefrontActive ? <Store className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+              <span className="hidden md:inline">Storefront: </span>
+              <span>{storefrontActive ? 'LIVE' : 'PRE-ORDERS ONLY'}</span>
+            </Button>
+          </div>
+
+          {/* 3. Right Side Controls & Widget Store Button */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            
             <button
               onClick={() => setDarkMode(!darkMode)}
               className={`p-2.5 rounded-xl transition-all border cursor-pointer ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/20 text-[#EAA823] hover:bg-[#EAA823]/20' : 'bg-gray-100 border-gray-200 text-amber-600 hover:bg-amber-50'}`}
@@ -559,25 +595,6 @@ export default function AdminDashboardPage() {
             >
               {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
-
-            <div className={`hidden lg:flex items-center gap-2 rounded-full px-3.5 py-2 flex-1 max-w-xs border ${darkMode ? 'bg-[#EAA823]/10 border-[#EAA823]/20 text-white' : 'bg-gray-50 border-gray-200 text-slate-800'}`}>
-              <Search className="h-4 w-4 text-gray-400" />
-              <button
-                type="button"
-                onClick={() => setMrTellOpen(true)}
-                className="shrink-0 rounded-full focus-visible:outline-none cursor-pointer"
-                title="Ask Mr. Tell"
-              >
-                <Image src="/mr-tell.jpg" alt="Mr. Tell" width={18} height={18} className="rounded-full object-cover" />
-              </button>
-              <input
-                type="text"
-                placeholder="Search orders or ask Mr. Tell..."
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                className="bg-transparent text-xs placeholder-gray-400 outline-none w-full"
-              />
-            </div>
 
             <div className="relative" ref={notifDropdownRef}>
               <button
@@ -667,15 +684,13 @@ export default function AdminDashboardPage() {
               )}
             </div>
 
-            <div className={`hidden sm:flex items-center gap-3 pl-4 border-l ${darkMode ? 'border-[#EAA823]/20' : 'border-gray-200'}`}>
-              <div className="text-right">
-                <p className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-slate-900'}`}>Admin</p>
-                <p className="text-xs text-gray-400">{user?.email?.split('@')[0] || 'User'}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#EAA823] to-[#f5d547] flex items-center justify-center font-bold text-[#0A2E1D] shadow-lg">
-                {user?.email?.charAt(0).toUpperCase() || 'A'}
-              </div>
-            </div>
+            <Link href="/admin/widgets">
+              <button className="bg-gradient-to-r from-[#EAA823] to-amber-500 hover:from-amber-500 hover:to-[#EAA823] text-[#0A2E1D] font-black text-xs sm:text-sm px-4 py-2.5 rounded-2xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95 flex-shrink-0" title="Open Widgets Store">
+                <Grid className="w-4 h-4" />
+                <span className="hidden xl:inline">Widgets Store</span>
+              </button>
+            </Link>
+
           </div>
         </header>
 
