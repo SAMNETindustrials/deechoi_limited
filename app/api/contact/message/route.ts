@@ -45,13 +45,13 @@ export async function POST(req: Request) {
         .select('id')
         .single()
 
-      if (!inquiryErr) {
-        activeInquiryId = newInquiry?.id
+      if (!inquiryErr && newInquiry) {
+        activeInquiryId = newInquiry.id
       }
     }
 
     // 2. Insert Customer Message
-    const { data: insertedCustomerMsg } = await supabase
+    const { data: insertedCustomerMsg, error: custMsgErr } = await supabase
       .from('inquiry_messages')
       .insert({
         inquiry_id: activeInquiryId,
@@ -63,6 +63,8 @@ export async function POST(req: Request) {
       })
       .select('*')
       .single()
+
+    if (custMsgErr) throw custMsgErr
 
     // 3. Fetch Previous Chat History for Gemini Context
     const { data: historyData } = await supabase
@@ -85,25 +87,31 @@ export async function POST(req: Request) {
       incomingMessage: cleanMessage,
     })
 
+    const adminMsgTime = new Date(Date.now() + 500).toISOString() // Slight offset to keep order chronological
+
     // 5. Insert AI's Response as Admin Message
-    const { data: insertedAdminMsg } = await supabase
+    const { data: insertedAdminMsg, error: adminMsgErr } = await supabase
       .from('inquiry_messages')
       .insert({
         inquiry_id: activeInquiryId,
         sender_type: 'admin',
-        sender_name: 'De-echoi AI Assistant',
+        sender_name: 'De-echoi Support',
         message: geminiResult.message,
         type: geminiResult.type,
         metadata: geminiResult.metadata,
-        created_at: new Date().toISOString(),
+        created_at: adminMsgTime,
       })
       .select('*')
       .single()
 
+    if (adminMsgErr) {
+      console.warn('[Admin Auto-Reply Insert Warning]:', adminMsgErr.message)
+    }
+
     // 6. Update Parent Thread Status
     await supabase
       .from('customer_inquiries')
-      .update({ last_message_at: new Date().toISOString(), status: 'replied' })
+      .update({ last_message_at: adminMsgTime, status: 'replied' })
       .eq('id', activeInquiryId)
 
     return NextResponse.json({

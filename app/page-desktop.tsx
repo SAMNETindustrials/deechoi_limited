@@ -262,13 +262,16 @@ export default function DesktopHomePage() {
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
   const buttonRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
+  // Auto-scrolling category track ref & pause state
+  const categoryScrollRef = useRef<HTMLDivElement | null>(null)
+  const [isPaused, setIsPaused] = useState(false)
+
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
   const [customSubmitted, setCustomSubmitted] = useState<Record<string, boolean>>({})
 
   const supabase = createClient()
 
   useEffect(() => {
-    // Check storefront active status
     const checkStoreStatus = () => {
       const storeStatus = localStorage.getItem('deechoi_storefront_active')
       if (storeStatus !== null) {
@@ -279,11 +282,30 @@ export default function DesktopHomePage() {
     window.addEventListener('storage', checkStoreStatus)
 
     fetchProducts()
+
+    // Seamless smooth auto-scrolling loop with instant reset
+    const scrollContainer = categoryScrollRef.current
+    let scrollInterval: NodeJS.Timeout | null = null
+
+    if (scrollContainer) {
+      scrollInterval = setInterval(() => {
+        if (!isPaused && scrollContainer) {
+          const maxScroll = scrollContainer.scrollWidth / 2
+          if (scrollContainer.scrollLeft >= maxScroll) {
+            scrollContainer.scrollLeft = 0
+          } else {
+            scrollContainer.scrollLeft += 1.2
+          }
+        }
+      }, 25)
+    }
+
     return () => {
       if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current)
+      if (scrollInterval) clearInterval(scrollInterval)
       window.removeEventListener('storage', checkStoreStatus)
     }
-  }, [])
+  }, [isPaused])
 
   useEffect(() => {
     const search = searchParams.get('search')
@@ -426,11 +448,12 @@ export default function DesktopHomePage() {
   }
 
   const handleMouseEnter = (catName: string) => {
+    setIsPaused(true)
     const elem = buttonRefs.current[catName]
     if (elem) {
       const rect = elem.getBoundingClientRect()
       setDropdownPosition({
-        top: rect.bottom + 8,
+        top: rect.bottom + 4,
         left: Math.min(rect.left, window.innerWidth - 340)
       })
     }
@@ -438,6 +461,7 @@ export default function DesktopHomePage() {
   }
 
   const handleMouseLeave = () => {
+    setIsPaused(false)
     setActiveHoverCategory(null)
   }
 
@@ -480,7 +504,6 @@ export default function DesktopHomePage() {
 
       <StorefrontHeader />
 
-      {/* Pre-Order Mode Banner Notice if Store is Offline */}
       {!isStoreLive && (
         <div className="bg-amber-600 text-white px-4 py-2.5 text-center text-xs font-black uppercase tracking-wider sticky top-20 z-50 shadow-md flex items-center justify-center gap-2">
           <AlertTriangle className="w-4 h-4 animate-bounce" />
@@ -595,8 +618,8 @@ export default function DesktopHomePage() {
 
       <WaitlistCountdownSection />
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-[#0A2E1D] text-white pt-8 pb-16 lg:pb-24 rounded-b-[40px] md:rounded-b-[60px]">
+      {/* Hero Section (Clean flat bottom alignment on desktop) */}
+      <section className="relative overflow-hidden bg-[#0A2E1D] text-white pt-8 pb-16 lg:pb-24 rounded-none">
         <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#EAA823_1px,transparent_1px)] [background-size:16px_16px]" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -685,7 +708,7 @@ export default function DesktopHomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-4 text-sm font-medium">
           <div className="flex items-center gap-2 text-[#EAA823]">
             <Heart className="w-5 h-5 fill-[#EAA823]" />
-            <span className="text-white font-semibold">Good Food. Great Experience. <span className="text-[#EAA823]">Better Together.</span></span>
+            <span className="text-white font-semibold">Good Food. Great Experience. <span className="text-[#EAA823]">Quality made just for You.🧑‍🍳</span></span>
           </div>
           <div className="flex items-center gap-8 text-gray-300">
             <div className="flex items-center gap-2">
@@ -704,8 +727,16 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* Category Navigation Bar */}
-      <section className="py-6 bg-white border-b border-gray-100 sticky top-20 z-40 shadow-sm w-full">
+      {/* Category Navigation Bar with Seamless Auto-Scrolling Loop & Pause on Hover */}
+      <section 
+        className="py-6 bg-white border-b border-gray-100 sticky top-20 z-40 shadow-sm w-full"
+        onMouseEnter={() => setIsPaused(true)}
+        onMouseLeave={() => {
+          if (!activeHoverCategory) {
+            setIsPaused(false)
+          }
+        }}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4">
 
@@ -727,7 +758,10 @@ export default function DesktopHomePage() {
               </div>
             </div>
 
-            <div className="w-full max-w-full overflow-x-auto pb-3 pt-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+            <div 
+              ref={categoryScrollRef}
+              className="w-full max-w-full overflow-x-auto pb-3 pt-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent no-scrollbar"
+            >
               <div className="flex items-center gap-2 min-w-max pr-6">
                 {CATEGORIES.map((cat) => {
                   const isSelected = selectedCategory.toLowerCase() === cat.name.toLowerCase()
@@ -740,8 +774,52 @@ export default function DesktopHomePage() {
                       ref={(el) => {
                         buttonRefs.current[cat.name] = el
                       }}
-                      className="relative"
+                      className="relative pb-1"
                       onMouseEnter={() => handleMouseEnter(cat.name)}
+                      onMouseLeave={handleMouseLeave}
+                    >
+                      <button
+                        onClick={() => handleCategorySelect(cat.name)}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 border cursor-pointer ${
+                          cat.isCakeRoute 
+                            ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                            : isSelected || isHovered
+                            ? 'bg-[#0A2E1D] text-[#EAA823] border-[#0A2E1D] shadow-md'
+                            : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                        }`}
+                      >
+                        {cat.image ? (
+                          <div className="relative w-6 h-6 rounded-full overflow-hidden border border-gray-300 flex-shrink-0">
+                            <Image src={cat.image} alt={cat.name} fill className="object-cover" />
+                          </div>
+                        ) : (
+                          <span className={`p-1 rounded-full flex-shrink-0 ${isSelected || isHovered ? 'bg-[#EAA823] text-[#0A2E1D]' : 'bg-gray-200 text-gray-600'}`}>
+                            {cat.icon}
+                          </span>
+                        )}
+                        <span>{cat.name}</span>
+                        {cat.isCakeRoute && (
+                          <span className="bg-amber-500 text-white text-[9px] px-1.5 py-0.2 rounded-full">Dedicated Page</span>
+                        )}
+                        {hasGroups && (
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 flex-shrink-0 ${isHovered ? 'rotate-180 text-[#EAA823]' : 'text-gray-400'}`} />
+                        )}
+                      </button>
+                    </div>
+                  )
+                })}
+
+                {/* Duplicated items for seamless infinite-scroll looping illusion */}
+                {CATEGORIES.map((cat) => {
+                  const isSelected = selectedCategory.toLowerCase() === cat.name.toLowerCase()
+                  const hasGroups = cat.groups && cat.groups.length > 0
+                  const isHovered = activeHoverCategory === `dup-${cat.name}`
+
+                  return (
+                    <div
+                      key={`dup-${cat.name}`}
+                      className="relative pb-1"
+                      onMouseEnter={() => handleMouseEnter(`dup-${cat.name}`)}
                       onMouseLeave={handleMouseLeave}
                     >
                       <button
@@ -779,6 +857,7 @@ export default function DesktopHomePage() {
           </div>
         </div>
 
+        {/* Hover Mega Menu with Padding Buffer to Prevent Instant Disappearing */}
         {activeCategoryConfig?.groups && activeCategoryConfig.groups.length > 0 && dropdownPosition && (
           <div
             style={{
@@ -786,8 +865,11 @@ export default function DesktopHomePage() {
               top: `${dropdownPosition.top}px`,
               left: `${dropdownPosition.left}px`,
             }}
-            className="z-[9999] min-w-[280px] sm:min-w-[320px] max-w-[90vw] animate-in fade-in slide-in-from-top-2 duration-200"
-            onMouseEnter={() => setActiveHoverCategory(activeCategoryConfig.name)}
+            className="z-[9999] min-w-[280px] sm:min-w-[320px] max-w-[90vw] pt-2 -mt-2 animate-in fade-in slide-in-from-top-1 duration-150"
+            onMouseEnter={() => {
+              setIsPaused(true)
+              setActiveHoverCategory(activeCategoryConfig.name)
+            }}
             onMouseLeave={handleMouseLeave}
           >
             <div className="bg-[#0A2E1D] text-white rounded-2xl shadow-2xl border border-[#EAA823]/30 p-4 space-y-4 whitespace-normal">

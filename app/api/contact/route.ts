@@ -1,6 +1,8 @@
 // app/api/contact/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendRawTelegramMessage } from '@/lib/email'
+import { processCustomerMessageWithGemini } from '@/lib/ai/gemini-support-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,7 +83,7 @@ export async function POST(req: Request) {
       inquiryId = inquiryData?.id
     }
 
-    // 2. Insert into inquiry_messages if the child table exists
+    // 2. Insert into inquiry_messages for the customer message
     if (inquiryId) {
       const { error: msgError } = await supabase
         .from('inquiry_messages')
@@ -97,6 +99,64 @@ export async function POST(req: Request) {
       if (msgError) {
         console.warn('[Child Message Insert Notice]:', msgError.message)
       }
+
+      // 3. Process automated support response via Gemini AI Agent
+      try {
+        const geminiResult = await processCustomerMessageWithGemini({
+          inquiryId: inquiryId,
+          customerName: cleanName,
+          conversationHistory: [{ sender: 'customer', text: cleanMessage }],
+          incomingMessage: cleanMessage,
+        })
+
+        const adminMsgTime = new Date(Date.now() + 500).toISOString()
+
+        // Insert AI/Admin auto-response into database so it persists permanently for the customer
+        await supabase
+          .from('inquiry_messages')
+          .insert({
+            inquiry_id: inquiryId,
+            sender_type: 'admin',
+            sender_name: 'De-echoi Support',
+            message: geminiResult.message,
+            type: geminiResult.type,
+            metadata: geminiResult.metadata,
+            created_at: adminMsgTime,
+          })
+
+        // Update parent thread last_message_at
+        await supabase
+          .from('customer_inquiries')
+          .update({ last_message_at: adminMsgTime, status: 'replied' })
+          .eq('id', inquiryId)
+
+      } catch (aiErr) {
+        console.warn('[Contact AI Auto-Reply Notice]:', aiErr)
+      }
+    }
+
+    // 4. Dispatch instant Telegram alert so admin gets notified on their phone
+    try {
+      const timeString = new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' })
+      const telegramHtml = `
+💬 <b>NEW CUSTOMER SUPPORT INQUIRY!</b>
+━━━━━━━━━━━━━━━━━━
+👤 <b>Name:</b> ${cleanName}
+📧 <b>Email:</b> ${cleanEmail}
+📱 <b>Phone:</b> ${cleanPhone || 'N/A'}
+📌 <b>Subject:</b> ${cleanSubject}
+
+📝 <b>Message:</b>
+<i>${cleanMessage}</i>
+
+⏰ <b>Time:</b> ${timeString} (WAT)
+━━━━━━━━━━━━━━━━━━
+<i>De-echoi Support Center Alert</i>
+      `.trim()
+
+      await sendRawTelegramMessage(telegramHtml)
+    } catch (telegramErr) {
+      console.warn('[Telegram Contact Notification Warning]:', telegramErr)
     }
 
     return NextResponse.json({

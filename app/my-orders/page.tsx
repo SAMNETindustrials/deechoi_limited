@@ -88,56 +88,36 @@ export default function MyOrdersPage() {
 
       const { data: { user } } = await supabase.auth.getUser()
       const session: CustomerSession = JSON.parse(localStorage.getItem('deechoi_customer_session') || '{}')
-      const storedOrderIds: string[] = JSON.parse(localStorage.getItem('deechoi_customer_orders') || '[]')
       setCustomerSession(session)
 
+      // Strictly isolate search to the specific user email
       const targetEmail = manualIdentifier?.includes('@') 
         ? manualIdentifier.trim().toLowerCase() 
         : (user?.email || session.email || '').trim().toLowerCase()
 
-      const targetPhone = manualIdentifier && !manualIdentifier.includes('@')
-        ? manualIdentifier.trim()
-        : (session.phone || '').trim()
-
-      let query = supabase
-        .from('store_orders')
-        .select('*')
-        .neq('payment_method', 'contact_form_message')
-        .order('created_at', { ascending: false })
-
-      if (targetEmail && targetPhone && storedOrderIds.length > 0) {
-        query = query.or(
-          `customer_email.ilike.${targetEmail},customer_phone.eq.${targetPhone},id.in.(${storedOrderIds.join(',')})`
-        )
-      } else if (targetEmail && targetPhone) {
-        query = query.or(
-          `customer_email.ilike.${targetEmail},customer_phone.eq.${targetPhone}`
-        )
-      } else if (targetEmail) {
-        query = query.ilike('customer_email', targetEmail)
-      } else if (targetPhone) {
-        query = query.eq('customer_phone', targetPhone)
-      } else if (storedOrderIds.length > 0) {
-        query = query.in('id', storedOrderIds)
-      } else {
+      if (!targetEmail) {
         setOrders([])
         setLoading(false)
         return
       }
 
-      const { data, error } = await query
+      const { data, error } = await supabase
+        .from('store_orders')
+        .select('*')
+        .ilike('customer_email', targetEmail)
+        .neq('payment_method', 'contact_form_message')
+        .order('created_at', { ascending: false })
+
       if (error) throw error
       
       const fetched = data || []
       setOrders(fetched)
 
       if (fetched.length > 0) {
-        const mergedIds = Array.from(new Set([...storedOrderIds, ...fetched.map(o => o.id)]))
-        localStorage.setItem('deechoi_customer_orders', JSON.stringify(mergedIds))
         fetchExistingReviews(fetched.map(o => o.id))
       }
-    } catch (err) {
-      console.error('Error fetching customer orders:', err)
+    } catch (err: any) {
+      console.error('Error fetching customer orders:', err?.message || err)
     } finally {
       setLoading(false)
       setIsSearching(false)
@@ -283,20 +263,12 @@ export default function MyOrdersPage() {
             Track live dispatches, view receipts, and rate any of your completed meals.
           </p>
 
-          {(customerSession?.email || customerSession?.phone) && (
+          {customerSession?.email && (
             <div className="mt-4 pt-4 border-t border-emerald-800/60 flex flex-wrap gap-4 text-xs text-emerald-200">
-              {customerSession.email && (
-                <span className="flex items-center gap-1.5 bg-[#041a11] px-3 py-1 rounded-full border border-emerald-700/40">
-                  <Mail className="w-3.5 h-3.5 text-amber-400" />
-                  {customerSession.email}
-                </span>
-              )}
-              {customerSession.phone && (
-                <span className="flex items-center gap-1.5 bg-[#041a11] px-3 py-1 rounded-full border border-emerald-700/40">
-                  <Phone className="w-3.5 h-3.5 text-amber-400" />
-                  {customerSession.phone}
-                </span>
-              )}
+              <span className="flex items-center gap-1.5 bg-[#041a11] px-3 py-1 rounded-full border border-emerald-700/40">
+                <Mail className="w-3.5 h-3.5 text-amber-400" />
+                {customerSession.email}
+              </span>
             </div>
           )}
         </div>
@@ -307,8 +279,8 @@ export default function MyOrdersPage() {
             <div className="relative flex-1 w-full">
               <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-400" />
               <input
-                type="text"
-                placeholder="Find orders by email or phone number..."
+                type="email"
+                placeholder="Enter your registered order email..."
                 value={lookupInput}
                 onChange={(e) => setLookupInput(e.target.value)}
                 className="w-full bg-[#FDFBF7] border border-gray-200 text-xs sm:text-sm text-[#0A2E1D] pl-10 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
@@ -319,7 +291,7 @@ export default function MyOrdersPage() {
               disabled={isSearching}
               className="w-full sm:w-auto bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white text-xs font-bold px-5 py-2.5 rounded-xl transition cursor-pointer"
             >
-              {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Find My Orders'}
+              {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Lookup Orders'}
             </Button>
           </form>
         </div>
@@ -377,7 +349,7 @@ export default function MyOrdersPage() {
             <p className="text-xs text-gray-500 mb-6 max-w-xs mx-auto">
               {activeTab !== 'all' 
                 ? `You do not have any ${activeTab} orders at the moment.` 
-                : 'No order history associated with this account. Type your checkout email or phone number above to sync your orders.'}
+                : 'No order history associated with your email address. Type your checkout email above to lookup your orders.'}
             </p>
             <Link href="/">
               <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs cursor-pointer">

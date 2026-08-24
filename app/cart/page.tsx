@@ -18,8 +18,6 @@ import {
   Sparkles, 
   Info, 
   Loader2,
-  ShieldCheck,
-  X,
   AlertTriangle,
   Clock
 } from 'lucide-react'
@@ -140,6 +138,7 @@ export default function CartPage() {
     localStorage.removeItem('active_checkout_voucher')
   }
 
+  // Calculate Subtotal dynamically exactly as cart items are priced
   const rawSubtotal = Number(total) || items.reduce((acc, item) => {
     const unitPrice = Number(item.price ?? item.unit_price ?? item.final_price ?? 0)
     const qty = Number(item.quantity) || 1
@@ -253,49 +252,70 @@ export default function CartPage() {
 
               {items.map((item) => {
                 const targetKey: string = String(item.id || item.product_id || '')
+                const rawName = item.name ?? item.product_name ?? 'Item'
                 const unitPrice = Number(item.price ?? item.unit_price ?? item.final_price ?? 0)
                 const qty = Number(item.quantity) || 1
-                const lineTotal = unitPrice * qty
                 const options = item.selected_options
+
+                // Campaign product detection
+                const isPromoAddon = rawName.startsWith('[Add-on]')
+                const isCampaignItem = isPromoAddon || 
+                                       targetKey.startsWith('item-') || 
+                                       targetKey.startsWith('addon-') ||
+                                       (Array.isArray(options) && options.some(opt => opt.groupName === 'Package Add-on' || opt.groupName === 'Included With'))
+
+                const cleanName = isPromoAddon ? rawName.replace('[Add-on]', '').trim() : rawName
+                const isFreeAddon = isPromoAddon && unitPrice === 0
+                
+                const lineTotal = unitPrice * qty
 
                 return (
                   <div
                     key={targetKey}
-                    className="flex flex-col sm:flex-row gap-4 p-4 sm:p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition"
+                    className={`flex flex-col sm:flex-row gap-4 p-4 sm:p-5 border rounded-2xl shadow-sm hover:shadow-md transition ${
+                      isPromoAddon ? 'bg-emerald-50/40 border-emerald-200' : 'bg-white border-gray-100'
+                    }`}
                   >
-                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 self-center sm:self-start border border-gray-100">
+                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 self-center sm:self-start border border-gray-200">
                       {item.imageUrl ? (
                         <Image
                           src={item.imageUrl}
-                          alt={item.name ?? item.product_name ?? 'Item'}
+                          alt={cleanName}
                           fill
                           className="object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400">
+                        <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-gray-400">
                           DE-ECHOI
                         </div>
                       )}
                     </div>
 
                     <div className="flex-1 space-y-1 text-center sm:text-left">
-                      <div className="flex items-center justify-between sm:justify-start gap-2">
-                        <h3 className="font-extrabold text-[#0A2E1D] text-sm sm:text-base leading-tight">
-                          {item.name ?? item.product_name}
-                        </h3>
-                        {!isStoreLive && (
-                          <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between sm:justify-start gap-1 sm:gap-2">
+                        {isPromoAddon && (
+                          <span className="bg-emerald-600 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full w-fit mx-auto sm:mx-0">
+                            Package Add-on
+                          </span>
+                        )}
+                        {!isStoreLive && !isPromoAddon && (
+                          <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase w-fit mx-auto sm:mx-0">
                             Pre-Order
                           </span>
                         )}
                       </div>
+                      
+                      <h3 className="font-extrabold text-[#0A2E1D] text-sm sm:text-base leading-tight mt-1">
+                        {cleanName}
+                      </h3>
 
-                      <p className="text-xs font-black text-[#EAA823]">
-                        ₦{unitPrice.toLocaleString()} each
+                      <p className={`text-xs font-black ${isFreeAddon ? 'text-emerald-500' : 'text-[#EAA823]'}`}>
+                        {isFreeAddon ? 'FREE GIFT' : `₦${unitPrice.toLocaleString()} each`}
                       </p>
 
+                      {/* Display Included Options & Configurations */}
                       {Array.isArray(options) && options.length > 0 ? (
-                        <div className="mt-2 text-[11px] bg-[#FDFBF7] p-2.5 rounded-xl border border-gray-100 space-y-1">
+                        <div className="mt-2 text-[11px] bg-white/60 p-2.5 rounded-xl border border-gray-100 space-y-1 text-left">
                           {options.map((opt, i) => (
                             <div key={i} className="flex justify-between sm:justify-start gap-1.5 text-gray-700">
                               <span className="font-bold text-[#0A2E1D]">{opt.groupName}:</span>
@@ -311,25 +331,35 @@ export default function CartPage() {
                       ) : null}
                     </div>
 
-                    <div className="flex sm:flex-col items-center justify-between sm:items-end gap-3 pt-2 sm:pt-0 border-t sm:border-0 border-gray-100">
-                      <div className="flex items-center gap-1.5 bg-[#FDFBF7] border border-gray-200 rounded-full p-1 shadow-xs">
-                        <button
-                          onClick={() => updateQuantity(targetKey, Math.max(1, qty - 1))}
-                          className="p-1 rounded-full hover:bg-white text-gray-600 active:scale-90 transition cursor-pointer"
-                          aria-label="Decrease quantity"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </button>
-                        <span className="w-7 text-center font-bold text-xs text-[#0A2E1D]">
-                          {qty}
-                        </span>
-                        <button
-                          onClick={() => updateQuantity(targetKey, qty + 1)}
-                          className="p-1 rounded-full hover:bg-white text-gray-600 active:scale-90 transition cursor-pointer"
-                          aria-label="Increase quantity"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
+                    <div className="flex sm:flex-col items-center justify-between sm:items-end gap-3 pt-2 sm:pt-0 border-t sm:border-0 border-gray-100/50">
+                      
+                      {/* Disable plus/minus for Campaign Packages to preserve bundle integrity */}
+                      <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-full p-1 shadow-xs">
+                        {isCampaignItem ? (
+                          <span className="px-4 py-1 text-center font-bold text-xs text-gray-500 select-none bg-gray-50 rounded-full w-full">
+                            Qty: {qty}
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => updateQuantity(targetKey, Math.max(1, qty - 1))}
+                              className="p-1 rounded-full hover:bg-gray-100 text-gray-600 active:scale-90 transition cursor-pointer"
+                              aria-label="Decrease quantity"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="w-7 text-center font-bold text-xs text-[#0A2E1D]">
+                              {qty}
+                            </span>
+                            <button
+                              onClick={() => updateQuantity(targetKey, qty + 1)}
+                              className="p-1 rounded-full hover:bg-gray-100 text-gray-600 active:scale-90 transition cursor-pointer"
+                              aria-label="Increase quantity"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-3">

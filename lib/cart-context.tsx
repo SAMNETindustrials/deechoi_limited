@@ -3,6 +3,12 @@
 import React, { createContext, useContext, useState, useCallback, Key } from 'react'
 
 export interface CartItem {
+  prep_time: any
+  prep_time: any
+  cooking_time: any
+  cooking_time: any
+  fulfillment_time: any
+  fulfillment_time: any
   name: string | undefined
   id: Key | null | undefined
   imageUrl: any

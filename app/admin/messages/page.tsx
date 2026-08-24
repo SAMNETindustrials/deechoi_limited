@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,8 +21,8 @@ import {
   FileText,
   ExternalLink,
   Sparkles,
-  Layers,
-  Sparkle
+  Search,
+  Calendar
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -39,13 +39,15 @@ interface MessageItem {
 
 interface InquiryThread {
   id: string
-  name: string
-  email: string
-  phone: string
-  category: string
-  status: string
-  created_at: string
-  last_message_at: string
+  name?: string
+  customer_name?: string
+  email?: string
+  customer_email?: string
+  phone?: string
+  category?: string
+  status?: string
+  created_at?: string
+  last_message_at?: string
 }
 
 export default function AdminMessagesPage() {
@@ -58,6 +60,10 @@ export default function AdminMessagesPage() {
   const [sending, setSending] = useState(false)
   const [checkingPaymentId, setCheckingPaymentId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  // In-chat search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
 
   // Advanced Payment Request Form State
   const [showPaymentRequestPrompt, setShowPaymentRequestPrompt] = useState(false)
@@ -133,7 +139,23 @@ export default function AdminMessagesPage() {
     fetchThreads()
   }, [fetchThreads])
 
-  // Real-time listener for incoming customer messages & Typing Broadcasting
+  // Deduplicate thread list so each unique customer email/name appears only once
+  const deduplicatedThreads = useMemo(() => {
+    const seenEmails = new Set<string>()
+    return threads.filter((t) => {
+      const emailKey = (t.email || t.customer_email || '').trim().toLowerCase()
+      const nameKey = (t.name || t.customer_name || '').trim().toLowerCase()
+      const uniqueKey = emailKey || nameKey
+      if (!uniqueKey) return true
+      if (seenEmails.has(uniqueKey)) {
+        return false
+      }
+      seenEmails.add(uniqueKey)
+      return true
+    })
+  }, [threads])
+
+  // Real-time listener for incoming messages & persistence sync
   useEffect(() => {
     if (!activeThreadId) return
 
@@ -158,7 +180,8 @@ export default function AdminMessagesPage() {
                 (m) => !(m.id.startsWith('temp-') && m.message === newMsg.message)
               )
               if (withoutOptimistic.some((m) => m.id === newMsg.id)) return withoutOptimistic
-              return [...withoutOptimistic, newMsg]
+              const combined = [...withoutOptimistic, newMsg]
+              return combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
             })
             scrollToBottom()
           } else if (payload.eventType === 'UPDATE') {
@@ -169,14 +192,47 @@ export default function AdminMessagesPage() {
           }
         }
       )
-      .on('broadcast', { event: 'new_chat_message' }, (payload) => {
+      .on('broadcast', { event: 'new_chat_message' }, async (payload) => {
         const incomingMsg = payload.payload as MessageItem
         if (incomingMsg && incomingMsg.inquiry_id === activeThreadId) {
+          
           setActiveMessages((prev) => {
             if (prev.some((m) => m.id === incomingMsg.id)) return prev
-            return [...prev, incomingMsg]
+            const combined = [...prev, incomingMsg]
+            return combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
           })
           scrollToBottom()
+
+          if (incomingMsg.sender_type === 'customer') {
+            try {
+              const msgId = incomingMsg.id || `msg-${Date.now()}`
+              const { data: existing } = await supabase
+                .from('inquiry_messages')
+                .select('id')
+                .eq('id', msgId)
+                .maybeSingle()
+
+              if (!existing) {
+                await supabase.from('inquiry_messages').insert({
+                  id: msgId,
+                  inquiry_id: incomingMsg.inquiry_id,
+                  sender_type: 'customer',
+                  sender_name: incomingMsg.sender_name || 'Customer',
+                  message: incomingMsg.message,
+                  type: incomingMsg.type || 'text',
+                  metadata: incomingMsg.metadata || {},
+                  created_at: incomingMsg.created_at || new Date().toISOString()
+                })
+                
+                await supabase
+                  .from('customer_inquiries')
+                  .update({ last_message_at: new Date().toISOString() })
+                  .eq('id', incomingMsg.inquiry_id)
+              }
+            } catch (err) {
+              console.error('Failed to automatically persist customer message:', err)
+            }
+          }
         }
       })
       .subscribe()
@@ -187,7 +243,7 @@ export default function AdminMessagesPage() {
       supabase.removeChannel(channel)
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
     }
-  }, [activeThreadId, supabase, selectThread])
+  }, [activeThreadId, supabase])
 
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setReplyText(e.target.value)
@@ -226,7 +282,6 @@ export default function AdminMessagesPage() {
 
     const paymentReference = `DE-${Date.now().toString().slice(-6)}`
     
-    // Construct rich checkout query parameters
     const checkoutParams = new URLSearchParams({
       amount: String(paymentAmountInput || '0'),
       ref: paymentReference,
@@ -292,9 +347,9 @@ export default function AdminMessagesPage() {
         inquiryId: String(activeThreadId).trim(),
         message: textPayload,
         replyMessage: textPayload,
-        to: currentThread?.email ? String(currentThread.email).trim().toLowerCase() : '',
-        customerEmail: currentThread?.email ? String(currentThread.email).trim().toLowerCase() : '',
-        customerName: currentThread?.name ? String(currentThread.name).trim() : 'Customer',
+        to: currentThread?.email || currentThread?.customer_email || '',
+        customerEmail: currentThread?.email || currentThread?.customer_email || '',
+        customerName: currentThread?.name || currentThread?.customer_name || 'Customer',
         senderName: 'De-echoi Support',
         type,
         metadata: metadataPayload,
@@ -402,6 +457,50 @@ export default function AdminMessagesPage() {
   }
 
   const activeThread = threads.find((t) => t.id === activeThreadId)
+  const activeThreadName = activeThread?.name || activeThread?.customer_name || 'Customer'
+  const activeThreadEmail = activeThread?.email || activeThread?.customer_email || 'N/A'
+  const activeThreadPhone = activeThread?.phone || 'N/A'
+
+  // Filter messages based on search query
+  const filteredMessages = useMemo(() => {
+    if (!searchQuery.trim()) return activeMessages
+    const q = searchQuery.toLowerCase().trim()
+    return activeMessages.filter((m) => {
+      const textMatch = m.message?.toLowerCase().includes(q)
+      const nameMatch = m.sender_name?.toLowerCase().includes(q)
+      const meta = typeof m.metadata === 'object' ? JSON.stringify(m.metadata).toLowerCase() : ''
+      return textMatch || nameMatch || meta.includes(q)
+    })
+  }, [activeMessages, searchQuery])
+
+  // Group messages by date
+  const groupedMessages = useMemo(() => {
+    const groups: { dateLabel: string; items: MessageItem[] }[] = []
+    let lastDateKey = ''
+
+    filteredMessages.forEach((msg) => {
+      const msgDate = new Date(msg.created_at)
+      const today = new Date()
+      const yesterday = new Date()
+      yesterday.setDate(today.getDate() - 1)
+
+      let dateLabel = msgDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+      if (msgDate.toDateString() === today.toDateString()) {
+        dateLabel = 'Today'
+      } else if (msgDate.toDateString() === yesterday.toDateString()) {
+        dateLabel = 'Yesterday'
+      }
+
+      if (dateLabel !== lastDateKey) {
+        groups.push({ dateLabel, items: [msg] })
+        lastDateKey = dateLabel
+      } else {
+        groups[groups.length - 1].items.push(msg)
+      }
+    })
+
+    return groups
+  }, [filteredMessages])
 
   return (
     <div className="min-h-screen bg-[#0F1419] text-white font-sans flex flex-col">
@@ -437,21 +536,25 @@ export default function AdminMessagesPage() {
 
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
         
-        {/* Left: Thread List */}
+        {/* Left: Deduplicated Thread List */}
         <div className="md:col-span-4 bg-[#1a1f2e] border border-[#EAA823]/20 rounded-3xl p-4 flex flex-col space-y-3">
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">All Inquiries ({threads.length})</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Unique Customers ({deduplicatedThreads.length})</span>
             <button onClick={fetchThreads} className="text-gray-400 hover:text-[#EAA823] cursor-pointer" title="Refresh">
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[70vh]">
-            {threads.length === 0 ? (
+            {deduplicatedThreads.length === 0 ? (
               <p className="text-xs text-gray-500 text-center py-10">No customer inquiries found</p>
             ) : (
-              threads.map((t) => {
+              deduplicatedThreads.map((t) => {
                 const isSelected = t.id === activeThreadId
+                const tName = t.name || t.customer_name || 'Customer'
+                const tEmail = t.email || t.customer_email || 'N/A'
+                const tTime = t.last_message_at || t.created_at || new Date().toISOString()
+
                 return (
                   <div
                     key={t.id}
@@ -463,13 +566,13 @@ export default function AdminMessagesPage() {
                     }`}
                   >
                     <div className="flex justify-between items-start mb-1">
-                      <p className="font-bold text-sm text-white truncate">{t.name}</p>
+                      <p className="font-bold text-sm text-white truncate">{tName}</p>
                       <span className="text-[10px] text-gray-400">
-                        {new Date(t.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(tTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <p className="text-xs text-amber-400 font-medium truncate">{t.category || 'General Inquiry'}</p>
-                    <p className="text-[11px] text-gray-400 mt-1 truncate">{t.email}</p>
+                    <p className="text-[11px] text-gray-400 mt-1 truncate">{tEmail}</p>
                   </div>
                 )
               })
@@ -483,14 +586,29 @@ export default function AdminMessagesPage() {
             <>
               <div className="pb-4 mb-4 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-extrabold text-white">{activeThread.name}</h2>
+                  <h2 className="text-base font-extrabold text-white">{activeThreadName}</h2>
                   <div className="flex flex-wrap gap-3 text-xs text-gray-400 mt-0.5">
-                    <span className="flex items-center gap-1"><Mail className="w-3 h-3 text-[#EAA823]" />{activeThread.email}</span>
-                    <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-[#EAA823]" />{activeThread.phone}</span>
+                    <span className="flex items-center gap-1"><Mail className="w-3 h-3 text-[#EAA823]" />{activeThreadEmail}</span>
+                    <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-[#EAA823]" />{activeThreadPhone}</span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSearchOpen(!isSearchOpen)
+                      if (isSearchOpen) setSearchQuery('')
+                    }}
+                    className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+                      isSearchOpen ? 'bg-[#EAA823] text-[#0A2E1D] border-[#EAA823]' : 'bg-[#131821] text-white border-white/20 hover:bg-white/10'
+                    }`}
+                    title="Search conversation"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Search</span>
+                  </button>
+
                   <Button
                     type="button"
                     onClick={() => setShowPaymentRequestPrompt(true)}
@@ -502,7 +620,7 @@ export default function AdminMessagesPage() {
 
                   <button
                     type="button"
-                    onClick={() => handleOpenWhatsApp(activeThread.phone, activeThread.name)}
+                    onClick={() => handleOpenWhatsApp(activeThreadPhone, activeThreadName)}
                     className="inline-flex items-center gap-1.5 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-emerald-600 hover:text-white transition cursor-pointer"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
@@ -511,6 +629,27 @@ export default function AdminMessagesPage() {
                 </div>
               </div>
 
+              {/* In-Chat Search Bar Drawer */}
+              {isSearchOpen && (
+                <div className="mb-3 bg-black/40 border border-amber-400/30 p-2.5 px-4 rounded-xl flex items-center gap-2">
+                  <Search className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search thread by keywords, references, or amounts..."
+                    className="flex-1 bg-transparent border-none text-xs text-white outline-none placeholder:text-gray-500 font-medium"
+                    autoFocus
+                  />
+                  {searchQuery && (
+                    <button type="button" onClick={() => setSearchQuery('')} className="text-xs text-amber-400 hover:underline">Clear</button>
+                  )}
+                  <button type="button" onClick={() => { setIsSearchOpen(false); setSearchQuery('') }} className="text-gray-400 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {errorMessage && (
                 <div className="mb-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -518,152 +657,139 @@ export default function AdminMessagesPage() {
                 </div>
               )}
 
-              {/* Messages Stream */}
-              <div className="flex-1 overflow-y-auto space-y-3.5 pr-2 py-2 max-h-[50vh]">
+              {/* Messages Stream Grouped by Date */}
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 py-2 max-h-[50vh]">
                 {loadingMessages ? (
                   <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-[#EAA823]" /></div>
+                ) : groupedMessages.length === 0 ? (
+                  <div className="text-center py-10 text-xs text-gray-500">No messages found matching your search.</div>
                 ) : (
-                  activeMessages.map((m) => {
-                    const isAdmin = m.sender_type === 'admin'
-                    const rawMeta = typeof m.metadata === 'string' ? JSON.parse(m.metadata || '{}') : (m.metadata || {})
-                    const isPayment = m.type === 'payment_request' || Boolean(rawMeta?.amount) || (m.message && m.message.includes('[PAYMENT_REQUEST:'))
-                    const paymentStatus = rawMeta?.status || 'pending'
-                    const requestedAmount = Number(rawMeta?.amount || 0)
-                    const hasCustomMessage = Boolean(m.message && !m.message.startsWith('[PAYMENT_REQUEST:'))
-
-                    return (
-                      <div key={m.id} className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}>
-                        <span className="text-[10px] text-gray-400 mb-1 px-1">{m.sender_name}</span>
-                        
-                        <div className={`max-w-[88%] rounded-2xl text-xs sm:text-sm leading-relaxed ${
-                          isAdmin
-                            ? 'bg-[#12422C] text-white border border-[#EAA823]/30 rounded-tr-none'
-                            : 'bg-[#131821] text-gray-200 border border-white/10 rounded-tl-none'
-                        } ${isPayment ? 'p-4' : 'p-4'}`}>
-                          
-                          {hasCustomMessage && <p className="mb-2">{m.message}</p>}
-
-                          {/* Dynamic Payment Card in Admin Stream */}
-                          {isPayment && (
-                            <div className="bg-black/60 rounded-2xl p-4 border border-amber-400/50 space-y-3 w-full min-w-[280px] sm:min-w-[340px]">
-                              <div className="flex items-center justify-between text-xs pb-2 border-b border-white/10">
-                                <div>
-                                  <span className="text-amber-400 font-black text-base flex items-center gap-1.5">
-                                    <CreditCard className="w-4 h-4" />
-                                    ₦{requestedAmount.toLocaleString()}
-                                  </span>
-                                  <p className="text-[11px] text-white font-bold mt-0.5">
-                                    {rawMeta?.item_name || 'Custom Order'}
-                                  </p>
-                                </div>
-
-                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
-                                  paymentStatus === 'confirmed'
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : paymentStatus === 'submitted'
-                                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                      : 'bg-white/10 text-gray-300'
-                                }`}>
-                                  {paymentStatus === 'confirmed' ? '✓ CONFIRMED' : paymentStatus === 'submitted' ? '⏳ RECEIPT SUBMITTED' : 'PAYMENT REQUESTED'}
-                                </span>
-                              </div>
-
-                              {/* Spec Chips */}
-                              <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-white/5 p-2 rounded-xl border border-white/10">
-                                <div>
-                                  <span className="text-gray-400 block">Size / Tier:</span>
-                                  <strong className="text-white">{rawMeta?.size || 'Standard Tier'}</strong>
-                                </div>
-                                <div>
-                                  <span className="text-gray-400 block">Flavor / Style:</span>
-                                  <strong className="text-white">{rawMeta?.flavor || 'Custom Recipe'}</strong>
-                                </div>
-                                {rawMeta?.delivery_mode && (
-                                  <div className="col-span-2 pt-1 border-t border-white/5">
-                                    <span className="text-gray-400 block">Fulfillment:</span>
-                                    <strong className="text-amber-300">{rawMeta.delivery_mode}</strong>
-                                  </div>
-                                )}
-                              </div>
-
-                              {rawMeta?.note && (
-                                <p className="text-[11px] text-gray-300 italic">
-                                  &ldquo;{rawMeta.note}&rdquo;
-                                </p>
-                              )}
-
-                              {rawMeta?.reference && (
-                                <p className="text-[11px] text-emerald-300 font-mono bg-white/5 p-1.5 rounded-md">
-                                  Invoice Ref: #{rawMeta.reference}
-                                </p>
-                              )}
-
-                              {rawMeta?.receipt_url && (
-                                <a
-                                  href={rawMeta.receipt_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-[11px] text-amber-300 hover:underline bg-white/5 px-2.5 py-1.5 rounded-lg border border-amber-400/20"
-                                >
-                                  <FileText className="w-3.5 h-3.5 text-amber-400" />
-                                  <span>View Uploaded Proof</span>
-                                  <ExternalLink className="w-3 h-3 opacity-60" />
-                                </a>
-                              )}
-
-                              {/* State 1: Awaiting Customer Payment */}
-                              {paymentStatus === 'pending' && (
-                                <div className="space-y-2 pt-1">
-                                  <Button
-                                    type="button"
-                                    onClick={() => handleCheckCustomerPayment(m.id)}
-                                    disabled={checkingPaymentId === m.id}
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full border-amber-400/40 text-amber-300 hover:bg-amber-400/10 font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition"
-                                  >
-                                    <RefreshCw className={`w-3.5 h-3.5 ${checkingPaymentId === m.id ? 'animate-spin' : ''}`} />
-                                    <span>Check If Customer Has Paid</span>
-                                  </Button>
-                                </div>
-                              )}
-
-                              {/* State 2: Customer Submitted Proof */}
-                              {paymentStatus === 'submitted' && (
-                                <Button
-                                  type="button"
-                                  onClick={() => handleConfirmCustomerPayment(m)}
-                                  disabled={sending}
-                                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs py-2.5 rounded-xl cursor-pointer shadow-md flex items-center justify-center gap-1.5 transition"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  <span>Confirm Payment Received</span>
-                                </Button>
-                              )}
-
-                              {/* State 3: Confirmed */}
-                              {paymentStatus === 'confirmed' && (
-                                <div className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-bold bg-emerald-950/40 p-2 rounded-lg border border-emerald-500/20">
-                                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                                  <span>Payment Verified &amp; Order Approved</span>
-                                </div>
-                              )}
-
-                            </div>
-                          )}
-                        </div>
-
-                        <span className="text-[9px] text-gray-500 mt-1 px-1">
-                          {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  groupedMessages.map((group, groupIdx) => (
+                    <div key={groupIdx} className="space-y-3.5">
+                      <div className="flex items-center justify-center my-3">
+                        <span className="bg-white/10 text-gray-300 text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full flex items-center gap-1.5 border border-white/5">
+                          <Calendar className="w-3 h-3 text-[#EAA823]" />
+                          {group.dateLabel}
                         </span>
                       </div>
-                    )
-                  })
+
+                      {group.items.map((m) => {
+                        const isAdmin = m.sender_type === 'admin'
+                        const rawMeta = typeof m.metadata === 'string' ? JSON.parse(m.metadata || '{}') : (m.metadata || {})
+                        const isPayment = m.type === 'payment_request' || Boolean(rawMeta?.amount) || (m.message && m.message.includes('[PAYMENT_REQUEST:'))
+                        const paymentStatus = rawMeta?.status || 'pending'
+                        const requestedAmount = Number(rawMeta?.amount || 0)
+                        const hasCustomMessage = Boolean(m.message && !m.message.startsWith('[PAYMENT_REQUEST:'))
+
+                        return (
+                          <div key={m.id} className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}>
+                            <span className="text-[10px] text-gray-400 mb-1 px-1">{m.sender_name || (isAdmin ? 'De-echoi Support' : 'Customer')}</span>
+                            
+                            <div className={`max-w-[88%] rounded-2xl text-xs sm:text-sm leading-relaxed ${
+                              isAdmin
+                                ? 'bg-[#12422C] text-white border border-[#EAA823]/30 rounded-tr-none'
+                                : 'bg-[#131821] text-gray-200 border border-white/10 rounded-tl-none'
+                            } p-4`}>
+                              
+                              {hasCustomMessage && <p className="mb-2">{m.message}</p>}
+
+                              {isPayment && (
+                                <div className="bg-black/60 rounded-2xl p-4 border border-amber-400/50 space-y-3 w-full min-w-[280px] sm:min-w-[340px]">
+                                  <div className="flex items-center justify-between text-xs pb-2 border-b border-white/10">
+                                    <div>
+                                      <span className="text-amber-400 font-black text-base flex items-center gap-1.5">
+                                        <CreditCard className="w-4 h-4" />
+                                        ₦{requestedAmount.toLocaleString()}
+                                      </span>
+                                      <p className="text-[11px] text-white font-bold mt-0.5">
+                                        {rawMeta?.item_name || 'Custom Order'}
+                                      </p>
+                                    </div>
+
+                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                                      paymentStatus === 'confirmed'
+                                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                        : paymentStatus === 'submitted'
+                                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                          : 'bg-white/10 text-gray-300'
+                                    }`}>
+                                      {paymentStatus === 'confirmed' ? '✓ CONFIRMED' : paymentStatus === 'submitted' ? '⏳ RECEIPT SUBMITTED' : 'PAYMENT REQUESTED'}
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-white/5 p-2 rounded-xl border border-white/10">
+                                    <div>
+                                      <span className="text-gray-400 block">Size / Tier:</span>
+                                      <strong className="text-white">{rawMeta?.size || 'Standard Tier'}</strong>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400 block">Flavor / Style:</span>
+                                      <strong className="text-white">{rawMeta?.flavor || 'Custom Recipe'}</strong>
+                                    </div>
+                                    {rawMeta?.delivery_mode && (
+                                      <div className="col-span-2 pt-1 border-t border-white/5">
+                                        <span className="text-gray-400 block">Fulfillment:</span>
+                                        <strong className="text-amber-300">{rawMeta.delivery_mode}</strong>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {rawMeta?.note && (
+                                    <p className="text-[11px] text-gray-300 italic">
+                                      &ldquo;{rawMeta.note}&rdquo;
+                                    </p>
+                                  )}
+
+                                  {paymentStatus === 'pending' && (
+                                    <Button
+                                      type="button"
+                                      onClick={() => handleCheckCustomerPayment(m.id)}
+                                      disabled={checkingPaymentId === m.id}
+                                      variant="outline"
+                                      size="sm"
+                                      className="w-full border-amber-400/40 text-amber-300 hover:bg-amber-400/10 font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                      <RefreshCw className={`w-3.5 h-3.5 ${checkingPaymentId === m.id ? 'animate-spin' : ''}`} />
+                                      <span>Check If Customer Has Paid</span>
+                                    </Button>
+                                  )}
+
+                                  {paymentStatus === 'submitted' && (
+                                    <Button
+                                      type="button"
+                                      onClick={() => handleConfirmCustomerPayment(m)}
+                                      disabled={sending}
+                                      className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs py-2.5 rounded-xl cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4" />
+                                      <span>Confirm Payment Received</span>
+                                    </Button>
+                                  )}
+
+                                  {paymentStatus === 'confirmed' && (
+                                    <div className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-bold bg-emerald-950/40 p-2 rounded-lg border border-emerald-500/20">
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                      <span>Payment Verified &amp; Order Approved</span>
+                                    </div>
+                                  )}
+
+                                </div>
+                              )}
+                            </div>
+
+                            <span className="text-[9px] text-gray-500 mt-1 px-1">
+                              {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))
                 )}
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Reply Input Box with Realtime Typing Sync */}
+              {/* Reply Input Box */}
               <div className="pt-4 border-t border-white/10 flex gap-2">
                 <input
                   type="text"
@@ -709,7 +835,6 @@ export default function AdminMessagesPage() {
             </div>
 
             <div className="space-y-3.5 text-xs">
-              {/* Product Type & Item Name */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-gray-400 mb-1">Item Category</label>
@@ -737,7 +862,6 @@ export default function AdminMessagesPage() {
                 </div>
               </div>
 
-              {/* Size & Flavor / Spec Customization */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-gray-400 mb-1">Size / Tier Dimension</label>
@@ -745,7 +869,7 @@ export default function AdminMessagesPage() {
                     type="text"
                     value={itemSize}
                     onChange={(e) => setItemSize(e.target.value)}
-                    placeholder="e.g. 6-inch & 8-inch Tier, Jumbo Pack"
+                    placeholder="e.g. 6-inch & 8-inch Tier"
                     className="bg-[#131821] border-white/10 text-white text-xs"
                   />
                 </div>
@@ -755,13 +879,12 @@ export default function AdminMessagesPage() {
                     type="text"
                     value={flavorMix}
                     onChange={(e) => setFlavorMix(e.target.value)}
-                    placeholder="e.g. Red Velvet & Chocolate Whipped"
+                    placeholder="e.g. Red Velvet & Whipped Vanilla"
                     className="bg-[#131821] border-white/10 text-white text-xs"
                   />
                 </div>
               </div>
 
-              {/* Delivery / Fulfillment Mode */}
               <div>
                 <label className="block text-gray-400 mb-1">Delivery / Pickup Location</label>
                 <Input
@@ -773,7 +896,6 @@ export default function AdminMessagesPage() {
                 />
               </div>
 
-              {/* Amount & Description Note */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-amber-400 font-bold mb-1">Amount to Charge (₦)</label>
@@ -791,7 +913,7 @@ export default function AdminMessagesPage() {
                     type="text"
                     value={paymentNoteInput}
                     onChange={(e) => setPaymentNoteInput(e.target.value)}
-                    placeholder="e.g. 50% Deposit, Full Payment"
+                    placeholder="e.g. 50% Deposit"
                     className="bg-[#131821] border-white/10 text-white text-xs"
                   />
                 </div>

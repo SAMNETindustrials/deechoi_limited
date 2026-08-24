@@ -4,9 +4,11 @@ import React, { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { 
   X, Sparkles, Gift, Flame, Copy, Check, ChevronRight, Clock, ShieldCheck,
-  Info, CheckCircle2, ArrowUpRight, Lock, Loader2, AlertCircle, ExternalLink
+  Info, CheckCircle2, ArrowUpRight, Lock, Loader2, AlertCircle, ExternalLink, Utensils, ShoppingCart
 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useCart } from '@/lib/cart-context'
 
 export interface EventActivity {
   id: string
@@ -15,6 +17,30 @@ export interface EventActivity {
   platform: 'instagram' | 'tiktok' | 'whatsapp' | 'facebook' | 'youtube' | 'website' | 'other'
   action_url: string
   verification_seconds: number
+}
+
+export interface EventAddon {
+  id: string
+  name: string
+  price: number
+  image_url: string
+}
+
+export interface EventAddonGroup {
+  id: string
+  title: string
+  max_selections: number
+  addons: EventAddon[]
+}
+
+export interface EventSpecialItem {
+  id: string
+  name: string
+  price: number
+  discount_percentage: number
+  description: string
+  image_url: string
+  addon_groups: EventAddonGroup[]
 }
 
 interface StoreEvent {
@@ -32,6 +58,7 @@ interface StoreEvent {
   auto_close_seconds: number
   trigger_mode: 'first_visit' | 'every_refresh'
   required_activities?: EventActivity[]
+  special_items?: EventSpecialItem[]
 }
 
 function sanitizeUrl(rawUrl?: string): string {
@@ -46,23 +73,10 @@ function sanitizeUrl(rawUrl?: string): string {
   return clean
 }
 
-function generateUniqueVoucherCode(baseCode?: string): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let randomSuffix = ''
-  for (let i = 0; i < 5; i++) {
-    randomSuffix += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  const prefix = (baseCode || 'DEECHOI').trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
-  return `${prefix}-${randomSuffix}`
-}
-
 export function EventPromoModal() {
   const [event, setEvent] = useState<StoreEvent | null>(null)
-  const [uniqueCode, setUniqueCode] = useState<string>('')
   const [isOpen, setIsOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [hasAccount, setHasAccount] = useState(false)
-  
+
   // Verification states
   const [completedActivities, setCompletedActivities] = useState<Record<string, boolean>>({})
   const [userHandles, setUserHandles] = useState<Record<string, string>>({})
@@ -71,14 +85,19 @@ export function EventPromoModal() {
   const [warningMessage, setWarningMessage] = useState<string | null>(null)
   const [verifyingLoader, setVerifyingLoader] = useState(false)
 
+  // Add-on selection state: { [itemId]: { [groupId]: [addonId1, addonId2] } }
+  const [addonSelections, setAddonSelections] = useState<Record<string, Record<string, string[]>>>({})
+
   const activeActRef = useRef<EventActivity | null>(null)
   const outsideTimerRef = useRef<NodeJS.Timeout | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  
   const supabase = createClient()
+  const router = useRouter()
+  const { addItem } = useCart()
 
   useEffect(() => {
     fetchActiveEvent()
-    checkCustomerAccountStatus()
   }, [])
 
   // Window Focus & Blur Tracking
@@ -107,29 +126,152 @@ export function EventPromoModal() {
     }
   }, [activeVerifyingAct])
 
-  const checkCustomerAccountStatus = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        setHasAccount(true)
-        return
-      }
+  // Canvas Animation Engine for Celebration Effects
+  useEffect(() => {
+    if (!isOpen || !event || !event.celebration_effect || event.celebration_effect === 'none') return
 
-      const storedEmail = typeof window !== 'undefined' ? localStorage.getItem('deechoi_customer_email') : null
-      if (storedEmail) {
-        const { data } = await supabase
-          .from('store_orders')
-          .select('id')
-          .eq('customer_email', storedEmail)
-          .limit(1)
-          .maybeSingle()
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
 
-        if (data) setHasAccount(true)
-      }
-    } catch (e) {
-      console.warn('Account check note:', e)
+    let animationFrameId: number
+    let width = (canvas.width = window.innerWidth)
+    let height = (canvas.height = window.innerHeight)
+
+    const handleResize = () => {
+      if (!canvas) return
+      width = canvas.width = window.innerWidth
+      height = canvas.height = window.innerHeight
     }
-  }
+    window.addEventListener('resize', handleResize)
+
+    interface Particle {
+      x: number
+      y: number
+      size: number
+      speedY: number
+      speedX: number
+      angle: number
+      spin: number
+      color: string
+      opacity: number
+      petalCount?: number
+    }
+
+    const particles: Particle[] = []
+    const particleCount = event.celebration_effect === 'gold_sparkles' ? 80 : 50
+
+    const colors = event.celebration_effect === 'flower_drop'
+      ? ['#FFB7B2', '#FFDAC1', '#E2F0CB', '#FF9AA2', '#E15554', '#EAA823']
+      : event.celebration_effect === 'gold_sparkles'
+      ? ['#EAA823', '#FFD700', '#FFF8DC', '#DAA520', '#FFFFFF']
+      : ['#FF5733', '#33FF57', '#3357FF', '#F33FF5', '#33FFF5', '#EAA823']
+
+    for (let i = 0; i < particleCount; i++) {
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height - height,
+        size: Math.random() * 8 + 6,
+        speedY: Math.random() * 2 + 1,
+        speedX: Math.random() * 1.5 - 0.75,
+        angle: Math.random() * 360,
+        spin: (Math.random() - 0.5) * 0.05,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        opacity: Math.random() * 0.7 + 0.3,
+        petalCount: Math.floor(Math.random() * 2) + 5
+      })
+    }
+
+    const drawFlower = (p: Particle) => {
+      ctx.save()
+      ctx.translate(p.x, p.y)
+      ctx.rotate(p.angle)
+      ctx.fillStyle = p.color
+      ctx.globalAlpha = p.opacity
+
+      const petals = p.petalCount || 5
+      const petalLength = p.size
+      const petalWidth = p.size / 2
+
+      for (let i = 0; i < petals; i++) {
+        ctx.beginPath()
+        ctx.rotate((Math.PI * 2) / petals)
+        ctx.ellipse(0, petalLength / 2, petalWidth / 2, petalLength / 2, 0, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      ctx.beginPath()
+      ctx.arc(0, 0, p.size / 3, 0, Math.PI * 2)
+      ctx.fillStyle = '#FFF8DC'
+      ctx.fill()
+      ctx.restore()
+    }
+
+    const drawSparkle = (p: Particle) => {
+      ctx.save()
+      ctx.translate(p.x, p.y)
+      ctx.rotate(p.angle)
+      ctx.fillStyle = p.color
+      ctx.globalAlpha = p.opacity
+      
+      ctx.beginPath()
+      ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.strokeStyle = p.color
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(-p.size, 0)
+      ctx.lineTo(p.size, 0)
+      ctx.moveTo(0, -p.size)
+      ctx.lineTo(0, p.size)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    const drawConfetti = (p: Particle) => {
+      ctx.save()
+      ctx.translate(p.x, p.y)
+      ctx.rotate(p.angle)
+      ctx.fillStyle = p.color
+      ctx.globalAlpha = p.opacity
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6)
+      ctx.restore()
+    }
+
+    const render = () => {
+      ctx.clearRect(0, 0, width, height)
+
+      particles.forEach(p => {
+        p.y += p.speedY
+        p.x += Math.sin(p.y * 0.01) + p.speedX
+        p.angle += p.spin
+
+        if (p.y > height + 20) {
+          p.y = -20
+          p.x = Math.random() * width
+        }
+
+        if (event.celebration_effect === 'flower_drop') {
+          drawFlower(p)
+        } else if (event.celebration_effect === 'gold_sparkles') {
+          drawSparkle(p)
+        } else {
+          drawConfetti(p)
+        }
+      })
+
+      animationFrameId = requestAnimationFrame(render)
+    }
+
+    render()
+
+    return () => {
+      cancelAnimationFrame(animationFrameId)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [isOpen, event])
 
   const fetchActiveEvent = async () => {
     try {
@@ -143,45 +285,12 @@ export function EventPromoModal() {
 
       if (error || !data) return
 
-      // CHECK 1: If user already claimed this voucher, NEVER SHOW IT AGAIN
       if (typeof window !== 'undefined') {
-        const isClaimed = localStorage.getItem(`voucher_claimed_${data.id}`)
-        if (isClaimed === 'true') {
-          return // Suppress modal completely
-        }
-
         if (data.trigger_mode === 'first_visit') {
           const hasSeen = sessionStorage.getItem(`seen_event_${data.id}`)
           if (hasSeen) return
+          sessionStorage.setItem(`seen_event_${data.id}`, 'true')
         }
-      }
-
-      const storageKey = `unique_promo_${data.id}`
-      let userCode = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null
-
-      if (!userCode) {
-        userCode = generateUniqueVoucherCode(data.discount_code || 'VIP15')
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(storageKey, userCode)
-        }
-
-        const numericDiscount = parseFloat(data.discount_percentage?.replace(/[^0-9.]/g, '') || '15') || 15
-        const customerEmail = typeof window !== 'undefined' ? localStorage.getItem('deechoi_customer_email') : null
-
-        supabase
-          .from('store_event_claims')
-          .insert([
-            {
-              event_id: data.id,
-              customer_email: customerEmail,
-              promo_code: userCode,
-              discount_percentage: numericDiscount,
-              status: 'active'
-            }
-          ])
-          .then(({ error: claimErr }) => {
-            if (claimErr) console.warn('[Claim Log Notice]:', claimErr.message)
-          })
       }
 
       const storedTasksKey = `tasks_completed_${data.id}`
@@ -192,13 +301,8 @@ export function EventPromoModal() {
         } catch {}
       }
 
-      setUniqueCode(userCode)
       setEvent(data)
       setIsOpen(true)
-
-      if (data.trigger_mode === 'first_visit' && typeof window !== 'undefined') {
-        sessionStorage.setItem(`seen_event_${data.id}`, 'true')
-      }
     } catch (err) {
       console.warn('Promo modal fetch note:', err)
     }
@@ -256,138 +360,115 @@ export function EventPromoModal() {
 
   const isUnlocked = allActivitiesCompleted()
 
-  // Mark voucher permanently as claimed so it does not pop up on subsequent refreshes
-  const markVoucherClaimedPermanently = () => {
-    if (!event) return
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(`voucher_claimed_${event.id}`, 'true')
-      sessionStorage.setItem(`seen_event_${event.id}`, 'true')
-      window.dispatchEvent(new Event('deechoi_voucher_claimed'))
-    }
+  // Handle Addon Selection toggle with max_selections enforcement
+  const handleAddonToggle = (itemId: string, groupId: string, addonId: string, maxSelections: number) => {
+    setAddonSelections(prev => {
+      const itemSels = prev[itemId] || {}
+      const groupSels = itemSels[groupId] || []
+
+      if (groupSels.includes(addonId)) {
+        // Deselect
+        return {
+          ...prev,
+          [itemId]: { ...itemSels, [groupId]: groupSels.filter(id => id !== addonId) }
+        }
+      } else {
+        // Select
+        if (maxSelections === 1) {
+          // Radio behavior (replace selection)
+          return {
+            ...prev,
+            [itemId]: { ...itemSels, [groupId]: [addonId] }
+          }
+        } else {
+          // Checkbox behavior (enforce max_selections limit)
+          if (groupSels.length >= maxSelections) {
+            setWarningMessage(`You can only select up to ${maxSelections} option(s) for this group.`)
+            setTimeout(() => setWarningMessage(null), 3000)
+            return prev
+          }
+          return {
+            ...prev,
+            [itemId]: { ...itemSels, [groupId]: [...groupSels, addonId] }
+          }
+        }
+      }
+    })
   }
 
-  // Celebratory particles
-  useEffect(() => {
-    if (!isOpen || !event || !isUnlocked || event.celebration_effect === 'none') return
-
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
-
-    const particles: Array<{
-      x: number
-      y: number
-      size: number
-      speedY: number
-      speedX: number
-      rotation: number
-      rotationSpeed: number
-      color: string
-      shape: 'petal' | 'confetti'
-    }> = []
-
-    const colors = event.celebration_effect === 'flower_drop' 
-      ? ['#FFB7B2', '#FF9AA2', '#FFDAC1', '#E2F0CB', '#B5EAD7', '#FF69B4', '#FFA07A']
-      : event.celebration_effect === 'gold_sparkles'
-      ? ['#EAA823', '#F5D547', '#FFF3B0', '#D4AF37', '#FFFFFF']
-      : ['#EAA823', '#10B981', '#3B82F6', '#EC4899', '#8B5CF6', '#F59E0B']
-
-    for (let i = 0; i < 65; i++) {
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * -canvas.height,
-        size: Math.random() * 8 + 6,
-        speedY: Math.random() * 2.5 + 1.2,
-        speedX: Math.random() * 1.5 - 0.75,
-        rotation: Math.random() * 360,
-        rotationSpeed: (Math.random() - 0.5) * 3,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        shape: event.celebration_effect === 'flower_drop' ? 'petal' : 'confetti',
-      })
+  // Direct Shoppable Item & Add-ons Add To Cart Handler
+  const handleAddToCart = (item: EventSpecialItem) => {
+    if (!isUnlocked) {
+      setWarningMessage('Please complete the required tasks above to unlock this exclusive package.')
+      return
     }
 
-    let animationFrameId: number
+    // 1. Calculate Discounted Price
+    const discountPct = item.discount_percentage || 0
+    const finalBasePrice = discountPct > 0 ? item.price * (1 - (discountPct / 100)) : item.price
 
-    const render = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      particles.forEach((p) => {
-        p.y += p.speedY
-        p.x += p.speedX
-        p.rotation += p.rotationSpeed
-        if (p.y > canvas.height) {
-          p.y = -20
-          p.x = Math.random() * canvas.width
-        }
-        ctx.save()
-        ctx.translate(p.x, p.y)
-        ctx.rotate((p.rotation * Math.PI) / 180)
-        ctx.fillStyle = p.color
-        if (p.shape === 'petal') {
-          ctx.beginPath()
-          ctx.ellipse(0, 0, p.size, p.size / 2, Math.PI / 4, 0, 2 * Math.PI)
-          ctx.fill()
-        } else {
-          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size / 2)
-        }
-        ctx.restore()
-      })
-      animationFrameId = requestAnimationFrame(render)
-    }
+    // 2. Add Main Package Item
+    addItem({
+      product_id: item.id,
+      name: item.name,
+      price: finalBasePrice,
+      quantity: 1,
+      imageUrl: item.image_url || '/placeholder.png',
+      selected_options: [],
+      prep_time: undefined,
+      cooking_time: undefined,
+      fulfillment_time: undefined,
+      id: undefined,
+      product_name: '',
+      unit_price: 0,
+      final_price: 0
+    })
 
-    render()
-
-    const handleResize = () => {
-      canvas.width = window.innerWidth
-      canvas.height = window.innerHeight
-    }
-    window.addEventListener('resize', handleResize)
-    return () => {
-      cancelAnimationFrame(animationFrameId)
-      window.removeEventListener('resize', handleResize)
-    }
-  }, [isOpen, event, isUnlocked])
-
-  const copyCode = async (code: string) => {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        await navigator.clipboard.writeText(code)
-      } else {
-        const textArea = document.createElement('textarea')
-        textArea.value = code
-        textArea.style.position = 'fixed'
-        textArea.style.opacity = '0'
-        document.body.appendChild(textArea)
-        textArea.focus()
-        textArea.select()
-        try {
-          document.execCommand('copy')
-        } catch {}
-        document.body.removeChild(textArea)
+    // 3. Add Selected Add-ons as independent cart items with [Add-on] prefix
+    const itemSels = addonSelections[item.id] || {}
+    Object.entries(itemSels).forEach(([groupId, addonIds]) => {
+      const group = item.addon_groups?.find(g => g.id === groupId)
+      if (group) {
+        addonIds.forEach(aId => {
+          const addon = group.addons.find(a => a.id === aId)
+          if (addon) {
+            addItem({
+              product_id: addon.id,
+              name: `[Add-on] ${addon.name}`,
+              price: addon.price,
+              quantity: 1,
+              imageUrl: addon.image_url || '/placeholder.png',
+              selected_options: [{
+                groupName: 'Included With', optionName: item.name,
+                priceModifier: 0
+              }],
+              prep_time: undefined,
+              cooking_time: undefined,
+              fulfillment_time: undefined,
+              id: undefined,
+              product_name: '',
+              unit_price: 0,
+              final_price: 0
+            })
+          }
+        })
       }
+    })
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('active_checkout_voucher', code)
-      }
-      setCopied(true)
-      markVoucherClaimedPermanently()
-      setTimeout(() => setCopied(false), 3000)
-    } catch (err) {
-      console.error('Failed to copy code:', err)
-    }
+    setIsOpen(false)
+    router.push('/cart')
   }
 
   if (!isOpen || !event) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-      {event.celebration_effect !== 'none' && isUnlocked && (
+      
+      {/* Dynamic Celebration Effects Layer */}
+      {event.celebration_effect && event.celebration_effect !== 'none' && (
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 pointer-events-none z-10 w-full h-full"
+          className="fixed inset-0 pointer-events-none z-10 w-full h-full"
         />
       )}
 
@@ -396,10 +477,7 @@ export function EventPromoModal() {
         
         {/* Close Button */}
         <button
-          onClick={() => {
-            if (isUnlocked) markVoucherClaimedPermanently()
-            setIsOpen(false)
-          }}
+          onClick={() => setIsOpen(false)}
           className="absolute top-3.5 right-3.5 z-30 bg-black/60 hover:bg-black/90 text-white p-2 rounded-full backdrop-blur-md transition cursor-pointer shadow-md"
           aria-label="Close promotion"
         >
@@ -412,11 +490,7 @@ export function EventPromoModal() {
           <div className="text-center space-y-2">
             <div className="relative inline-flex items-center justify-center">
               <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#EAA823] to-[#ffd768] text-[#072d1d] flex items-center justify-center shadow-lg animate-bounce-slow">
-                {event.event_type === 'giveaway' ? (
-                  <Gift className="w-7 h-7" />
-                ) : (
-                  <Sparkles className="w-7 h-7" />
-                )}
+                {event.event_type === 'giveaway' ? <Gift className="w-7 h-7" /> : <Sparkles className="w-7 h-7" />}
               </div>
               {event.discount_percentage && (
                 <span className="absolute -bottom-1 -right-2 bg-red-600 text-white text-[9px] font-black px-2.5 py-0.5 rounded-full border border-white shadow-md uppercase tracking-wider">
@@ -432,6 +506,21 @@ export function EventPromoModal() {
               {event.subtitle}
             </p>
           </div>
+
+          {/* CAMPAIGN BANNER IMAGE */}
+          {event.banner_image_url && (
+            <div className="relative w-full overflow-hidden rounded-2xl border border-[#EAA823]/40 bg-black/30 shadow-lg">
+              <img
+                src={event.banner_image_url}
+                alt={event.title || 'Campaign image'}
+                className="w-full h-auto max-h-[320px] object-cover rounded-2xl"
+                loading="eager"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
+            </div>
+          )}
 
           {/* Validation Warning Alert */}
           {warningMessage && (
@@ -460,29 +549,18 @@ export function EventPromoModal() {
                     <div
                       key={act.id}
                       className={`p-3.5 rounded-xl border transition-all space-y-2.5 ${
-                        isDone
-                          ? 'bg-emerald-950/40 border-emerald-500/50'
-                          : isCurrentlyTarget
-                          ? 'bg-[#0a3a26] border-[#EAA823]/70 shadow-md'
-                          : 'bg-[#072d1d] border-white/10 hover:border-amber-400/40'
+                        isDone ? 'bg-emerald-950/40 border-emerald-500/50' : isCurrentlyTarget ? 'bg-[#0a3a26] border-[#EAA823]/70 shadow-md' : 'bg-[#072d1d] border-white/10 hover:border-amber-400/40'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <span className="text-xs font-bold text-white block">
-                            {act.title}
-                          </span>
-                          {act.description && (
-                            <p className="text-[10px] text-gray-400 line-clamp-1">
-                              {act.description}
-                            </p>
-                          )}
+                          <span className="text-xs font-bold text-white block">{act.title}</span>
+                          {act.description && <p className="text-[10px] text-gray-400 line-clamp-1">{act.description}</p>}
                         </div>
 
                         {isDone ? (
                           <span className="bg-emerald-500 text-[#072d1d] font-black text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 flex-shrink-0">
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                            <span>Verified</span>
+                            <Check className="w-3.5 h-3.5 stroke-[3]" /><span>Verified</span>
                           </span>
                         ) : !isCurrentlyTarget ? (
                           <button
@@ -490,25 +568,15 @@ export function EventPromoModal() {
                             onClick={() => handleLaunchActivity(act)}
                             className="bg-[#EAA823] hover:bg-white text-[#072d1d] font-black text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1 shadow-md transition active:scale-95 cursor-pointer flex-shrink-0"
                           >
-                            <span>Follow</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            <span>Follow</span><ArrowUpRight className="w-3.5 h-3.5" />
                           </button>
                         ) : null}
                       </div>
 
-                      {/* Active Verification Confirmation Box */}
                       {isCurrentlyTarget && !isDone && (
                         <div className="pt-2 border-t border-white/10 space-y-2 animate-in fade-in">
                           <div className="flex items-center justify-between text-[10px] text-emerald-200">
                             <span>Time on {act.platform.toUpperCase()}: <b>{outsideSeconds}s / {act.verification_seconds || 4}s</b></span>
-                            <button
-                              type="button"
-                              onClick={() => handleLaunchActivity(act)}
-                              className="text-[#EAA823] hover:underline flex items-center gap-0.5"
-                            >
-                              <span>Reopen App</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </button>
                           </div>
 
                           <div className="flex flex-col sm:flex-row gap-2">
@@ -529,17 +597,7 @@ export function EventPromoModal() {
                               disabled={verifyingLoader}
                               className="bg-emerald-500 hover:bg-emerald-400 text-[#072d1d] font-black text-xs px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 shadow-md transition active:scale-95 cursor-pointer"
                             >
-                              {verifyingLoader ? (
-                                <>
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  <span>Checking...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                  <span>Confirm Follow</span>
-                                </>
-                              )}
+                              {verifyingLoader ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5 stroke-[3]" />} Confirm Follow
                             </button>
                           </div>
                         </div>
@@ -551,105 +609,122 @@ export function EventPromoModal() {
             </div>
           )}
 
-          {/* VOUCHER UNLOCK CARD */}
-          {uniqueCode && (
-            <div className="bg-[#0A3A26] border-2 border-dashed border-[#EAA823] rounded-2xl p-4 space-y-2.5 shadow-inner">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#EAA823]" />
-                  Your Unique Discount Voucher
-                </span>
-                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                  isUnlocked ? 'bg-emerald-400/20 text-emerald-300' : 'bg-amber-400/20 text-amber-300'
-                }`}>
-                  {isUnlocked ? '🔓 UNLOCKED' : '🔒 LOCKED'}
-                </span>
-              </div>
+          {/* SHOPPABLE EVENT ITEMS & ADD-ONS */}
+          {Array.isArray(event.special_items) && event.special_items.length > 0 && (
+            <div className="space-y-4 mt-4">
+              <h3 className="text-sm font-black text-[#EAA823] flex items-center gap-1.5 border-b border-white/10 pb-2">
+                <Utensils className="w-4 h-4" /> Exclusive Packages &amp; Add-ons
+              </h3>
 
-              {isUnlocked ? (
-                <div className="flex items-center justify-between bg-black/40 rounded-xl px-3 py-2 border border-white/10 animate-in zoom-in-95">
-                  <span className="font-mono font-black text-base sm:text-lg text-[#EAA823] tracking-wider truncate mr-2">
-                    {uniqueCode}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => copyCode(uniqueCode)}
-                    className="flex items-center gap-1 bg-[#EAA823] hover:bg-white text-[#072d1d] text-xs font-black px-3.5 py-1.5 rounded-lg transition active:scale-95 cursor-pointer shadow-sm flex-shrink-0"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy Code</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <div className="p-3 bg-black/30 rounded-xl border border-white/10 text-center space-y-1">
-                  <Lock className="w-4 h-4 text-amber-400 mx-auto" />
-                  <p className="text-[11px] text-amber-200 font-semibold">
-                    Follow on social media above to unlock your unique discount voucher!
-                  </p>
-                </div>
-              )}
+              <div className="space-y-4">
+                {event.special_items.map((item) => {
+                  const hasDiscount = item.discount_percentage && item.discount_percentage > 0
+                  const finalPrice = hasDiscount ? item.price * (1 - (item.discount_percentage / 100)) : item.price
 
-              <div className="pt-1 text-left bg-black/20 rounded-xl p-2.5 border border-white/5 flex items-start gap-2">
-                <Info className="w-3.5 h-3.5 text-amber-300 flex-shrink-0 mt-0.5" />
-                <p className="text-[10px] text-emerald-100/90 leading-tight">
-                  {hasAccount ? (
-                    <>Your code is stored in your device &amp; account. Apply it directly at checkout or manage it in your <Link href="/account/vouchers" className="underline font-bold">Voucher Wallet</Link>.</>
-                  ) : (
-                    <>Apply this code at checkout. Your customer account will be generated automatically once your first order is placed.</>
-                  )}
-                </p>
+                  return (
+                    <div 
+                      key={item.id} 
+                      className={`bg-[#0a3a26] border rounded-2xl p-4 flex flex-col gap-3.5 transition ${
+                        isUnlocked ? 'border-[#EAA823]/60 shadow-md' : 'border-white/10 opacity-75 grayscale-25'
+                      }`}
+                    >
+                      {/* Main Package Card */}
+                      <div className="flex gap-3.5">
+                        <div className="relative w-20 h-20 bg-black/40 rounded-xl overflow-hidden shrink-0 border border-white/10">
+                          {item.image_url ? <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500">DE-ECHOI</div>}
+                          {hasDiscount && <span className="absolute top-0 right-0 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-bl">-{item.discount_percentage}%</span>}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-extrabold text-sm text-white truncate">{item.name}</h4>
+                          <p className="text-[10px] text-emerald-100/70 line-clamp-1">{item.description}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="font-black text-amber-300 text-sm">₦{finalPrice.toLocaleString()}</span>
+                            {hasDiscount && <span className="text-[10px] text-gray-400 line-through">₦{item.price.toLocaleString()}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Add-on Groups Selection UI */}
+                      {Array.isArray(item.addon_groups) && item.addon_groups.length > 0 && (
+                        <div className="space-y-3 pt-3 border-t border-emerald-900/50">
+                          {item.addon_groups.map((group) => {
+                            const groupSelections = addonSelections[item.id]?.[group.id] || []
+
+                            return (
+                              <div key={group.id} className="space-y-1.5">
+                                <div className="flex justify-between items-baseline text-[11px]">
+                                  <span className="font-bold text-emerald-200">{group.title}</span>
+                                  <span className="text-[9px] bg-black/40 text-amber-300 px-2 py-0.5 rounded-md">
+                                    Choose up to {group.max_selections}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  {group.addons.map((addon) => {
+                                    const isSelected = groupSelections.includes(addon.id)
+
+                                    return (
+                                      <div
+                                        key={addon.id}
+                                        onClick={() => handleAddonToggle(item.id, group.id, addon.id, group.max_selections)}
+                                        className={`flex items-center gap-2 p-2 rounded-xl cursor-pointer border transition ${
+                                          isSelected ? 'bg-emerald-500/20 border-emerald-400 shadow-sm' : 'bg-black/30 border-white/5 hover:border-emerald-500/30'
+                                        }`}
+                                      >
+                                        <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 bg-black/50">
+                                          {addon.image_url ? <img src={addon.image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-gray-500">IMG</div>}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-[10px] font-bold text-white truncate">{addon.name}</div>
+                                          <div className={`text-[9px] font-black ${addon.price === 0 ? 'text-amber-400' : 'text-gray-300'}`}>
+                                            {addon.price === 0 ? 'FREE' : `+₦${addon.price}`}
+                                          </div>
+                                        </div>
+                                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {/* Add to Cart CTA */}
+                      <button
+                        type="button"
+                        onClick={() => handleAddToCart(item)}
+                        className={`w-full py-2.5 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-md ${
+                          isUnlocked ? 'bg-gradient-to-r from-[#EAA823] to-[#f5d547] hover:from-white hover:to-white text-[#072d1d]' : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {isUnlocked ? (
+                          <><ShoppingCart className="w-4 h-4" /><span>Add Package &amp; Add-ons to Cart</span></>
+                        ) : (
+                          <><Lock className="w-4 h-4" /><span>Complete Tasks Above to Unlock</span></>
+                        )}
+                      </button>
+
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
 
-          {/* Action CTA */}
+          {/* Bottom Action CTA */}
           <div className="pt-1">
-            <Link 
-              href={event.cta_url || '/#our-menu-section'} 
-              onClick={() => {
-                if (isUnlocked && uniqueCode && typeof window !== 'undefined') {
-                  localStorage.setItem('active_checkout_voucher', uniqueCode)
-                  markVoucherClaimedPermanently()
-                }
-                setIsOpen(false)
-              }}
-              className="w-full block"
-            >
-              <button
-                type="button"
-                className="w-full bg-gradient-to-r from-[#EAA823] to-[#f5d547] hover:from-white hover:to-white text-[#072d1d] font-black text-sm py-3.5 rounded-2xl shadow-xl transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>{isUnlocked ? (event.cta_text || 'Claim Offer & Shop Menu') : 'Browse Food Menu'}</span>
-                <ChevronRight className="w-4 h-4" />
+            <Link href={event.cta_url || '/#our-menu-section'} onClick={() => setIsOpen(false)} className="w-full block">
+              <button type="button" className="w-full bg-gradient-to-r from-[#EAA823] to-[#f5d547] text-[#072d1d] font-black text-sm py-3.5 rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer">
+                <span>{event.cta_text || 'Browse Food Menu'}</span><ChevronRight className="w-4 h-4" />
               </button>
             </Link>
           </div>
 
         </div>
       </div>
-
-      <style jsx global>{`
-        @keyframes bounceSlow {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
-        }
-        .animate-bounce-slow {
-          animation: bounceSlow 2s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   )
 }

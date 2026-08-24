@@ -5,8 +5,17 @@ import { createClient } from '@/lib/supabase/client'
 import { StorefrontHeader } from '@/components/storefront/header'
 import { Button } from '@/components/ui/button'
 import { 
-  Tag, Gift, Sparkles, Copy, Check, Clock, ChevronLeft, ArrowRight,
-  ShieldCheck, AlertCircle, ShoppingBag
+  Tag, 
+  Gift, 
+  Sparkles, 
+  Copy, 
+  Check, 
+  Clock, 
+  ChevronLeft, 
+  ArrowRight,
+  ShieldCheck, 
+  AlertCircle, 
+  ShoppingBag 
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -37,10 +46,23 @@ export default function CustomerVouchersPage() {
   const loadUserVouchers = async () => {
     try {
       setLoading(true)
+
       const { data: { user } } = await supabase.auth.getUser()
-      const email = user?.email || localStorage.getItem('deechoi_customer_email')
+      const session = JSON.parse(localStorage.getItem('deechoi_customer_session') || '{}')
+      const email = (user?.email || session.email || localStorage.getItem('deechoi_customer_email') || '').trim().toLowerCase()
 
       if (!email) {
+        const localVoucherCode = localStorage.getItem('active_checkout_voucher')
+        if (localVoucherCode) {
+          setVouchers([{
+            id: 'local-cached-vouch',
+            promo_code: localVoucherCode,
+            discount_percentage: 15,
+            status: 'active',
+            claimed_at: new Date().toISOString(),
+            store_events: { title: 'VIP Waitlist / Promotion Reward', event_type: 'waitlist' }
+          }])
+        }
         setLoading(false)
         return
       }
@@ -50,11 +72,28 @@ export default function CustomerVouchersPage() {
       const { data, error } = await supabase
         .from('store_event_claims')
         .select('*, store_events(title, event_type)')
-        .or(`customer_email.eq.${email}`)
+        .ilike('customer_email', email)
         .order('claimed_at', { ascending: false })
 
-      if (error) throw error
-      setVouchers(data || [])
+      if (error) {
+        console.warn('Supabase voucher query warning:', error.message)
+      }
+
+      let fetchedVouchers: ClaimedVoucher[] = data || []
+
+      const localVoucherCode = localStorage.getItem('active_checkout_voucher')
+      if (localVoucherCode && !fetchedVouchers.some(v => v.promo_code === localVoucherCode)) {
+        fetchedVouchers.unshift({
+          id: 'local-cached-vouch',
+          promo_code: localVoucherCode,
+          discount_percentage: 15,
+          status: 'active',
+          claimed_at: new Date().toISOString(),
+          store_events: { title: 'VIP Waitlist & Campaign Reward', event_type: 'waitlist' }
+        })
+      }
+
+      setVouchers(fetchedVouchers)
     } catch (e: any) {
       console.warn('Vouchers load note:', e)
     } finally {
@@ -74,7 +113,7 @@ export default function CustomerVouchersPage() {
       <StorefrontHeader />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-6">
-        
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-gray-200">
           <div>
@@ -86,7 +125,7 @@ export default function CustomerVouchersPage() {
               <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0A2E1D]">Your Claimed Vouchers &amp; Rewards</h1>
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              Track your exclusive discounts and promo codes for De-echoi purchases.
+              Track your active discounts and used voucher history for De-echoi purchases.
             </p>
           </div>
 
@@ -106,42 +145,49 @@ export default function CustomerVouchersPage() {
               <span>Guest Session Notice</span>
             </div>
             <p>
-              Your device vouchers apply automatically during checkout. Your customer account and permanent voucher wallet are created once you make your first purchase or join our VIP waitlist.
+              Your device vouchers apply automatically during checkout. Sign in or enter your checkout email to view your permanent voucher wallet and history.
             </p>
           </div>
         ) : (
           <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Logged in wallet for: <b className="font-mono text-emerald-950">{userEmail}</b></span>
+            <span>Logged in voucher wallet for: <b className="font-mono text-emerald-950">{userEmail}</b></span>
           </div>
         )}
 
         {/* Voucher Cards */}
         {loading ? (
-          <div className="py-20 text-center text-gray-500 text-xs">Loading your rewards...</div>
+          <div className="py-20 text-center text-gray-500 text-xs">Loading your rewards and voucher history...</div>
         ) : vouchers.length === 0 ? (
           <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-gray-200 space-y-3">
             <Gift className="w-10 h-10 text-[#EAA823] mx-auto opacity-60" />
-            <h3 className="font-bold text-sm text-[#0A2E1D]">No active claimed vouchers yet</h3>
+            <h3 className="font-bold text-sm text-[#0A2E1D]">No vouchers found in your wallet</h3>
             <p className="text-xs text-gray-500 max-w-sm mx-auto">
-              Visit our storefront during live promotional events to unlock personalized discount vouchers!
+              Join our VIP waitlist or participate in storefront promotional events to unlock personalized discount vouchers!
             </p>
+            <div className="pt-2">
+              <Link href="/#waitlist-section">
+                <Button className="bg-[#EAA823] hover:bg-[#0A2E1D] text-[#0A2E1D] hover:text-white font-bold text-xs rounded-xl py-2 px-4 cursor-pointer">
+                  Join VIP Waitlist
+                </Button>
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {vouchers.map((v) => {
-              const isRedeemed = v.status === 'redeemed'
+              const isRedeemed = v.status === 'redeemed' || v.status === 'expired'
               return (
                 <div 
                   key={v.id}
                   className={`bg-white rounded-2xl p-5 border shadow-sm space-y-3 transition-all ${
-                    isRedeemed ? 'border-gray-200 opacity-60' : 'border-[#EAA823]/50 hover:shadow-md'
+                    isRedeemed ? 'border-gray-200 opacity-75 bg-gray-50/50' : 'border-[#EAA823]/50 hover:shadow-md'
                   }`}
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                        isRedeemed ? 'bg-gray-100 text-gray-600' : 'bg-emerald-100 text-emerald-900'
+                      <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                        isRedeemed ? 'bg-gray-200 text-gray-700' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                       }`}>
                         {v.status.toUpperCase()}
                       </span>
@@ -156,11 +202,11 @@ export default function CustomerVouchersPage() {
                   </div>
 
                   <div className="flex items-center justify-between bg-[#FDFBF7] p-2.5 rounded-xl border border-gray-200">
-                    <span className="font-mono font-bold text-sm text-[#0A2E1D]">
+                    <span className="font-mono font-bold text-sm text-[#0A2E1D] tracking-wider">
                       {v.promo_code}
                     </span>
 
-                    {!isRedeemed && (
+                    {!isRedeemed ? (
                       <button
                         onClick={() => copyCode(v.promo_code, v.id)}
                         className="text-xs font-bold bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white px-3 py-1.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
@@ -177,12 +223,14 @@ export default function CustomerVouchersPage() {
                           </>
                         )}
                       </button>
+                    ) : (
+                      <span className="text-[11px] font-bold text-gray-400 italic">Used / Redeemed</span>
                     )}
                   </div>
 
-                  <div className="text-[10px] text-gray-400 flex items-center justify-between">
+                  <div className="text-[10px] text-gray-400 flex items-center justify-between pt-1 border-t border-gray-100">
                     <span>Claimed: {new Date(v.claimed_at).toLocaleDateString()}</span>
-                    {isRedeemed && <span>Redeemed</span>}
+                    {v.redeemed_at && <span>Used: {new Date(v.redeemed_at).toLocaleDateString()}</span>}
                   </div>
                 </div>
               )

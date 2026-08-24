@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 
 function getSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  // Use Service Role Key first to bypass Supabase RLS on app_settings
   const supabaseKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
@@ -26,23 +27,39 @@ function escapeHtml(text: string | number | undefined | null): string {
  * Resolves & sanitizes Telegram Bot Token & Chat ID from database or environment variables
  */
 export async function getTelegramConfig() {
-  let botToken = (process.env.TELEGRAM_BOT_TOKEN || '').trim()
-  let chatId = (process.env.TELEGRAM_CHAT_ID || '').trim()
+  let botToken = (
+    process.env.TELEGRAM_BOT_TOKEN ||
+    process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN ||
+    ''
+  ).trim()
+  
+  let chatId = (
+    process.env.TELEGRAM_CHAT_ID ||
+    process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID ||
+    ''
+  ).trim()
 
   try {
     const supabase = getSupabaseAdminClient()
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('app_settings')
       .select('value')
       .eq('key', 'notification_settings')
       .maybeSingle()
 
-    if (data?.value) {
-      const settings = data.value
-      if (settings.telegram_bot_token) {
-        botToken = settings.telegram_bot_token.trim()
+    if (!error && data?.value) {
+      let settings = data.value
+      // Parse stringified JSON if stored as text
+      if (typeof settings === 'string') {
+        try {
+          settings = JSON.parse(settings)
+        } catch (_) {}
       }
-      if (settings.telegram_chat_id) {
+
+      if (settings?.telegram_bot_token) {
+        botToken = String(settings.telegram_bot_token).trim()
+      }
+      if (settings?.telegram_chat_id) {
         chatId = String(settings.telegram_chat_id).trim()
       }
     }
@@ -65,11 +82,15 @@ export async function getTelegramConfig() {
 /**
  * Dispatches Telegram message with auto-fallback to plain text if HTML formatting fails
  */
-export async function sendRawTelegramMessage(htmlText: string, plainFallbackText?: string): Promise<{ success: boolean; error?: string }> {
+export async function sendRawTelegramMessage(
+  htmlText: string,
+  plainFallbackText?: string
+): Promise<{ success: boolean; error?: string }> {
   const config = await getTelegramConfig()
-  
+
   if (!config) {
-    const err = 'Telegram Bot Token or Chat ID is missing in app_settings and environment variables.'
+    const err =
+      'Telegram Bot Token or Chat ID is missing in app_settings and environment variables.'
     console.warn(`[Telegram Alert Failed]: ${err}`)
     return { success: false, error: err }
   }
@@ -96,7 +117,9 @@ export async function sendRawTelegramMessage(htmlText: string, plainFallbackText
       return { success: true }
     }
 
-    console.warn(`[Telegram HTML Delivery Warning]: ${data.description}. Attempting plain text fallback...`)
+    console.warn(
+      `[Telegram HTML Delivery Warning]: ${data.description}. Attempting plain text fallback...`
+    )
 
     // 2. Second Attempt (Fallback): Send as clean plain text if HTML had entity formatting errors
     const fallbackText = plainFallbackText || htmlText.replace(/<[^>]*>?/gm, '')
@@ -112,7 +135,9 @@ export async function sendRawTelegramMessage(htmlText: string, plainFallbackText
     const fallbackData = await fallbackResponse.json()
 
     if (fallbackData.ok) {
-      console.log('[Telegram Notification]: Plain text fallback delivered successfully!')
+      console.log(
+        '[Telegram Notification]: Plain text fallback delivered successfully!'
+      )
       return { success: true }
     }
 
@@ -144,12 +169,16 @@ export async function sendTelegramOrderNotification(order: {
   }>
   payment_proof_url?: string | null
 }) {
-  const safeId = escapeHtml(order.id ? `#${String(order.id).slice(0, 8)}` : '#NEW')
+  const safeId = escapeHtml(
+    order.id ? `#${String(order.id).slice(0, 8)}` : '#NEW'
+  )
   const safeName = escapeHtml(order.customer_name || 'Customer')
   const safePhone = escapeHtml(order.customer_phone || 'N/A')
   const safeEmail = escapeHtml(order.customer_email || 'N/A')
   const safeAddress = escapeHtml(order.delivery_address || 'Port Harcourt')
-  const safePayment = escapeHtml((order.payment_method || 'bank_transfer').toUpperCase())
+  const safePayment = escapeHtml(
+    (order.payment_method || 'bank_transfer').toUpperCase()
+  )
   const totalAmountStr = Number(order.total_amount || 0).toLocaleString()
   const deliveryFeeStr = Number(order.delivery_fee || 0).toLocaleString()
 
@@ -165,8 +194,15 @@ export async function sendTelegramOrderNotification(order: {
         const iPrice = Number(item.price || 0) * iQty
 
         let optText = ''
-        if (Array.isArray(item.selected_options) && item.selected_options.length > 0) {
-          optText = `\n   └ <i>${escapeHtml(item.selected_options.map((o: any) => `${o.groupName}: ${o.optionName}`).join(', '))}</i>`
+        if (
+          Array.isArray(item.selected_options) &&
+          item.selected_options.length > 0
+        ) {
+          optText = `\n   └ <i>${escapeHtml(
+            item.selected_options
+              .map((o: any) => `${o.groupName}: ${o.optionName}`)
+              .join(', ')
+          )}</i>`
         }
 
         return `• <b>${iName}</b> x${iQty} (₦${iPrice.toLocaleString()})${optText}`
@@ -174,11 +210,18 @@ export async function sendTelegramOrderNotification(order: {
       .join('\n')
 
     itemsPlainList = order.items
-      .map((item) => `• ${item.name} x${item.quantity || 1} (₦${(Number(item.price || 0) * (item.quantity || 1)).toLocaleString()})`)
+      .map(
+        (item) =>
+          `• ${item.name} x${item.quantity || 1} (₦${(
+            Number(item.price || 0) * (item.quantity || 1)
+          ).toLocaleString()})`
+      )
       .join('\n')
   }
 
-  const timeString = new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' })
+  const timeString = new Date().toLocaleString('en-US', {
+    timeZone: 'Africa/Lagos',
+  })
 
   const htmlMessage = `
 🛍️ <b>NEW STORE ORDER RECEIVED!</b>
@@ -194,7 +237,11 @@ ${itemsHtmlList}
 
 💰 <b>Total Amount:</b> ₦${totalAmountStr} (Includes ₦${deliveryFeeStr} delivery)
 💳 <b>Payment Method:</b> ${safePayment}
-${order.payment_proof_url ? `📎 <b>Payment Receipt:</b> <a href="${order.payment_proof_url}">View Uploaded Receipt</a>\n` : ''}⏰ <b>Time:</b> ${timeString} (WAT)
+${
+  order.payment_proof_url
+    ? `📎 <b>Payment Receipt:</b> <a href="${order.payment_proof_url}">View Uploaded Receipt</a>\n`
+    : ''
+}⏰ <b>Time:</b> ${timeString} (WAT)
 ━━━━━━━━━━━━━━━━━━
 <i>De-echoi Live Kitchen Alert</i>
 `.trim()
@@ -241,7 +288,9 @@ export async function sendTelegramWaitlistNotification({
   const safePhone = escapeHtml(phone)
   const safeCode = escapeHtml(promoCode)
   const safeDish = escapeHtml(favoriteDish)
-  const timeString = new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' })
+  const timeString = new Date().toLocaleString('en-US', {
+    timeZone: 'Africa/Lagos',
+  })
 
   const title = isReturning
     ? '🔁 <b>VIP RETURNED (PREVIEWED CODE)</b>'

@@ -593,7 +593,7 @@ export function StorefrontHeader() {
             {/* Logo */}
             <div className="flex-1 md:flex-initial flex items-center justify-center md:justify-start">
               <Link href="/" className="flex items-center justify-center relative group">
-                <div className="relative w-36 sm:w-44 md:w-48 lg:w-56 h-12 md:h-16 flex items-center justify-center">
+                <div className="relative w-36 sm:w-44 md:w-48 lg:w-56 h-60 md:h-25 flex items-center justify-center">
                   <div className="absolute inset-0 flex items-center justify-center md:justify-start scale-105 sm:scale-110 md:scale-120 origin-center md:origin-left transition-transform duration-200">
                     <div className="relative w-full h-full">
                       <Image

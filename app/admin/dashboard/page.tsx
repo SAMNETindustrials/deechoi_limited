@@ -69,6 +69,7 @@ export default function AdminDashboardPage() {
     promo_banner: true
   })
 
+  // Global Store Settings States
   const [salesSessionActive, setSalesSessionActive] = useState(true)
   const [storefrontActive, setStorefrontActive] = useState(true)
   const [lastClosedDate, setLastClosedDate] = useState<string | null>(null)
@@ -121,6 +122,21 @@ export default function AdminDashboardPage() {
   const supabase = createClient()
 
   useEffect(() => {
+    // Load Global Settings from Supabase
+    const fetchGlobalSettings = async () => {
+      const { data, error } = await supabase.from('store_settings').select('*')
+      if (data && !error) {
+        const storeActive = data.find(s => s.key === 'storefront_active')
+        const salesActive = data.find(s => s.key === 'sales_session_active')
+        const lastClosed = data.find(s => s.key === 'last_closed_date')
+
+        if (storeActive) setStorefrontActive(storeActive.value === 'true')
+        if (salesActive) setSalesSessionActive(salesActive.value === 'true')
+        if (lastClosed) setLastClosedDate(lastClosed.value)
+      }
+    }
+    fetchGlobalSettings()
+
     const savedWidgets = localStorage.getItem('deechoi_admin_widgets')
     if (savedWidgets) {
       try {
@@ -132,14 +148,6 @@ export default function AdminDashboardPage() {
         console.warn('Could not load widgets status', e)
       }
     }
-
-    const savedShiftStatus = localStorage.getItem('deechoi_sales_session_active')
-    const savedStoreStatus = localStorage.getItem('deechoi_storefront_active')
-    const savedCloseDate = localStorage.getItem('deechoi_last_closed_date')
-
-    if (savedShiftStatus !== null) setSalesSessionActive(savedShiftStatus === 'true')
-    if (savedStoreStatus !== null) setStorefrontActive(savedStoreStatus === 'true')
-    if (savedCloseDate) setLastClosedDate(savedCloseDate)
 
     const currentHour = new Date().getHours()
     if (currentHour < 12) {
@@ -182,29 +190,42 @@ export default function AdminDashboardPage() {
     return activeWidgets[id] !== false
   }
 
-  const handleCloseSales = () => {
+  const handleCloseSales = async () => {
     if (confirm('Are you sure you want to close dashboard sales for today?')) {
       setSalesSessionActive(false)
       const todayStr = new Date().toLocaleDateString()
       setLastClosedDate(todayStr)
-      localStorage.setItem('deechoi_sales_session_active', 'false')
-      localStorage.setItem('deechoi_last_closed_date', todayStr)
+      
+      await supabase.from('store_settings').upsert([
+        { key: 'sales_session_active', value: 'false', updated_at: new Date().toISOString() },
+        { key: 'last_closed_date', value: todayStr, updated_at: new Date().toISOString() }
+      ])
     }
   }
 
-  const handleStartSales = () => {
+  const handleStartSales = async () => {
     setSalesSessionActive(true)
-    localStorage.setItem('deechoi_sales_session_active', 'true')
+    await supabase.from('store_settings').upsert([
+      { key: 'sales_session_active', value: 'true', updated_at: new Date().toISOString() }
+    ])
   }
 
-  const handleToggleStorefront = () => {
+  const handleToggleStorefront = async () => {
     const newState = !storefrontActive
     setStorefrontActive(newState)
+    
+    // Save to Global Database so all customers see it instantly
+    await supabase.from('store_settings').upsert([
+      { key: 'storefront_active', value: String(newState), updated_at: new Date().toISOString() }
+    ])
+
+    // Keep localStorage as a fallback backup
     localStorage.setItem('deechoi_storefront_active', String(newState))
+
     if (!newState) {
-      alert('Storefront turned OFF. Customers can now only make PRE-ORDERS.')
+      alert('Storefront turned OFF. Customers can now only make PRE-ORDERS globally.')
     } else {
-      alert('Storefront turned ON. Live ordering is now active.')
+      alert('Storefront turned ON. Live ordering is now active globally.')
     }
   }
 
@@ -270,7 +291,7 @@ export default function AdminDashboardPage() {
       const emailList = orderData.map(o => o.customer_email?.trim().toLowerCase()).filter(Boolean)
       const uniqueEmails = new Set(emailList)
       const uniqueCustomers = uniqueEmails.size
-      
+
       const emailCounts: Record<string, number> = {}
       emailList.forEach(e => {
         if (e) emailCounts[e] = (emailCounts[e] || 0) + 1
@@ -340,7 +361,7 @@ export default function AdminDashboardPage() {
       const date = new Date(today)
       date.setDate(date.getDate() - i)
       const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      
+
       const dayOrders = orders.filter(o => {
         const orderDate = new Date(o.created_at)
         return orderDate.toLocaleDateString() === date.toLocaleDateString()
@@ -437,7 +458,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className={`min-h-screen flex font-sans transition-colors duration-300 ${darkMode ? 'bg-[#0F1419] text-white' : 'bg-[#F4F7F6] text-slate-900'}`}>
-      
+
       {/* Sidebar */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} ${darkMode ? 'bg-gradient-to-b from-[#1a1f2e] to-[#131821] border-r border-[#EAA823]/20' : 'bg-white border-r border-gray-200 shadow-sm'} transition-all duration-300 sticky top-0 h-screen flex flex-col hidden md:flex shadow-2xl z-30`}>
         <div className="h-20 border-b border-inherit flex items-center justify-center px-4 py-4">
@@ -587,7 +608,7 @@ export default function AdminDashboardPage() {
 
           {/* 3. Right Side Controls & Widget Store Button */}
           <div className="flex items-center gap-3 flex-shrink-0">
-            
+
             <button
               onClick={() => setDarkMode(!darkMode)}
               className={`p-2.5 rounded-xl transition-all border cursor-pointer ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/20 text-[#EAA823] hover:bg-[#EAA823]/20' : 'bg-gray-100 border-gray-200 text-amber-600 hover:bg-amber-50'}`}
@@ -622,7 +643,7 @@ export default function AdminDashboardPage() {
                         </span>
                       )}
                     </div>
-
+                    
                     <button
                       onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
                       className="text-[11px] text-[#EAA823] hover:underline cursor-pointer"
@@ -645,8 +666,8 @@ export default function AdminDashboardPage() {
                         >
                           <div className="flex items-start gap-3 min-w-0">
                             <div className={`p-2 rounded-xl mt-0.5 flex-shrink-0 ${
-                              notif.type === 'inquiry'
-                                ? 'bg-purple-500/20 text-purple-400'
+                              notif.type === 'inquiry' 
+                                ? 'bg-purple-500/20 text-purple-400' 
                                 : 'bg-[#EAA823]/20 text-[#EAA823]'
                             }`}>
                               {notif.type === 'inquiry' ? (
@@ -655,7 +676,7 @@ export default function AdminDashboardPage() {
                                 <ShoppingCart className="w-4 h-4" />
                               )}
                             </div>
-
+                            
                             <div className="min-w-0">
                               <p className="text-xs font-bold truncate">{notif.title}</p>
                               <p className="text-[11px] text-gray-400">{notif.subtitle}</p>
@@ -665,8 +686,8 @@ export default function AdminDashboardPage() {
 
                           <div className="flex flex-col items-end gap-1 flex-shrink-0">
                             <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                              notif.type === 'inquiry'
-                                ? 'bg-purple-500/20 text-purple-300'
+                              notif.type === 'inquiry' 
+                                ? 'bg-purple-500/20 text-purple-300' 
                                 : 'bg-amber-500/20 text-amber-300'
                             }`}>
                               {notif.badge}
@@ -690,13 +711,13 @@ export default function AdminDashboardPage() {
                 <span className="hidden xl:inline">Widgets Store</span>
               </button>
             </Link>
-
+            
           </div>
         </header>
 
         {/* Dashboard Body */}
         <main className={`flex-1 overflow-auto p-4 md:p-8 ${darkMode ? 'bg-[#0F1419]' : 'bg-[#F9F6F0]'}`}>
-          
+
           <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-[#1a1f2e] to-[#131821] p-6 rounded-3xl border border-[#EAA823]/20 shadow-xl">
             <div className="space-y-1">
               <h1 className={`text-2xl md:text-3xl font-extrabold ${darkMode ? 'text-white' : 'text-[#0A2E1D]'}`}>
@@ -733,7 +754,7 @@ export default function AdminDashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
               <div className={`lg:col-span-5 rounded-3xl p-6 border shadow-2xl relative overflow-hidden flex flex-col justify-between ${darkMode ? 'bg-gradient-to-br from-[#1a233a] via-[#111827] to-[#0b101b] border-blue-500/30' : 'bg-gradient-to-br from-blue-900 to-indigo-950 text-white'}`}>
                 <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-
+                
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="font-black text-sm text-blue-200 uppercase tracking-widest">Live Weather Radar</h3>
@@ -803,7 +824,7 @@ export default function AdminDashboardPage() {
                     <span>TEMPERATURE TREND (°C)</span>
                     <span className="text-emerald-400 flex items-center gap-1">Optimal Range</span>
                   </div>
-
+                  
                   <div className="relative h-16 w-full flex items-end justify-between px-2 pt-4">
                     <svg className="absolute inset-0 w-full h-full overflow-visible px-4" preserveAspectRatio="none" viewBox="0 0 500 60">
                       <path d="M 0 30 Q 80 10, 160 25 T 320 20 T 480 35" fill="none" stroke="#EAA823" strokeWidth="2.5" />

@@ -19,11 +19,17 @@ import {
   ShieldCheck,
   Truck,
   Loader2,
-  ScanLine
+  ScanLine,
+  Store,
+  Sparkles,
+  Map
 } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
+
+// Fetching our expanded dictionary and logic
+import { PH_ZONES, getDeliveryFee, OUT_OF_ZONE_FEE } from '@/lib/ph-zones'
 
 declare global {
   interface Window {
@@ -31,80 +37,13 @@ declare global {
   }
 }
 
-const PH_ZONES: Record<number, { name: string; keywords: string[] }> = {
-  1: {
-    name: 'PH 1 (Woji, Elelenwo, Rumuibekwe, Rumuomasi, Trans Amadi, Peter Odili)',
-    keywords: ['woji', 'elelenwo', 'rumuibekwe', 'rumuomasi', 'trans amadi', 'peter odili'],
-  },
-  2: {
-    name: 'PH 2 (Abuluoma, Garrison, Dline, Waterlines, Elekahia, Nkpogu, Stadium Road)',
-    keywords: ['abuluoma', 'garrison', 'dline', 'd-line', 'waterlines', 'elekahia', 'nkpogu', 'stadium road'],
-  },
-  3: {
-    name: 'PH 3 (Eneka, Tank, Eliozu, Rumukrushi, Rumuigbo)',
-    keywords: ['eneka', 'tank', 'eliozu', 'rumukrushi', 'rumuigbo'],
-  },
-  4: {
-    name: 'PH 4 (GRA, Oroazi, Old Ikwerre Road, Ada George, Agip, Iwofe, Mile 1,2,3,4)',
-    keywords: ['gra', 'oroazi', 'old ikwerre road', 'ada george', 'agip', 'iwofe', 'mile 1', 'mile 2', 'mile 3', 'mile 4'],
-  },
-  5: {
-    name: 'PH 5 (Rumuodumaya, Rumuokoro, Rumuagholu, Rukpokwu, Mbgougba, Ozuoba)',
-    keywords: ['rumuodumaya', 'rumuokoro', 'rumuagholu', 'rukpokwu', 'mbgougba', 'mgbougba', 'ozuoba'],
-  },
-  6: {
-    name: 'PH 6 (Old GRA, Azikiwe, Lagos Busstop, Town)',
-    keywords: ['old gra', 'azikiwe', 'lagos busstop', 'town'],
-  },
-  7: {
-    name: 'PH 7 (Choba, Rumuosi, Alakahia)',
-    keywords: ['choba', 'rumuosi', 'alakahia'],
-  },
-  8: {
-    name: 'PH 8 (Akpajo, Oyigbo, Iriebe, Etche Road, Igwuruta)',
-    keywords: ['akpajo', 'oyigbo', 'iriebe', 'etche', 'igwuruta'],
-  },
-  9: {
-    name: 'PH 9 (Onne, Okrika, Trailer park, AFAM)',
-    keywords: ['onne', 'okrika', 'trailer park', 'afam'],
-  },
-}
-
-const DELIVERY_MATRIX: Record<string, number> = {
-  '1-1': 3000, '2-2': 3000, '3-3': 3000, '4-4': 3000, '5-5': 3000,
-  '6-6': 3500, '7-7': 3000, '8-8': 5000, '9-9': 5000,
-  '1-2': 3000, '1-3': 3500, '1-4': 3500, '1-5': 3500,
-  '1-6': 4000, '1-7': 5000, '1-8': 8000, '1-9': 8500,
-  '2-3': 3000, '2-4': 3500, '2-5': 3500, '2-6': 3500,
-  '2-7': 3500, '2-8': 6500, '2-9': 7500,
-  '3-4': 3500, '3-5': 3000, '3-6': 4500, '3-7': 4500,
-  '3-8': 7000, '3-9': 9000,
-  '4-5': 3500, '4-6': 3500, '4-7': 3500, '4-8': 5500, '4-9': 7500,
-  '5-6': 3500, '5-7': 4500, '5-8': 6500, '5-9': 7000,
-  '6-7': 4500, '6-8': 7000, '6-9': 8500,
-  '7-8': 6500, '7-9': 9000,
-  '8-9': 7500,
-  '9-1': 10500, '9-2': 10500, '9-3': 10500, '9-4': 10500,
-  '9-5': 10500, '9-6': 10500, '9-7': 10500,
-}
-
-const OUT_OF_ZONE_FEE = 10500
-
-function getDeliveryFee(originZone: number, destZone: number | null): number {
-  if (!destZone) return OUT_OF_ZONE_FEE
-  const key = `${originZone}-${destZone}`
-  const reverseKey = `${destZone}-${originZone}`
-  if (DELIVERY_MATRIX[key]) return DELIVERY_MATRIX[key]
-  if (DELIVERY_MATRIX[reverseKey]) return DELIVERY_MATRIX[reverseKey]
-  return OUT_OF_ZONE_FEE
-}
-
 export default function CheckoutPage() {
-  const { items, total, clearCart } = useCart()
+  const { items, clearCart } = useCart()
   const router = useRouter()
   const supabase = createClient()
 
   const [step, setStep] = useState<1 | 2>(1)
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<'dispatch' | 'pickup'>('dispatch')
   const [paymentMethod, setPaymentMethod] = useState<'bank_transfer' | 'card'>('bank_transfer')
   const [customerInfo, setCustomerInfo] = useState({
     firstName: '',
@@ -112,11 +51,41 @@ export default function CheckoutPage() {
     email: '',
     phone: '',
     address: '',
+    landmark: '',
     city: 'Port Harcourt',
     state: 'Rivers',
   })
 
-  // Auto-fill from returning customer session if available
+  // Discount & Subtotal Recalculation States
+  const [appliedVoucher, setAppliedVoucher] = useState<string | null>(null)
+  const [discountPercent, setDiscountPercent] = useState<number>(0)
+  
+  // FIXED: Accurate single-pass Subtotal calculation. 
+  // Removes optionsTotal so it does not double the price.
+  const rawSubtotal = items.reduce((acc, item) => {
+    const basePrice = Number(item.price ?? item.unit_price ?? item.final_price ?? 0)
+    const qty = Number(item.quantity) > 0 ? Number(item.quantity) : 1
+    return acc + (basePrice * qty)
+  }, 0)
+
+  const discountAmount = appliedVoucher ? (rawSubtotal * (discountPercent / 100)) : 0
+  const discountedSubtotal = Math.max(0, rawSubtotal - discountAmount)
+
+  const [storeOriginZone] = useState<number>(1)
+  const [detectedZone, setDetectedZone] = useState<number | null>(null)
+  const [calculatedZoneFee, setCalculatedZoneFee] = useState<number>(3000)
+  const [isOutOfZone, setIsOutOfZone] = useState<boolean>(false)
+  const [locating, setLocating] = useState<boolean>(false)
+
+  // Dynamic Landmark Detection States
+  const [findingLandmarks, setFindingLandmarks] = useState(false)
+  const [landmarkOptions, setLandmarkOptions] = useState<string[]>([])
+  const [showLandmarkDropdown, setShowLandmarkDropdown] = useState(false)
+
+  // Effective Delivery Fee based on fulfillment choice
+  const activeDeliveryFee = fulfillmentMethod === 'pickup' ? 0 : calculatedZoneFee
+
+  // Auto-fill from returning customer session & fetch active voucher
   useEffect(() => {
     try {
       const savedSession = localStorage.getItem('deechoi_customer_session')
@@ -134,16 +103,18 @@ export default function CheckoutPage() {
           detectZoneFromAddress(parsed.address)
         }
       }
+
+      // Load active voucher from Cart
+      const voucher = localStorage.getItem('active_checkout_voucher')
+      const pct = localStorage.getItem('active_discount_percent')
+      if (voucher) {
+        setAppliedVoucher(voucher)
+        setDiscountPercent(Number(pct) || 0)
+      }
     } catch (e) {
       console.warn('Could not read session:', e)
     }
   }, [])
-
-  const [storeOriginZone] = useState<number>(1)
-  const [detectedZone, setDetectedZone] = useState<number | null>(null)
-  const [deliveryFee, setDeliveryFee] = useState<number>(3000)
-  const [isOutOfZone, setIsOutOfZone] = useState<boolean>(false)
-  const [locating, setLocating] = useState<boolean>(false)
 
   const addressInputRef = useRef<HTMLInputElement | null>(null)
   const [proofFile, setProofFile] = useState<File | null>(null)
@@ -155,11 +126,13 @@ export default function CheckoutPage() {
   const [validationError, setValidationError] = useState<string | null>(null)
   const [verificationDetails, setVerificationDetails] = useState<{ reference?: string; verified: boolean } | null>(null)
 
+  const finalOrderTotal = discountedSubtotal + activeDeliveryFee
+
   const detectZoneFromAddress = (addressText: string) => {
     if (!addressText.trim()) {
       setDetectedZone(null)
       setIsOutOfZone(false)
-      setDeliveryFee(3000)
+      setCalculatedZoneFee(3000)
       return
     }
 
@@ -176,51 +149,151 @@ export default function CheckoutPage() {
     if (foundZone) {
       setDetectedZone(foundZone)
       setIsOutOfZone(false)
-      setDeliveryFee(getDeliveryFee(storeOriginZone, foundZone))
+      setCalculatedZoneFee(getDeliveryFee(storeOriginZone, foundZone))
     } else {
       setDetectedZone(null)
       setIsOutOfZone(true)
-      setDeliveryFee(OUT_OF_ZONE_FEE)
+      setCalculatedZoneFee(OUT_OF_ZONE_FEE)
     }
   }
 
+  // Google Maps Integration for Address & Automatic Landmark Fetching
   useEffect(() => {
+    if (fulfillmentMethod !== 'dispatch') return
+
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
     if (!apiKey) return
 
-    if (!window.google) {
+    const existingScript = document.getElementById('google-maps-places-script')
+
+    if (!window.google && !existingScript) {
       const script = document.createElement('script')
+      script.id = 'google-maps-places-script'
       script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
       script.async = true
       script.onload = initAutocomplete
       document.head.appendChild(script)
-    } else {
-      initAutocomplete()
+    } else if (window.google) {
+      setTimeout(initAutocomplete, 100)
     }
 
     function initAutocomplete() {
       if (!addressInputRef.current || !window.google) return
+      
       try {
-        const autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current, {
+        const addressAutocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current, {
           componentRestrictions: { country: 'ng' },
-          fields: ['address_components', 'formatted_address', 'geometry'],
+          fields: ['address_components', 'formatted_address', 'geometry', 'name', 'place_id'],
         })
 
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace()
-          if (place.formatted_address) {
+        addressAutocomplete.addListener('place_changed', () => {
+          const place = addressAutocomplete.getPlace()
+
+          if (!place || !place.geometry || !place.geometry.location) {
+            return
+          }
+
+          const resolvedAddress = place.name
+            ? `${place.name}, ${place.formatted_address || ''}`
+            : place.formatted_address || ''
+
+          if (resolvedAddress) {
             setCustomerInfo(prev => ({
               ...prev,
-              address: place.formatted_address || prev.address
+              address: resolvedAddress
             }))
-            detectZoneFromAddress(place.formatted_address)
+
+            detectZoneFromAddress(resolvedAddress)
+
+            // IMPORTANT:
+            // Clear the previous landmark list immediately so landmarks
+            // from the previous address can never remain attached to
+            // the newly selected address.
+            setCustomerInfo(prev => ({
+              ...prev,
+              landmark: ''
+            }))
+
+            setLandmarkOptions([])
+            setShowLandmarkDropdown(false)
+
+            // Fetch landmarks specifically around the exact
+            // coordinates returned by Google for this selected address.
+            fetchNearbyLandmarks(place.geometry.location)
           }
         })
       } catch (err) {
         console.warn('Google Places error:', err)
       }
     }
-  }, [])
+  }, [fulfillmentMethod])
+
+  // Fetch landmarks specifically around the selected street address.
+  // The location comes directly from the Google Maps place selected
+  // by the customer, so results are tied to that exact location.
+  const fetchNearbyLandmarks = (location: any) => {
+    if (!window.google || !location) return
+
+    setFindingLandmarks(true)
+    setLandmarkOptions([])
+    setShowLandmarkDropdown(false)
+
+    try {
+      const dummyDiv = document.createElement('div')
+      const service = new window.google.maps.places.PlacesService(dummyDiv)
+
+      service.nearbySearch(
+        {
+          location: location,
+          radius: 1000,
+          rankBy: window.google.maps.places.RankBy.DISTANCE,
+          type: 'establishment',
+        },
+        (results: any[], status: any) => {
+          if (
+            status === window.google.maps.places.PlacesServiceStatus.OK &&
+            Array.isArray(results)
+          ) {
+            const uniqueNames: string[] = []
+
+            for (const result of results) {
+              const name = result?.name?.trim()
+
+              if (
+                name &&
+                !uniqueNames.some(
+                  existing =>
+                    existing.toLowerCase() === name.toLowerCase()
+                )
+              ) {
+                uniqueNames.push(name)
+              }
+
+              if (uniqueNames.length >= 6) {
+                break
+              }
+            }
+
+            setLandmarkOptions(uniqueNames)
+
+            if (uniqueNames.length > 0) {
+              setShowLandmarkDropdown(true)
+            }
+          } else {
+            setLandmarkOptions([])
+            setShowLandmarkDropdown(false)
+          }
+
+          setFindingLandmarks(false)
+        }
+      )
+    } catch (err) {
+      console.warn('Google nearby landmark search error:', err)
+      setLandmarkOptions([])
+      setShowLandmarkDropdown(false)
+      setFindingLandmarks(false)
+    }
+  }
 
   const handleUseCurrentLocation = () => {
     if (typeof window === 'undefined' || !navigator?.geolocation) {
@@ -229,6 +302,7 @@ export default function CheckoutPage() {
     }
 
     setLocating(true)
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
@@ -239,42 +313,53 @@ export default function CheckoutPage() {
             const response = await fetch(
               `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
             )
+
             const data = await response.json()
+
             if (data.results && data.results[0]) {
               const formattedAddr = data.results[0].formatted_address
-              setCustomerInfo(prev => ({ ...prev, address: formattedAddr }))
+
+              setCustomerInfo(prev => ({
+                ...prev,
+                address: formattedAddr,
+                landmark: ''
+              }))
+
               detectZoneFromAddress(formattedAddr)
-            } else {
-              const fallback = `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)} (Port Harcourt)`
-              setCustomerInfo(prev => ({ ...prev, address: fallback }))
-              detectZoneFromAddress(fallback)
+
+              // Use the exact current GPS position to find landmarks
+              // around the customer's current location.
+              if (window.google) {
+                const loc = new window.google.maps.LatLng(
+                  latitude,
+                  longitude
+                )
+
+                fetchNearbyLandmarks(loc)
+              }
             }
-          } else {
-            const coordsAddress = `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)} (Port Harcourt)`
-            setCustomerInfo(prev => ({ ...prev, address: coordsAddress }))
-            detectZoneFromAddress(coordsAddress)
           }
         } catch (err) {
           console.error('Geocoding error:', err)
-          alert('Could not resolve your location address. Please type your street name manually.')
         } finally {
           setLocating(false)
         }
       },
       (error) => {
-        let msg = 'Could not retrieve your location. Please type your address manually.'
-        if (error.code === 1) {
-          msg = 'Location permission was denied. Please enable location access or type your address manually.'
-        }
-        alert(msg)
+        alert('Could not retrieve your location. Please type your address manually.')
         setLocating(false)
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
     )
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
+
     setCustomerInfo(prev => ({
       ...prev,
       [name]: value
@@ -282,43 +367,64 @@ export default function CheckoutPage() {
 
     if (name === 'address') {
       detectZoneFromAddress(value)
+
+      // Once the customer changes the address manually,
+      // previously fetched landmarks are no longer guaranteed
+      // to belong to the new address.
+      setLandmarkOptions([])
+      setShowLandmarkDropdown(false)
     }
+  }
+
+  const selectLandmark = (lm: string) => {
+    setCustomerInfo(prev => ({
+      ...prev,
+      landmark: lm
+    }))
+
+    setShowLandmarkDropdown(false)
   }
 
   const handleZoneSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value
+
     if (val === '') {
       setDetectedZone(null)
       setIsOutOfZone(true)
-      setDeliveryFee(OUT_OF_ZONE_FEE)
+      setCalculatedZoneFee(OUT_OF_ZONE_FEE)
     } else {
       const z = parseInt(val, 10)
       setDetectedZone(z)
       setIsOutOfZone(false)
-      setDeliveryFee(getDeliveryFee(storeOriginZone, z))
+      setCalculatedZoneFee(getDeliveryFee(storeOriginZone, z))
     }
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+
     if (file) {
       if (!['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'].includes(file.type)) {
         alert('Please upload a PDF or JPG/PNG image receipt.')
         return
       }
+
       if (file.size > 10 * 1024 * 1024) {
         alert('File size exceeds 10MB limit.')
         return
       }
+
       setProofFile(file)
       setValidationError(null)
       setVerificationDetails(null)
 
       if (file.type.startsWith('image/')) {
         const reader = new FileReader()
+
         reader.onload = (e) => {
           setProofPreview(e.target?.result as string)
         }
+
         reader.readAsDataURL(file)
       } else {
         setProofPreview(null)
@@ -328,15 +434,30 @@ export default function CheckoutPage() {
 
   const handleProceedToPayment = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!customerInfo.firstName.trim() || !customerInfo.email.trim() || !customerInfo.phone.trim() || !customerInfo.address.trim()) {
-      alert('Please fill in all required contact and shipping details.')
+
+    if (
+      !customerInfo.firstName.trim() ||
+      !customerInfo.email.trim() ||
+      !customerInfo.phone.trim()
+    ) {
+      alert('Please fill in your contact information.')
       return
     }
-    setStep(2)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
 
-  const finalOrderTotal = total + deliveryFee
+    if (
+      fulfillmentMethod === 'dispatch' &&
+      !customerInfo.address.trim()
+    ) {
+      alert('Please provide your street address for dispatch delivery.')
+      return
+    }
+
+    setStep(2)
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    })
+  }
 
   const BANK_DETAILS = {
     accountName: 'De-echoi Limited',
@@ -354,10 +475,11 @@ export default function CheckoutPage() {
         return
       }
 
-      // Step 1: Scan receipt for authenticity and match details
       setIsScanning(true)
+
       try {
         const verifyData = new FormData()
+
         verifyData.append('file', proofFile)
         verifyData.append('expectedAmount', finalOrderTotal.toString())
         verifyData.append('expectedAccount', BANK_DETAILS.accountNumber)
@@ -370,7 +492,11 @@ export default function CheckoutPage() {
         const verifyJson = await verifyRes.json()
 
         if (!verifyRes.ok || !verifyJson.valid) {
-          setValidationError(verifyJson.message || 'Receipt validation failed. Please ensure the exact amount, reference, and date/time are visible on your receipt.')
+          setValidationError(
+            verifyJson.message ||
+            'Receipt validation failed. Please ensure the exact amount, reference, and date/time are visible on your receipt.'
+          )
+
           setIsScanning(false)
           return
         }
@@ -380,41 +506,60 @@ export default function CheckoutPage() {
           verified: true,
         })
       } catch (err: any) {
-        setValidationError('Failed to connect to the receipt scanner. Please try again.')
+        setValidationError(
+          'Failed to connect to the receipt scanner. Please try again.'
+        )
+
         setIsScanning(false)
         return
       }
+
       setIsScanning(false)
     }
 
-    // Step 2: Upload file and record order
     setLoading(true)
+
     try {
       let proofUrl: string | null = null
 
       if (proofFile) {
         const fileExt = proofFile.name.split('.').pop() || 'png'
-        const sanitizedFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const sanitizedFileName = `${Date.now()}-${Math.random()
+          .toString(36)
+          .substring(2, 8)}.${fileExt}`
+
+        const {
+          data: uploadData,
+          error: uploadError
+        } = await supabase.storage
           .from('payment-proofs')
-          .upload(sanitizedFileName, proofFile, {
-            cacheControl: '3600',
-            upsert: false
-          })
+          .upload(
+            sanitizedFileName,
+            proofFile,
+            {
+              cacheControl: '3600',
+              upsert: false
+            }
+          )
 
         if (uploadError) {
-          throw new Error(`Receipt upload failed: ${uploadError.message}`)
+          throw new Error(
+            `Receipt upload failed: ${uploadError.message}`
+          )
         }
 
         const { data: publicUrlData } = supabase.storage
           .from('payment-proofs')
           .getPublicUrl(uploadData.path)
 
-        proofUrl = publicUrlData?.publicUrl || uploadData.path
+        proofUrl =
+          publicUrlData?.publicUrl ||
+          uploadData.path
       }
 
-      const fullName = `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`.trim()
+      const fullName =
+        `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`.trim()
 
       const sanitizedItems = items.map((item) => ({
         id: String(item.id || item.product_id || ''),
@@ -426,36 +571,56 @@ export default function CheckoutPage() {
         imageUrl: item.imageUrl || null
       }))
 
+      // Append landmark to address if provided
+      let deliveryAddress = customerInfo.address.trim()
+
+      if (customerInfo.landmark.trim()) {
+        deliveryAddress += ` (Closest Landmark: ${customerInfo.landmark.trim()})`
+      }
+
+      const finalAddress =
+        fulfillmentMethod === 'pickup'
+          ? '[STORE PICKUP] De-echoi Kitchen, Woji, Port Harcourt'
+          : deliveryAddress
+
       const orderPayload = {
         customer_name: fullName,
         customer_email: customerInfo.email.trim(),
         customer_phone: customerInfo.phone.trim(),
-        delivery_address: customerInfo.address.trim(),
+        delivery_address: finalAddress,
         delivery_city: customerInfo.city.trim(),
         delivery_state: customerInfo.state.trim(),
+        fulfillment_method: fulfillmentMethod,
         payment_method: paymentMethod,
         payment_proof_url: proofUrl,
-        delivery_fee: deliveryFee,
+        delivery_fee: activeDeliveryFee,
         total_amount: finalOrderTotal,
         status: 'pending',
         items: sanitizedItems
       }
 
-      const { data: order, error: insertError } = await supabase
+      const {
+        data: order,
+        error: insertError
+      } = await supabase
         .from('store_orders')
         .insert([orderPayload])
         .select('*')
         .single()
 
       if (insertError) {
-        throw new Error(insertError.message || 'Failed to place order.')
+        throw new Error(
+          insertError.message ||
+          'Failed to place order.'
+        )
       }
 
       if (!order?.id) {
-        throw new Error('Order was placed but no order ID was returned.')
+        throw new Error(
+          'Order was placed but no order ID was returned.'
+        )
       }
 
-      // 1. Persist Customer Account & Order ID in Local Storage
       try {
         const customerSession = {
           name: fullName,
@@ -466,30 +631,77 @@ export default function CheckoutPage() {
           address: customerInfo.address.trim(),
           createdAt: new Date().toISOString(),
         }
-        localStorage.setItem('deechoi_customer_session', JSON.stringify(customerSession))
 
-        const existingOrders = JSON.parse(localStorage.getItem('deechoi_customer_orders') || '[]')
-        const updatedOrders = Array.from(new Set([order.id, ...existingOrders]))
-        localStorage.setItem('deechoi_customer_orders', JSON.stringify(updatedOrders))
+        localStorage.setItem(
+          'deechoi_customer_session',
+          JSON.stringify(customerSession)
+        )
 
-        // Notify other components (like StorefrontHeader) of order update
-        window.dispatchEvent(new Event('deechoi_order_placed'))
+        const existingOrders = JSON.parse(
+          localStorage.getItem('deechoi_customer_orders') || '[]'
+        )
+
+        const updatedOrders = Array.from(
+          new Set([order.id, ...existingOrders])
+        )
+
+        localStorage.setItem(
+          'deechoi_customer_orders',
+          JSON.stringify(updatedOrders)
+        )
+
+        window.dispatchEvent(
+          new Event('deechoi_order_placed')
+        )
       } catch (storageErr) {
-        console.warn('Storage persistence warning:', storageErr)
+        console.warn(
+          'Storage persistence warning:',
+          storageErr
+        )
       }
 
-      // 2. Dispatch Telegram Alert in Background
       fetch('/api/notifications/order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order }),
-      }).catch((err) => console.warn('Notification trigger warning:', err))
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          order: {
+            ...order,
+            promo_code: appliedVoucher,
+            discount_amount: discountAmount
+          }
+        }),
+      }).catch((err) =>
+        console.warn(
+          'Notification trigger warning:',
+          err
+        )
+      )
 
       clearCart()
-      router.push(`/order-confirmation/${order.id}`)
+
+      localStorage.removeItem(
+        'active_checkout_voucher'
+      )
+
+      localStorage.removeItem(
+        'active_discount_percent'
+      )
+
+      router.push(
+        `/order-confirmation/${order.id}`
+      )
     } catch (error: any) {
-      console.error('Full Order Submission Error:', error)
-      alert(error.message || 'Failed to place order. Please check your connection and try again.')
+      console.error(
+        'Full Order Submission Error:',
+        error
+      )
+
+      alert(
+        error.message ||
+        'Failed to place order. Please check your connection and try again.'
+      )
     } finally {
       setLoading(false)
     }
@@ -499,15 +711,21 @@ export default function CheckoutPage() {
     return (
       <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans">
         <StorefrontHeader />
+
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200 p-8 shadow-sm">
             <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-[#EAA823]">
               <ShoppingBag className="w-8 h-8" />
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Your cart is currently empty</h2>
+
+            <h2 className="text-xl font-bold text-gray-800 mb-2">
+              Your cart is currently empty
+            </h2>
+
             <p className="text-gray-500 text-sm mb-6">
               Add some freshly baked celebration cakes or delicious meals to proceed.
             </p>
+
             <Link href="/">
               <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs">
                 Continue Shopping
@@ -534,9 +752,15 @@ export default function CheckoutPage() {
           </Link>
 
           <div className="flex items-center gap-2 text-xs font-semibold text-gray-400">
-            <span className={step === 1 ? 'text-[#0A2E1D] font-bold' : 'text-gray-400'}>1. Details</span>
+            <span className={step === 1 ? 'text-[#0A2E1D] font-bold' : 'text-gray-400'}>
+              1. Details
+            </span>
+
             <span>›</span>
-            <span className={step === 2 ? 'text-[#0A2E1D] font-bold' : 'text-gray-400'}>2. Payment</span>
+
+            <span className={step === 2 ? 'text-[#0A2E1D] font-bold' : 'text-gray-400'}>
+              2. Payment
+            </span>
           </div>
         </div>
 
@@ -545,8 +769,9 @@ export default function CheckoutPage() {
             <Truck className="w-7 h-7 text-[#EAA823]" />
             Complete Your Order
           </h1>
+
           <p className="text-xs sm:text-sm text-gray-500 mt-1">
-            Fast, secure delivery across Port Harcourt and surrounding zones.
+            Fast, secure delivery across Port Harcourt or free store pickup.
           </p>
         </div>
 
@@ -554,11 +779,20 @@ export default function CheckoutPage() {
           <div className="lg:col-span-7 space-y-6">
 
             {step === 1 ? (
-              <form onSubmit={handleProceedToPayment} className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6">
+              <form
+                onSubmit={handleProceedToPayment}
+                className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6"
+              >
                 <div>
-                  <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D] mb-4">Contact Information</h2>
+                  <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D] mb-4">
+                    Contact Information
+                  </h2>
+
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Email Address *</label>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
+                      Email Address *
+                    </label>
+
                     <input
                       type="email"
                       name="email"
@@ -572,25 +806,75 @@ export default function CheckoutPage() {
                 </div>
 
                 <div className="pt-4 border-t border-gray-100">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                    <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D]">Shipping Address</h2>
-                    <Button
+                  <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D] mb-3">
+                    Fulfillment Method
+                  </h2>
+
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                    <button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleUseCurrentLocation}
-                      disabled={locating}
-                      className="gap-2 text-[#0A2E1D] border-gray-300 hover:bg-gray-50 text-xs rounded-full font-bold self-start sm:self-auto"
+                      onClick={() => setFulfillmentMethod('dispatch')}
+                      className={`p-4 rounded-2xl border-2 text-left flex items-center justify-between transition-all ${
+                        fulfillmentMethod === 'dispatch'
+                          ? 'border-[#0A2E1D] bg-[#0A2E1D]/5 text-[#0A2E1D]'
+                          : 'border-gray-200 bg-[#FDFBF7] text-gray-600 hover:border-gray-300'
+                      }`}
                     >
-                      <Navigation className="w-3.5 h-3.5 text-[#EAA823]" />
-                      {locating ? 'Locating...' : 'Use Current Location'}
-                    </Button>
+                      <div className="flex items-center gap-2.5">
+                        <Truck className="w-5 h-5 text-[#EAA823]" />
+
+                        <div>
+                          <p className="text-xs sm:text-sm font-bold">
+                            Dispatch Delivery
+                          </p>
+
+                          <p className="text-[10px] text-gray-500">
+                            Calculated Zone Fee
+                          </p>
+                        </div>
+                      </div>
+
+                      {fulfillmentMethod === 'dispatch' && (
+                        <CheckCircle2 className="w-4 h-4 text-[#0A2E1D]" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFulfillmentMethod('pickup')}
+                      className={`p-4 rounded-2xl border-2 text-left flex items-center justify-between transition-all ${
+                        fulfillmentMethod === 'pickup'
+                          ? 'border-[#0A2E1D] bg-[#0A2E1D]/5 text-[#0A2E1D]'
+                          : 'border-gray-200 bg-[#FDFBF7] text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Store className="w-5 h-5 text-[#EAA823]" />
+
+                        <div>
+                          <p className="text-xs sm:text-sm font-bold">
+                            Direct Pickup Point
+                          </p>
+
+                          <p className="text-[10px] font-bold text-green-600">
+                            FREE
+                          </p>
+                        </div>
+                      </div>
+
+                      {fulfillmentMethod === 'pickup' && (
+                        <CheckCircle2 className="w-4 h-4 text-[#0A2E1D]" />
+                      )}
+                    </button>
                   </div>
 
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">First Name *</label>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
+                          First Name *
+                        </label>
+
                         <input
                           type="text"
                           name="firstName"
@@ -601,8 +885,12 @@ export default function CheckoutPage() {
                           placeholder="e.g. Samuel"
                         />
                       </div>
+
                       <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Last Name</label>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
+                          Last Name
+                        </label>
+
                         <input
                           type="text"
                           name="lastName"
@@ -614,93 +902,224 @@ export default function CheckoutPage() {
                       </div>
                     </div>
 
+                    {fulfillmentMethod === 'dispatch' ? (
+                      <>
+                        <div>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 mb-1.5">
+                            <label className="block text-xs font-bold text-gray-500 uppercase">
+                              Street Address (Port Harcourt Area) *
+                            </label>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleUseCurrentLocation}
+                              disabled={locating}
+                              className="gap-2 text-[#0A2E1D] border-gray-300 hover:bg-gray-50 text-xs rounded-full font-bold self-start sm:self-auto"
+                            >
+                              <Navigation className="w-3.5 h-3.5 text-[#EAA823]" />
+
+                              {locating
+                                ? 'Locating...'
+                                : 'Use Current Location'}
+                            </Button>
+                          </div>
+
+                          <div className="relative">
+                            <input
+                              ref={addressInputRef}
+                              type="text"
+                              name="address"
+                              required={fulfillmentMethod === 'dispatch'}
+                              value={customerInfo.address}
+                              onChange={handleInputChange}
+                              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                              placeholder="e.g. 12 Woji Road, Port Harcourt..."
+                            />
+
+                            <MapPin className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
+                          </div>
+                        </div>
+
+                        {/* Interactive Landmark Detection Input */}
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5 pt-2">
+                            Closest Landmark (Optional)
+                          </label>
+
+                          <div className="relative">
+                            <input
+                              type="text"
+                              name="landmark"
+                              value={customerInfo.landmark}
+                              onChange={handleInputChange}
+                              onFocus={() => {
+                                if (landmarkOptions.length > 0) {
+                                  setShowLandmarkDropdown(true)
+                                }
+                              }}
+                              onBlur={() =>
+                                setTimeout(
+                                  () =>
+                                    setShowLandmarkDropdown(false),
+                                  200
+                                )
+                              }
+                              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                              placeholder={
+                                findingLandmarks
+                                  ? 'Detecting nearby landmarks...'
+                                  : 'e.g. Opposite Genesis Cinema...'
+                              }
+                            />
+
+                            <Map className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
+
+                            {/* Dynamically populated dropdown from Google Maps Nearby Search */}
+                            {showLandmarkDropdown &&
+                              landmarkOptions.length > 0 && (
+                                <ul className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                                  <li className="px-3 py-2 text-[10px] uppercase font-bold text-emerald-600 bg-emerald-50 border-b border-gray-100">
+                                    Nearby landmarks for this address:
+                                  </li>
+
+                                  {landmarkOptions.map((lm, i) => (
+                                    <li
+                                      key={`${lm}-${i}`}
+                                      onMouseDown={(e) => {
+                                        e.preventDefault()
+                                        selectLandmark(lm)
+                                      }}
+                                      className="px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 border-gray-100 transition-colors"
+                                    >
+                                      {lm}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                          </div>
+                        </div>
+
+                        <div className="p-4 bg-[#FDFBF7] border border-gray-200 rounded-2xl space-y-3 mt-4">
+                          <div className="flex justify-between items-center">
+                            <label className="block text-xs font-extrabold text-[#0A2E1D] uppercase">
+                              Port Harcourt Delivery Zone
+                            </label>
+
+                            {detectedZone ? (
+                              <span className="text-[11px] bg-green-100 text-green-800 font-bold px-2.5 py-0.5 rounded-full">
+                                Matched Zone {detectedZone}
+                              </span>
+                            ) : isOutOfZone ? (
+                              <span className="text-[11px] bg-amber-100 text-amber-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                Outer Zone Fee
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <select
+                            value={detectedZone || ''}
+                            onChange={handleZoneSelectChange}
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-white text-xs sm:text-sm text-[#0A2E1D] font-medium focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                          >
+                            <option value="">
+                              -- Outside Standard Local PH Zones --
+                            </option>
+
+                            {Object.entries(PH_ZONES).map(
+                              ([zoneNum, zoneData]) => (
+                                <option
+                                  key={zoneNum}
+                                  value={zoneNum}
+                                >
+                                  {zoneData.name}
+                                </option>
+                              )
+                            )}
+                          </select>
+
+                          {isOutOfZone &&
+                            customerInfo.address.trim() !== '' && (
+                              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 p-2.5 rounded-xl leading-relaxed">
+                                Your address falls outside standard Port Harcourt local delivery zones. Outer-zone delivery fee applied.
+                              </p>
+                            )}
+
+                          <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                            <span className="text-xs text-gray-500 font-semibold">
+                              Calculated Delivery Fee
+                            </span>
+
+                            <span className="text-base sm:text-lg font-black text-[#0A2E1D]">
+                              ₦{calculatedZoneFee.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
+                              City
+                            </label>
+
+                            <input
+                              type="text"
+                              name="city"
+                              value={customerInfo.city}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                              placeholder="Port Harcourt"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
+                              State
+                            </label>
+
+                            <input
+                              type="text"
+                              name="state"
+                              value={customerInfo.state}
+                              onChange={handleInputChange}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
+                              placeholder="Rivers"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
+                        <div className="flex items-center gap-2 text-[#0A2E1D]">
+                          <Store className="w-5 h-5 text-emerald-700" />
+
+                          <p className="text-xs font-bold uppercase tracking-wider text-emerald-800">
+                            Pickup Location
+                          </p>
+                        </div>
+
+                        <p className="text-sm font-bold text-[#0A2E1D]">
+                          De-echoi Kitchen Storefront
+                        </p>
+
+                        <p className="text-xs text-gray-600 leading-relaxed">
+                          Woji Road, Port Harcourt, Rivers State.
+                          <br />
+
+                          <span className="text-emerald-700 font-semibold">
+                            Free Pickup • We'll notify you via WhatsApp/Email when ready.
+                          </span>
+                        </p>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
-                        Street Address (Port Harcourt Area) *
+                        Phone Number *
                       </label>
-                      <div className="relative">
-                        <input
-                          ref={addressInputRef}
-                          type="text"
-                          name="address"
-                          required
-                          value={customerInfo.address}
-                          onChange={handleInputChange}
-                          className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
-                          placeholder="e.g. Woji, Peter Odili, GRA Phase 2, Choba..."
-                        />
-                        <MapPin className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
-                      </div>
-                    </div>
 
-                    <div className="p-4 bg-[#FDFBF7] border border-gray-200 rounded-2xl space-y-3">
-                      <div className="flex justify-between items-center">
-                        <label className="block text-xs font-extrabold text-[#0A2E1D] uppercase">
-                          Port Harcourt Delivery Zone
-                        </label>
-                        {detectedZone ? (
-                          <span className="text-[11px] bg-green-100 text-green-800 font-bold px-2.5 py-0.5 rounded-full">
-                            Matched Zone {detectedZone}
-                          </span>
-                        ) : isOutOfZone ? (
-                          <span className="text-[11px] bg-amber-100 text-amber-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                            <AlertTriangle className="w-3 h-3" /> Outer Zone Fee
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <select
-                        value={detectedZone || ''}
-                        onChange={handleZoneSelectChange}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-white text-xs sm:text-sm text-[#0A2E1D] font-medium focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
-                      >
-                        <option value="">-- Outside Standard Local PH Zones --</option>
-                        {Object.entries(PH_ZONES).map(([zoneNum, zoneData]) => (
-                          <option key={zoneNum} value={zoneNum}>
-                            {zoneData.name}
-                          </option>
-                        ))}
-                      </select>
-
-                      {isOutOfZone && customerInfo.address.trim() !== '' && (
-                        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 p-2.5 rounded-xl leading-relaxed">
-                          Your address falls outside standard Port Harcourt local delivery zones. Outer-zone delivery fee applied.
-                        </p>
-                      )}
-
-                      <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                        <span className="text-xs text-gray-500 font-semibold">Calculated Delivery Fee</span>
-                        <span className="text-base sm:text-lg font-black text-[#0A2E1D]">₦{deliveryFee.toLocaleString()}</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">City</label>
-                        <input
-                          type="text"
-                          name="city"
-                          value={customerInfo.city}
-                          onChange={handleInputChange}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
-                          placeholder="Port Harcourt"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">State</label>
-                        <input
-                          type="text"
-                          name="state"
-                          value={customerInfo.state}
-                          onChange={handleInputChange}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-[#FDFBF7] text-sm text-[#0A2E1D] focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
-                          placeholder="Rivers"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Phone Number *</label>
                       <input
                         type="tel"
                         name="phone"
@@ -715,10 +1134,14 @@ export default function CheckoutPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-gray-100">
-                  <Link href="/cart" className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-[#0A2E1D]">
+                  <Link
+                    href="/cart"
+                    className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-[#0A2E1D]"
+                  >
                     <ArrowLeft className="w-4 h-4" />
                     Return to cart
                   </Link>
+
                   <Button 
                     type="submit" 
                     size="lg" 
@@ -731,13 +1154,20 @@ export default function CheckoutPage() {
             ) : (
               <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6">
                 <div>
-                  <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D] mb-1">Select Payment Method</h2>
-                  <p className="text-xs text-gray-500 mb-6">Choose how you would like to complete your payment.</p>
+                  <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D] mb-1">
+                    Select Payment Method
+                  </h2>
+
+                  <p className="text-xs text-gray-500 mb-6">
+                    Choose how you would like to complete your payment.
+                  </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                     <button
                       type="button"
-                      onClick={() => setPaymentMethod('bank_transfer')}
+                      onClick={() =>
+                        setPaymentMethod('bank_transfer')
+                      }
                       className={`p-5 rounded-2xl border-2 text-left flex flex-col justify-between transition-all ${
                         paymentMethod === 'bank_transfer'
                           ? 'border-[#0A2E1D] bg-[#0A2E1D]/5 shadow-sm'
@@ -745,250 +1175,391 @@ export default function CheckoutPage() {
                       }`}
                     >
                       <div className="flex items-center justify-between w-full mb-3">
-                        <Building2 className={`w-6 h-6 ${paymentMethod === 'bank_transfer' ? 'text-[#0A2E1D]' : 'text-gray-400'}`} />
-                        {paymentMethod === 'bank_transfer' && <CheckCircle2 className="w-5 h-5 text-[#0A2E1D]" />}
+                        <Building2
+                          className={`w-6 h-6 ${
+                            paymentMethod === 'bank_transfer'
+                              ? 'text-[#0A2E1D]'
+                              : 'text-gray-400'
+                          }`}
+                        />
+
+                        {paymentMethod === 'bank_transfer' && (
+                          <CheckCircle2 className="w-5 h-5 text-[#0A2E1D]" />
+                        )}
                       </div>
+
                       <div>
-                        <p className="font-extrabold text-[#0A2E1D] text-sm">Direct Bank Transfer</p>
-                        <p className="text-[11px] text-gray-500 mt-0.5">Transfer to official corporate account</p>
+                        <p className="font-extrabold text-sm text-[#0A2E1D]">
+                          Direct Bank Transfer
+                        </p>
+
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          Instant transfer & upload proof
+                        </p>
                       </div>
                     </button>
 
                     <button
                       type="button"
+                      onClick={() =>
+                        setPaymentMethod('card')
+                      }
+                      className={`p-5 rounded-2xl border-2 text-left flex flex-col justify-between opacity-60 cursor-not-allowed transition-all ${
+                        paymentMethod === 'card'
+                          ? 'border-[#0A2E1D] bg-[#0A2E1D]/5'
+                          : 'border-gray-200 bg-[#FDFBF7]'
+                      }`}
                       disabled
-                      className="p-5 rounded-2xl border border-gray-200 bg-gray-50 text-left flex flex-col justify-between opacity-60 cursor-not-allowed"
                     >
                       <div className="flex items-center justify-between w-full mb-3">
                         <CreditCard className="w-6 h-6 text-gray-400" />
-                        <span className="text-[9px] bg-gray-200 text-gray-600 font-bold px-2 py-0.5 rounded-full">
+
+                        <span className="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
                           Coming Soon
                         </span>
                       </div>
+
                       <div>
-                        <p className="font-bold text-gray-700 text-sm">Card Payment</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">Pay via Mastercard / Visa / Verve</p>
+                        <p className="font-extrabold text-sm text-gray-600">
+                          Debit / Credit Card
+                        </p>
+
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          Pay securely online via Paystack
+                        </p>
                       </div>
                     </button>
                   </div>
+                </div>
 
-                  {paymentMethod === 'bank_transfer' && (
-                    <div className="border border-gray-200 rounded-2xl bg-[#FDFBF7] p-5 sm:p-6 space-y-6">
-                      <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 shadow-xs">
-                        <h3 className="font-bold text-[#0A2E1D] text-sm mb-3 flex items-center gap-2">
-                          <ShieldCheck className="w-4 h-4 text-[#EAA823]" />
-                          Official Bank Details
-                        </h3>
-                        <div className="space-y-2.5 text-xs">
-                          <div className="flex justify-between items-center pb-2 border-b border-gray-100">
-                            <span className="text-gray-500">Account Name</span>
-                            <span className="font-bold text-[#0A2E1D]">{BANK_DETAILS.accountName}</span>
-                          </div>
-                          <div className="flex justify-between items-center pb-2 border-b border-gray-100">
-                            <span className="text-gray-500">Account Number</span>
-                            <span className="font-mono font-black text-base text-[#0A2E1D]">{BANK_DETAILS.accountNumber}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-gray-500">Bank Name</span>
-                            <span className="font-bold text-[#0A2E1D]">{BANK_DETAILS.bankName}</span>
-                          </div>
+                {paymentMethod === 'bank_transfer' && (
+                  <form
+                    onSubmit={handleSubmit}
+                    className="space-y-6 pt-2"
+                  >
+                    <div className="p-5 bg-[#0A2E1D] text-white rounded-2xl space-y-4">
+                      <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                        <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                          Account Details
+                        </span>
+
+                        <span className="text-xs text-emerald-200 font-medium">
+                          Verify before sending
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 text-xs">
+                            Bank Name:
+                          </span>
+
+                          <span className="font-bold text-white">
+                            {BANK_DETAILS.bankName}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-300 text-xs">
+                            Account Name:
+                          </span>
+
+                          <span className="font-bold text-white">
+                            {BANK_DETAILS.accountName}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                          <span className="text-gray-300 text-xs">
+                            Account Number:
+                          </span>
+
+                          <span className="font-black text-lg text-[#EAA823] tracking-widest">
+                            {BANK_DETAILS.accountNumber}
+                          </span>
                         </div>
                       </div>
 
-                      <div>
-                        <h4 className="font-bold text-[#0A2E1D] text-xs uppercase mb-1">Upload Payment Receipt *</h4>
-                        <p className="text-[11px] text-gray-500 mb-3">Upload a screenshot or PDF receipt of your completed transfer (amount, date, time & reference will be verified).</p>
+                      <div className="pt-2 border-t border-white/10 flex justify-between items-center text-xs">
+                        <span className="text-gray-300">
+                          Exact Amount to Transfer:
+                        </span>
 
-                        <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center bg-white hover:border-[#0A2E1D] transition-colors">
-                          {proofPreview ? (
-                            <div className="relative inline-block max-w-full">
-                              <img
-                                src={proofPreview}
-                                alt="Payment proof preview"
-                                className="max-h-48 rounded-xl object-contain mx-auto border border-gray-200"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setProofFile(null)
-                                  setProofPreview(null)
-                                  setValidationError(null)
-                                  setVerificationDetails(null)
-                                }}
-                                className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 shadow"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ) : proofFile ? (
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
-                              <span className="text-xs font-bold text-[#0A2E1D] truncate">{proofFile.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setProofFile(null)
-                                  setProofPreview(null)
-                                  setValidationError(null)
-                                  setVerificationDetails(null)
-                                }}
-                                className="text-red-500 hover:text-red-700 ml-2"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ) : (
-                            <label className="cursor-pointer block">
-                              <div className="flex flex-col items-center gap-2">
-                                <div className="p-3 bg-amber-50 rounded-full text-[#EAA823]">
-                                  <Upload className="w-6 h-6" />
-                                </div>
-                                <span className="text-[#0A2E1D] font-bold text-xs">Tap to upload receipt</span>
-                                <span className="text-[10px] text-gray-400">PDF, PNG, or JPG (max 10MB)</span>
-                              </div>
-                              <input
-                                type="file"
-                                className="hidden"
-                                accept=".pdf,.jpg,.jpeg,.png"
-                                onChange={handleFileUpload}
-                              />
-                            </label>
-                          )}
-                        </div>
-
-                        {/* Validation Error Alert */}
-                        {validationError && (
-                          <div className="mt-3 p-3.5 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-start gap-2 animate-in fade-in">
-                            <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                            <div className="space-y-0.5">
-                              <span className="font-bold block">Receipt Verification Failed</span>
-                              <p className="text-[11px] leading-relaxed">{validationError}</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Verified Success Confirmation */}
-                        {verificationDetails?.verified && (
-                          <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 animate-in fade-in">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                            <div>
-                              <span className="font-bold">Receipt Authenticated</span>
-                              {verificationDetails.reference && (
-                                <span className="text-[11px] text-emerald-700 block font-mono">
-                                  Ref: {verificationDetails.reference}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                        <span className="font-black text-base text-white">
+                          ₦{finalOrderTotal.toLocaleString()}
+                        </span>
                       </div>
                     </div>
-                  )}
-                </div>
 
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={() => setStep(1)}
-                    disabled={isScanning || loading}
-                    className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-[#0A2E1D]"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    Back to Information
-                  </button>
+                    <div className="space-y-3">
+                      <label className="block text-xs font-bold text-gray-700 uppercase">
+                        Upload Transfer Receipt / Proof of Payment *
+                      </label>
 
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={loading || isScanning}
-                    className="w-full sm:w-auto bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black text-sm px-8 py-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {isScanning ? (
-                      <>
-                        <ScanLine className="w-4 h-4 animate-pulse text-[#EAA823]" />
-                        <span>Scanning receipt for originality...</span>
-                      </>
-                    ) : loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Processing Order...</span>
-                      </>
-                    ) : (
-                      `Complete Order - ₦${finalOrderTotal.toLocaleString()}`
-                    )}
-                  </Button>
-                </div>
+                      <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center bg-[#FDFBF7] hover:border-[#0A2E1D] transition-all relative">
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={handleFileUpload}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
+
+                        {proofPreview ? (
+                          <div className="relative inline-block max-w-xs mx-auto">
+                            <img
+                              src={proofPreview}
+                              alt="Receipt Preview"
+                              className="max-h-44 rounded-xl object-contain mx-auto shadow-md"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setProofFile(null)
+                                setProofPreview(null)
+                              }}
+                              className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 shadow-md hover:bg-red-700"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : proofFile ? (
+                          <div className="flex items-center justify-center gap-2 text-sm font-bold text-[#0A2E1D]">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                            <span>{proofFile.name}</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <Upload className="w-8 h-8 text-gray-400 mx-auto" />
+
+                            <p className="text-xs font-bold text-gray-700">
+                              Click to select or drop receipt image
+                            </p>
+
+                            <p className="text-[11px] text-gray-400">
+                              Supports PNG, JPG, or PDF (Max 10MB)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {validationError && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+
+                          <span>
+                            {validationError}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="text-xs font-bold text-gray-500 hover:text-[#0A2E1D] flex items-center gap-1"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        Edit Address & Details
+                      </button>
+
+                      <Button
+                        type="submit"
+                        disabled={
+                          loading ||
+                          isScanning ||
+                          !proofFile
+                        }
+                        className="w-full sm:w-auto bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-extrabold px-8 py-6 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                      >
+                        {isScanning ? (
+                          <>
+                            <ScanLine className="w-4 h-4 animate-spin" />
+                            Verifying Receipt...
+                          </>
+                        ) : loading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Processing Order...
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck className="w-4 h-4" />
+                            Complete & Pay ₦
+                            {finalOrderTotal.toLocaleString()}
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </div>
             )}
           </div>
 
-          <div className="lg:col-span-5">
-            <div className="bg-white border border-gray-200/80 rounded-3xl p-6 shadow-sm sticky top-20 space-y-6">
-              <h3 className="text-lg font-black text-[#0A2E1D] pb-3 border-b border-gray-100">
-                Order Summary
-              </h3>
+          {/* Right Column: Order Summary */}
+          <div className="lg:col-span-5 bg-white rounded-3xl p-6 border border-gray-100 shadow-sm sticky top-20 space-y-6">
+            <h2 className="text-lg font-black text-[#0A2E1D] pb-3 border-b border-gray-100 flex items-center justify-between">
+              <span>Order Summary</span>
 
-              <div className="space-y-3.5 mb-6 max-h-80 overflow-y-auto pr-1">
-                {items.map((item) => {
-                  const targetKey = String(item.id || item.product_id || '')
-                  const unitPrice = item.price ?? item.unit_price ?? item.final_price ?? 0
-                  const options = item.selected_options || {}
+              <span className="text-xs font-bold bg-[#0A2E1D]/10 text-[#0A2E1D] px-2.5 py-1 rounded-full">
+                {items.length}{' '}
+                {items.length === 1 ? 'item' : 'items'}
+              </span>
+            </h2>
 
-                  return (
-                    <div key={targetKey} className="flex gap-3.5 items-center pb-3 border-b border-gray-100">
-                      <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-100">
-                        {item.imageUrl ? (
-                          <Image
-                            src={item.imageUrl}
-                            alt={item.name ?? item.product_name ?? 'Product'}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-gray-400">
-                            FOOD
-                          </div>
-                        )}
-                        <span className="absolute top-0 right-0 bg-[#0A2E1D] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl">
-                          {item.quantity}
-                        </span>
-                      </div>
+            <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
+              {items.map((item, idx) => {
+                // FIXED: Direct base price reference to avoid duplicate multiplier error
+                const itemPrice = Number(
+                  item.price ??
+                  item.unit_price ??
+                  item.final_price ??
+                  0
+                )
 
-                      <div className="flex-1 min-w-0">
-                        <p className="font-extrabold text-[#0A2E1D] text-xs truncate">
-                          {item.name ?? item.product_name}
-                        </p>
-                        {Object.keys(options).length > 0 && (
-                          <p className="text-[10px] text-gray-400 truncate mt-0.5">
-                            {Object.values(options).join(' • ')}
-                          </p>
-                        )}
-                        <p className="text-[11px] font-bold text-[#EAA823] mt-0.5">
-                          ₦{(unitPrice * item.quantity).toLocaleString()}
-                        </p>
-                      </div>
+                const quantity =
+                  Number(item.quantity) > 0
+                    ? Number(item.quantity)
+                    : 1
+
+                const isPromoAddon =
+                  (item.name ||
+                    item.product_name ||
+                    '').startsWith('[Add-on]')
+
+                const cleanName = isPromoAddon
+                  ? (
+                      item.name ||
+                      item.product_name ||
+                      ''
+                    )
+                      .replace('[Add-on]', '')
+                      .trim()
+                  : (
+                      item.name ||
+                      item.product_name
+                    )
+
+                const itemLineTotal =
+                  itemPrice * quantity
+
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-3 pb-3 border-b border-gray-50 last:border-0 last:pb-0"
+                  >
+                    <div className="w-14 h-14 relative rounded-xl overflow-hidden bg-gray-100 shrink-0 border border-gray-100">
+                      {item.imageUrl ? (
+                        <Image
+                          src={item.imageUrl}
+                          alt={cleanName || 'Product'}
+                          fill
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-300">
+                          <ShoppingBag className="w-5 h-5" />
+                        </div>
+                      )}
                     </div>
-                  )
-                })}
+
+                    <div className="flex-1 min-w-0">
+                      {isPromoAddon && (
+                        <span className="text-[8px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider inline-block mb-1">
+                          Package Add-on
+                        </span>
+                      )}
+
+                      <p className="text-xs font-bold text-[#0A2E1D] truncate">
+                        {cleanName}
+                      </p>
+
+                      <p className="text-[11px] text-gray-500">
+                        Qty: {quantity}
+                      </p>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <p
+                        className={`text-xs font-black ${
+                          itemLineTotal === 0
+                            ? 'text-emerald-500'
+                            : 'text-[#0A2E1D]'
+                        }`}
+                      >
+                        {itemLineTotal === 0
+                          ? 'FREE'
+                          : `₦${itemLineTotal.toLocaleString()}`}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="space-y-2.5 pt-4 border-t border-gray-100 text-xs">
+              <div className="flex justify-between text-gray-600">
+                <span>Subtotal</span>
+
+                <span className="font-bold text-[#0A2E1D]">
+                  ₦{rawSubtotal.toLocaleString()}
+                </span>
               </div>
 
-              <div className="space-y-3 pt-2 text-xs sm:text-sm border-t border-gray-100">
-                <div className="flex justify-between text-gray-500">
-                  <span>Subtotal</span>
-                  <span className="font-bold text-[#0A2E1D]">₦{total.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-gray-500 items-center">
-                  <span>Delivery Fee</span>
-                  <span className="font-bold text-[#0A2E1D]">₦{deliveryFee.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center pt-3 border-t border-gray-100 text-base">
-                  <span className="font-black text-[#0A2E1D]">Total Payable</span>
-                  <span className="font-black text-2xl text-[#0A2E1D]">
-                    ₦{finalOrderTotal.toLocaleString()}
+              {appliedVoucher && (
+                <div className="flex justify-between text-emerald-700 font-semibold bg-emerald-50 p-2 rounded-lg">
+                  <span>
+                    Voucher ({appliedVoucher} - {discountPercent}%)
+                  </span>
+
+                  <span>
+                    -₦{discountAmount.toLocaleString()}
                   </span>
                 </div>
+              )}
+
+              <div className="flex justify-between text-gray-600">
+                <span>Fulfillment Method</span>
+
+                <span className="font-bold uppercase text-[#0A2E1D]">
+                  {fulfillmentMethod}
+                </span>
+              </div>
+
+              <div className="flex justify-between text-gray-600">
+                <span>Delivery Fee</span>
+
+                <span className="font-bold text-[#0A2E1D]">
+                  {fulfillmentMethod === 'pickup' ? (
+                    <span className="text-emerald-700 font-bold">
+                      FREE
+                    </span>
+                  ) : (
+                    `₦${activeDeliveryFee.toLocaleString()}`
+                  )}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center text-sm font-black text-[#0A2E1D] pt-3 border-t border-gray-200">
+                <span>Total Due</span>
+
+                <span className="text-xl text-[#0A2E1D]">
+                  ₦{finalOrderTotal.toLocaleString()}
+                </span>
               </div>
             </div>
-          </div>
 
+            <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-100 flex items-start gap-2.5 text-[11px] text-amber-900 leading-relaxed">
+              <ShieldCheck className="w-4 h-4 text-[#EAA823] shrink-0 mt-0.5" />
+
+              <span>
+                All orders are prepared fresh. You will receive real-time dispatch updates via SMS and WhatsApp once payment is verified.
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
