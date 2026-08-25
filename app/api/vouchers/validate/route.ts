@@ -30,15 +30,19 @@ export async function POST(req: Request) {
       .maybeSingle()
 
     if (claim) {
-      if (claim.status === 'redeemed') {
-        return NextResponse.json({ valid: false, message: 'This unique voucher has already been redeemed.' })
+      // Check if voucher has already been spent/redeemed
+      if (claim.status === 'redeemed' || claim.status === 'used') {
+        return NextResponse.json({ 
+          valid: false, 
+          message: 'This voucher has already been redeemed and cannot be used again.' 
+        })
       }
 
       return NextResponse.json({
         valid: true,
         discountPercentage: claim.discount_percentage || 15,
         code: claim.promo_code,
-        message: `Voucher applied: ${claim.discount_percentage}% discount granted!`
+        message: `Voucher applied: ${claim.discount_percentage || 15}% discount granted!`
       })
     }
 
@@ -51,7 +55,7 @@ export async function POST(req: Request) {
       .maybeSingle()
 
     if (event) {
-      const discountPercentage = parseFloat(event.discount_percentage?.replace(/[^0-9.]/g, '') || '15') || 15
+      const discountPercentage = parseFloat(String(event.discount_percentage)?.replace(/[^0-9.]/g, '') || '15') || 15
       return NextResponse.json({
         valid: true,
         discountPercentage,

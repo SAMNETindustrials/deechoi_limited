@@ -98,10 +98,12 @@ export default function CartPage() {
       setValidatingVoucher(true)
       setVoucherMessage(null)
 
+      const customerEmail = localStorage.getItem('deechoi_customer_email') || ''
+
       const res = await fetch('/api/vouchers/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: targetCode }),
+        body: JSON.stringify({ code: targetCode, email: customerEmail }),
       })
 
       const data = await res.json()
@@ -119,9 +121,10 @@ export default function CartPage() {
         setDiscountPercent(0)
         setAppliedCode(null)
         setVoucherMessage({ 
-          text: data.message || 'Invalid or expired voucher code.', 
+          text: data.message || 'Invalid, expired, or already used voucher code.', 
           isSuccess: false 
         })
+        localStorage.removeItem('active_checkout_voucher')
       }
     } catch (err: any) {
       setVoucherMessage({ text: 'Could not validate voucher. Please try again.', isSuccess: false })
@@ -257,7 +260,6 @@ export default function CartPage() {
                 const qty = Number(item.quantity) || 1
                 const options = item.selected_options
 
-                // Campaign product detection
                 const isPromoAddon = rawName.startsWith('[Add-on]')
                 const isCampaignItem = isPromoAddon || 
                                        targetKey.startsWith('item-') || 
@@ -313,7 +315,6 @@ export default function CartPage() {
                         {isFreeAddon ? 'FREE GIFT' : `₦${unitPrice.toLocaleString()} each`}
                       </p>
 
-                      {/* Display Included Options & Configurations */}
                       {Array.isArray(options) && options.length > 0 ? (
                         <div className="mt-2 text-[11px] bg-white/60 p-2.5 rounded-xl border border-gray-100 space-y-1 text-left">
                           {options.map((opt, i) => (
@@ -332,8 +333,6 @@ export default function CartPage() {
                     </div>
 
                     <div className="flex sm:flex-col items-center justify-between sm:items-end gap-3 pt-2 sm:pt-0 border-t sm:border-0 border-gray-100/50">
-                      
-                      {/* Disable plus/minus for Campaign Packages to preserve bundle integrity */}
                       <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-full p-1 shadow-xs">
                         {isCampaignItem ? (
                           <span className="px-4 py-1 text-center font-bold text-xs text-gray-500 select-none bg-gray-50 rounded-full w-full">
