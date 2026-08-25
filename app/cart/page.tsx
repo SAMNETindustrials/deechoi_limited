@@ -25,6 +25,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 
+interface Option {
+  groupName: string
+  optionName: string
+  priceModifier?: number
+}
+
 export default function CartPage() {
   const { items, removeItem, updateQuantity, clearCart, total, itemCount } = useCart()
   const router = useRouter()
@@ -32,18 +38,6 @@ export default function CartPage() {
 
   const [isMounted, setIsMounted] = useState(false)
   const [isStoreLive, setIsStoreLive] = useState(true)
-
-  useEffect(() => {
-    setIsMounted(true)
-
-    const storeStatus = localStorage.getItem('deechoi_storefront_active')
-    if (storeStatus !== null) {
-      setIsStoreLive(storeStatus === 'true')
-    }
-
-    checkAccountStatus()
-    checkStoredVoucher()
-  }, [])
 
   // Voucher State
   const [voucherCode, setVoucherCode] = useState('')
@@ -53,6 +47,20 @@ export default function CartPage() {
   const [voucherMessage, setVoucherMessage] = useState<{ text: string; isSuccess: boolean } | null>(null)
   const [hasAccount, setHasAccount] = useState(false)
 
+  useEffect(() => {
+    setIsMounted(true)
+
+    if (typeof window !== 'undefined') {
+      const storeStatus = localStorage.getItem('deechoi_storefront_active')
+      if (storeStatus !== null) {
+        setIsStoreLive(storeStatus === 'true')
+      }
+    }
+
+    checkAccountStatus()
+    checkStoredVoucher()
+  }, [])
+
   const checkAccountStatus = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -61,16 +69,18 @@ export default function CartPage() {
         return
       }
 
-      const storedEmail = localStorage.getItem('deechoi_customer_email')
-      if (storedEmail) {
-        const { data } = await supabase
-          .from('customer_accounts')
-          .select('id')
-          .ilike('customer_email', storedEmail)
-          .limit(1)
-          .maybeSingle()
+      if (typeof window !== 'undefined') {
+        const storedEmail = localStorage.getItem('deechoi_customer_email')
+        if (storedEmail) {
+          const { data } = await supabase
+            .from('customer_accounts')
+            .select('id')
+            .ilike('customer_email', storedEmail)
+            .limit(1)
+            .maybeSingle()
 
-        if (data) setHasAccount(true)
+          if (data) setHasAccount(true)
+        }
       }
     } catch (e) {
       console.warn('Account check note:', e)
@@ -78,6 +88,8 @@ export default function CartPage() {
   }
 
   const checkStoredVoucher = async () => {
+    if (typeof window === 'undefined') return
+
     const activeVoucher = localStorage.getItem('active_checkout_voucher')
     if (activeVoucher) {
       setVoucherCode(activeVoucher)
@@ -85,7 +97,6 @@ export default function CartPage() {
       return
     }
 
-    // Automatically check database for any unspent code tied to stored email or session
     const customerEmail = localStorage.getItem('deechoi_customer_email') || ''
     if (customerEmail) {
       try {
@@ -133,7 +144,7 @@ export default function CartPage() {
       if (!isSilentAutoApply) setValidatingVoucher(true)
       if (!isSilentAutoApply) setVoucherMessage(null)
 
-      const customerEmail = localStorage.getItem('deechoi_customer_email') || ''
+      const customerEmail = typeof window !== 'undefined' ? localStorage.getItem('deechoi_customer_email') || '' : ''
 
       const res = await fetch('/api/vouchers/validate', {
         method: 'POST',
@@ -153,7 +164,10 @@ export default function CartPage() {
             isSuccess: true 
           })
         }
-        localStorage.setItem('active_checkout_voucher', targetCode)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('active_checkout_voucher', targetCode)
+          localStorage.setItem('active_discount_percent', String(pct))
+        }
       } else {
         setDiscountPercent(0)
         setAppliedCode(null)
@@ -163,7 +177,10 @@ export default function CartPage() {
             isSuccess: false 
           })
         }
-        localStorage.removeItem('active_checkout_voucher')
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('active_checkout_voucher')
+          localStorage.removeItem('active_discount_percent')
+        }
       }
     } catch (err: any) {
       if (!isSilentAutoApply) {
@@ -179,16 +196,19 @@ export default function CartPage() {
     setAppliedCode(null)
     setDiscountPercent(0)
     setVoucherMessage(null)
-    localStorage.removeItem('active_checkout_voucher')
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('active_checkout_voucher')
+      localStorage.removeItem('active_discount_percent')
+    }
   }
 
-  const rawSubtotal = Number(total) || items.reduce((acc, item) => {
+  const rawSubtotal = Number(total) || items.reduce((acc, item: any) => {
     const unitPrice = Number(item.price ?? item.unit_price ?? item.final_price ?? 0)
     const qty = Number(item.quantity) || 1
     return acc + (unitPrice * qty)
   }, 0)
 
-  const safeDiscountPercent = Number(discountPercent) || 0
+  const safeDiscountPercent = Number(discountPercent) || (typeof window !== 'undefined' ? Number(localStorage.getItem('active_discount_percent')) || 0 : 0)
   const discountAmount = appliedCode ? (rawSubtotal * (safeDiscountPercent / 100)) : 0
   const finalPayable = Math.max(0, rawSubtotal - discountAmount)
 
@@ -197,7 +217,7 @@ export default function CartPage() {
       alert('Your cart is empty')
       return
     }
-    if (appliedCode) {
+    if (appliedCode && typeof window !== 'undefined') {
       localStorage.setItem('active_checkout_voucher', appliedCode)
       localStorage.setItem('active_discount_percent', String(safeDiscountPercent))
     }
@@ -293,7 +313,7 @@ export default function CartPage() {
                 </div>
               )}
 
-              {items.map((item) => {
+              {items.map((item: any) => {
                 const targetKey: string = String(item.id || item.product_id || '')
                 const rawName = item.name ?? item.product_name ?? 'Item'
                 const unitPrice = Number(item.price ?? item.unit_price ?? item.final_price ?? 0)
@@ -304,7 +324,7 @@ export default function CartPage() {
                 const isCampaignItem = isPromoAddon || 
                                        targetKey.startsWith('item-') || 
                                        targetKey.startsWith('addon-') ||
-                                       (Array.isArray(options) && options.some(opt => opt.groupName === 'Package Add-on' || opt.groupName === 'Included With'))
+                                       (Array.isArray(options) && options.some((opt: Option) => opt.groupName === 'Package Add-on' || opt.groupName === 'Included With'))
 
                 const cleanName = isPromoAddon ? rawName.replace('[Add-on]', '').trim() : rawName
                 const isFreeAddon = isPromoAddon && unitPrice === 0
@@ -355,9 +375,10 @@ export default function CartPage() {
                         {isFreeAddon ? 'FREE GIFT' : `₦${unitPrice.toLocaleString()} each`}
                       </p>
 
+                      {/* Render customized cut/part options and specs */}
                       {Array.isArray(options) && options.length > 0 ? (
                         <div className="mt-2 text-[11px] bg-white/60 p-2.5 rounded-xl border border-gray-100 space-y-1 text-left">
-                          {options.map((opt, i) => (
+                          {options.map((opt: Option, i: number) => (
                             <div key={i} className="flex justify-between sm:justify-start gap-1.5 text-gray-700">
                               <span className="font-bold text-[#0A2E1D]">{opt.groupName}:</span>
                               <span>{opt.optionName}</span>

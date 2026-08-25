@@ -59,6 +59,7 @@ interface Option {
   unit_price?: number
   min_multiplier_count?: number
   has_cuts_selection?: boolean
+  cut_selection_title?: string
   allowed_cuts?: string[]
   min_cuts_selection?: number
   max_cuts_selection?: number
@@ -136,6 +137,7 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
           is_available: true,
           description: 'Full fresh fish with native Ehuru, Uda & Scent leaf herbs',
           has_cuts_selection: true,
+          cut_selection_title: 'Select Preferred Fish Cut / Parts',
           allowed_cuts: ['Full Fish (All Parts)', 'Extra Head + Middle', 'Middle Cuts Only', 'Tail + Middle'],
           min_cuts_selection: 1,
           max_cuts_selection: 1
@@ -146,6 +148,7 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
           is_available: true,
           description: 'Pick your preferred cuts from fresh daily catch',
           has_cuts_selection: true,
+          cut_selection_title: 'Select Preferred Fish Cut / Parts',
           allowed_cuts: ['Head Piece', 'Middle Cut', 'Tail Piece'],
           min_cuts_selection: 1,
           max_cuts_selection: 2
@@ -210,6 +213,7 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
           is_available: true,
           description: 'Crispy fried large turkey cut',
           has_cuts_selection: true,
+          cut_selection_title: 'Select Preferred Turkey Cut',
           allowed_cuts: ['Turkey Wing', 'Turkey Lap / Drumstick', 'Turkey Breast'],
           min_cuts_selection: 1,
           max_cuts_selection: 1
@@ -227,87 +231,6 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
         { name: 'Extra Spiced Pepper', price_modifier: 0, is_available: true },
         { name: 'Mild', price_modifier: 0, is_available: true },
       ],
-    }
-  ],
-  'Rice Preparations (Jollof & Fried)': [
-    {
-      name: 'Rice Preparation Style',
-      is_required: true,
-      type: 'radio',
-      price_mode: 'standalone',
-      options: [
-        { name: 'Smokey Jollof Rice', price_modifier: 3000, is_available: true, description: 'Authentic firewood-style reduction' },
-        { name: 'Signature Fried Rice', price_modifier: 3000, is_available: true, description: 'Wok-tossed sweet corn & garden veggies' },
-        { name: 'Mixed Fried & Jollof Rice', price_modifier: 3500, is_available: true, description: 'Split combo platter' },
-      ],
-    },
-    {
-      name: 'Protein Add-on',
-      is_required: false,
-      type: 'radio',
-      price_mode: 'addon',
-      options: [
-        {
-          name: 'Fried Chicken Cut',
-          price_modifier: 2000,
-          is_available: true,
-          has_cuts_selection: true,
-          allowed_cuts: ['Chicken Lap / Drumstick', 'Chicken Breast', 'Chicken Wings'],
-          min_cuts_selection: 1,
-          max_cuts_selection: 1
-        },
-        {
-          name: 'Grilled Fish Cut',
-          price_modifier: 2500,
-          is_available: true,
-          has_cuts_selection: true,
-          allowed_cuts: ['Fish Head', 'Middle Cut', 'Fish Tail'],
-          min_cuts_selection: 1,
-          max_cuts_selection: 1
-        },
-        { name: 'Full Turkey Cut', price_modifier: 6000, is_available: true },
-        { name: 'Assorted Meat', price_modifier: 1500, is_available: true },
-      ],
-    },
-    {
-      name: 'Side Dishes',
-      is_required: false,
-      type: 'checkbox',
-      price_mode: 'addon',
-      options: [
-        { name: 'Fried Plantain (Dodo)', price_modifier: 800, is_available: true },
-        { name: 'Coleslaw Salad', price_modifier: 700, is_available: true },
-        { name: 'Moi-Moi', price_modifier: 1000, is_available: true },
-      ]
-    }
-  ],
-  'Parfait & Cakeloaves': [
-    {
-      name: 'Parfait Size & Variation',
-      is_required: true,
-      type: 'radio',
-      price_mode: 'standalone',
-      options: [
-        { name: 'Classic Parfait (350ml)', price_modifier: 5500, is_available: true, description: 'Yogurt, apples, grapes, granola, coconut flakes & cashew' },
-        { name: 'Classic Parfait (1 Liter)', price_modifier: 13000, is_available: true, description: '1L Family Tub with full fruit & nut layers' },
-        { name: 'Tropical Parfait (350ml)', price_modifier: 6500, is_available: true, description: 'Greek yogurt, apple/grape slices, roasted coconut, cashew & almonds' },
-        { name: 'Tropical Parfait (1 Liter)', price_modifier: 14000, is_available: true, description: '1L Tropical Greek Yogurt Tub' },
-        { name: 'Nutty Essence (350ml)', price_modifier: 6500, is_available: true, description: 'Granola, coconut flakes, cashews & almonds with minimal fruit' },
-        { name: 'Cake Parfait (350ml)', price_modifier: 6000, is_available: true, description: 'Vanilla, chocolate & red velvet sponge layers with caramel' },
-        { name: 'Cake Parfait (1 Liter)', price_modifier: 14000, is_available: true, description: '1L High-Profile Cake Parfait Bowl' },
-      ],
-    },
-    {
-      name: 'Mini Cakeloaf Add-on',
-      is_required: false,
-      type: 'checkbox',
-      price_mode: 'addon',
-      options: [
-        { name: 'Chocolate Cakeloaf', price_modifier: 4000, is_available: true },
-        { name: 'Vanilla Cakeloaf', price_modifier: 4300, is_available: true },
-        { name: 'Red Velvet Cakeloaf', price_modifier: 4500, is_available: true },
-        { name: '2 Mixed Flavours Cakeloaf', price_modifier: 4600, is_available: true },
-      ]
     }
   ]
 }
@@ -438,6 +361,7 @@ export default function StoreInventoryPage() {
       options: (g.options || []).map(opt => ({
         ...opt,
         min_multiplier_count: opt.min_multiplier_count ?? 1,
+        cut_selection_title: opt.cut_selection_title || 'Select Preferred Cut / Parts',
         allowed_cuts: opt.allowed_cuts || (opt.has_cuts_selection ? DEFAULT_FISH_CUTS : []),
         min_cuts_selection: opt.min_cuts_selection ?? (opt.has_cuts_selection ? 1 : 0),
         max_cuts_selection: opt.max_cuts_selection || 1,
@@ -639,6 +563,7 @@ export default function StoreInventoryPage() {
       unit_price: 0,
       min_multiplier_count: 1,
       has_cuts_selection: false,
+      cut_selection_title: 'Select Preferred Cut / Parts',
       allowed_cuts: [],
       min_cuts_selection: 1,
       max_cuts_selection: 1
@@ -1438,7 +1363,22 @@ export default function StoreInventoryPage() {
                                 )}
 
                                 {option.has_cuts_selection && (
-                                  <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-3 space-y-3 mt-2">
+                                  <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-3.5 space-y-3 mt-2">
+                                    
+                                    {/* CUSTOM DISPLAY TITLE INPUT */}
+                                    <div>
+                                      <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">
+                                        Storefront Prompt / Heading Text (Customer UI)
+                                      </label>
+                                      <Input
+                                        type="text"
+                                        value={option.cut_selection_title || 'Select Preferred Cut / Parts'}
+                                        onChange={(e) => updateOption(groupIdx, optIdx, 'cut_selection_title', e.target.value)}
+                                        placeholder="e.g. Select Preferred Fish Cut / Parts"
+                                        className="bg-white text-xs font-bold rounded-lg border-emerald-300"
+                                      />
+                                    </div>
+
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                       <div>
                                         <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">

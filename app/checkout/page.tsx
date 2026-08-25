@@ -1105,11 +1105,11 @@ export default function CheckoutPage() {
                         </p>
 
                         <p className="text-xs text-gray-600 leading-relaxed">
-                          Woji Road, Port Harcourt, Rivers State.
+                          Nvuigwe Market, Woji, Port Harcourt, Rivers State.
                           <br />
 
                           <span className="text-emerald-700 font-semibold">
-                            Free Pickup • We'll notify you via WhatsApp/Email when ready.
+                            Free Pickup • We'll notify you via your Store front chat (my-messages) | or via Email when ready.
                           </span>
                         </p>
                       </div>

@@ -17,16 +17,14 @@ import {
   Minus,
   Loader2,
   Utensils,
-  ShieldAlert,
   Sparkles,
-  Truck,
-  ShieldCheck,
-  Zap,
   Flame,
   Fish,
   Check,
   AlertCircle,
   XCircle,
+  ShieldAlert,
+  Info
 } from 'lucide-react'
 
 interface Option {
@@ -41,7 +39,9 @@ interface Option {
   min_quantity?: number
   min_order_quantity?: number
   minimum_order_quantity?: number
+  min_multiplier_count?: number
   has_cuts_selection?: boolean
+  cut_selection_title?: string
   allowed_cuts?: string[]
   min_cuts_selection?: number
   max_cuts_selection?: number
@@ -99,7 +99,6 @@ export default function ProductDetailPage({
     return `${formattedHours}:${m} ${ampm}`
   }
 
-  // 1. Listen to Global Pre-Order Status via Realtime & Storage
   useEffect(() => {
     setMounted(true)
 
@@ -121,28 +120,12 @@ export default function ProductDetailPage({
     window.addEventListener('storage', checkStoreStatus)
     window.addEventListener('deechoi_store_status_change', checkStoreStatus)
 
-    const settingsChannel = supabase
-      .channel('public:store_settings_detail')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'store_settings', filter: "key=eq.storefront_active" },
-        (payload) => {
-          if (payload.new && payload.new.value) {
-            setIsStoreLive(payload.new.value === 'true')
-            localStorage.setItem('deechoi_storefront_active', payload.new.value)
-          }
-        }
-      )
-      .subscribe()
-
     return () => {
       window.removeEventListener('storage', checkStoreStatus)
       window.removeEventListener('deechoi_store_status_change', checkStoreStatus)
-      supabase.removeChannel(settingsChannel)
     }
   }, [supabase])
 
-  // 2. Track Time-Bound Menu Constraints
   useEffect(() => {
     if (product?.is_time_bound && product?.available_from && product?.available_to) {
       const checkTime = () => {
@@ -178,21 +161,13 @@ export default function ProductDetailPage({
     return null
   }
 
-  const getOptionMultiplier = (option: Option | null | undefined): number => {
-    if (!option) return 0
-    const multiplierFields = ['multiplier', 'minimum_quantity', 'min_quantity', 'min_order_quantity', 'minimum_order_quantity']
-    for (const field of multiplierFields) {
-      if (Object.prototype.hasOwnProperty.call(option, field)) {
-        const value = getPositiveNumber((option as any)[field])
-        if (value !== null) return value
-      }
-    }
-    return 0
-  }
-
   const getCounterMinimum = (option: Option | null | undefined): number => {
-    const multiplier = getOptionMultiplier(option)
-    return Math.max(1, multiplier + 1)
+    if (!option) return 1
+    const minCount = getPositiveNumber(option.min_multiplier_count)
+    if (minCount !== null && minCount > 0) {
+      return minCount
+    }
+    return 1
   }
 
   const getMinimumOrderQuantity = (productData: any): number => {
@@ -249,7 +224,7 @@ export default function ProductDetailPage({
                 counters[defaultOpt.name] = getCounterMinimum(defaultOpt)
               }
 
-              if (defaultOpt.has_cuts_selection === true && Array.isArray(defaultOpt.allowed_cuts) && defaultOpt.allowed_cuts.length > 0) {
+              if (Boolean(defaultOpt.has_cuts_selection) && Array.isArray(defaultOpt.allowed_cuts) && defaultOpt.allowed_cuts.length > 0) {
                 const minCount = defaultOpt.min_cuts_selection ?? 1
                 cuts[defaultOpt.name] = defaultOpt.allowed_cuts.slice(0, Math.max(1, minCount))
               }
@@ -312,7 +287,7 @@ export default function ProductDetailPage({
       })
     }
 
-    if (opt.has_cuts_selection === true && opt.allowed_cuts && opt.allowed_cuts.length > 0) {
+    if (Boolean(opt.has_cuts_selection) && Array.isArray(opt.allowed_cuts) && opt.allowed_cuts.length > 0) {
       if (!selectedCuts[opt.name] || selectedCuts[opt.name].length === 0) {
         const minCount = opt.min_cuts_selection ?? 1
         setSelectedCuts({
@@ -321,6 +296,14 @@ export default function ProductDetailPage({
         })
       }
     }
+  }
+
+  const toggleCheckboxOption = (optName: string) => {
+    setValidationError(null)
+    setSelectedCheckboxOptions({
+      ...selectedCheckboxOptions,
+      [optName]: !selectedCheckboxOptions[optName]
+    })
   }
 
   const toggleCut = (optionName: string, cutName: string, maxSelect: number = 1) => {
@@ -452,24 +435,6 @@ export default function ProductDetailPage({
 
     if (Array.isArray(product.customization_options)) {
       for (const group of product.customization_options) {
-        if (!group.type || group.type === 'radio') {
-          const opt = selectedRadioOptions[group.name]
-          if (opt && opt.has_counter) {
-            const minimum = getCounterMinimum(opt)
-            const current = unitCounters[opt.name] || 1
-
-            if (current < minimum) {
-              setUnitCounters({ ...unitCounters, [opt.name]: minimum })
-              setValidationError(`${opt.name} must have at least ${minimum} units.`)
-              return
-            }
-          }
-        }
-      }
-    }
-
-    if (Array.isArray(product.customization_options)) {
-      for (const group of product.customization_options) {
         if (group.is_required && (!group.type || group.type === 'radio')) {
           const opt = selectedRadioOptions[group.name]
           if (!opt) {
@@ -480,7 +445,7 @@ export default function ProductDetailPage({
 
         if (!group.type || group.type === 'radio') {
           const opt = selectedRadioOptions[group.name]
-          if (opt && opt.has_cuts_selection === true) {
+          if (opt && Boolean(opt.has_cuts_selection)) {
             const minAllowed = opt.min_cuts_selection ?? 1
             const currentChosen = selectedCuts[opt.name] || []
 
@@ -510,7 +475,7 @@ export default function ProductDetailPage({
               optDisplayName = `${opt.name} (${count} units)`
             }
 
-            if (opt.has_cuts_selection === true && selectedCuts[opt.name] && selectedCuts[opt.name].length > 0) {
+            if (Boolean(opt.has_cuts_selection) && selectedCuts[opt.name] && selectedCuts[opt.name].length > 0) {
               optDisplayName += ` [Parts: ${selectedCuts[opt.name].join(', ')}]`
             }
 
@@ -553,7 +518,7 @@ export default function ProductDetailPage({
       product_name: product.name,
       unit_price: calculatedUnitPrice,
       final_price: calculatedUnitPrice,
-      prep_time: undefined,
+      prep_time: product.preparation_time_minutes || undefined,
       cooking_time: undefined,
       fulfillment_time: undefined,
     })
@@ -596,6 +561,11 @@ export default function ProductDetailPage({
 
   const minimumQuantity = getMinimumOrderQuantity(product)
   const minimumQuantityEnabled = isMinimumQuantityEnabled(product)
+
+  const hasIngredients = Array.isArray(product.ingredients) && product.ingredients.length > 0
+  const hasAllergens = Array.isArray(product.allergens) && product.allergens.length > 0
+  const hasPrepTime = Boolean(product.preparation_time_minutes)
+  const hasStorage = Boolean(product.storage_instructions)
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans pb-28">
@@ -680,10 +650,6 @@ export default function ProductDetailPage({
 
             <div className="flex items-center justify-between px-2 py-1.5 text-[11px] text-gray-500 font-semibold">
               <span className="flex items-center gap-1">
-                <Zap className="w-3.5 h-3.5 text-[#EAA823]" />
-                Live Express Kitchen
-              </span>
-              <span className="flex items-center gap-1">
                 <Flame className="w-3.5 h-3.5 text-amber-500" />
                 Cooked Fresh to Order
               </span>
@@ -734,6 +700,75 @@ export default function ProductDetailPage({
               )}
             </div>
 
+            {/* RECIPE SPECS, ALLERGENS & STORAGE INFO CARD */}
+            {(hasPrepTime || hasIngredients || hasAllergens || hasStorage) && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5 shadow-xs space-y-3.5">
+                <h3 className="text-xs font-black uppercase text-[#0A2E1D] tracking-wider flex items-center gap-1.5 pb-2 border-b border-gray-100">
+                  <Info className="w-4 h-4 text-[#EAA823]" />
+                  <span>Preparation, Ingredients &amp; Storage Specs</span>
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {hasPrepTime && (
+                    <div className="flex items-center gap-2 text-gray-700 bg-gray-50 p-2.5 rounded-xl">
+                      <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                      <div>
+                        <span className="font-bold block text-[10px] uppercase text-gray-400">Prep Time</span>
+                        <span className="font-extrabold text-[#0A2E1D]">{product.preparation_time_minutes} minutes</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {product.servings && (
+                    <div className="flex items-center gap-2 text-gray-700 bg-gray-50 p-2.5 rounded-xl">
+                      <Users className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <span className="font-bold block text-[10px] uppercase text-gray-400">Serving Size</span>
+                        <span className="font-extrabold text-[#0A2E1D]">{product.servings} Person{product.servings > 1 ? 's' : ''}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {hasIngredients && (
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[10px] font-extrabold uppercase text-gray-400 block">Key Ingredients</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {product.ingredients.map((ing: string, i: number) => (
+                        <span key={i} className="bg-emerald-50 text-emerald-900 border border-emerald-200/60 px-2.5 py-0.5 rounded-lg text-[11px] font-bold">
+                          {ing}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {hasAllergens && (
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[10px] font-extrabold uppercase text-red-500 block flex items-center gap-1">
+                      <ShieldAlert className="w-3.5 h-3.5" /> Allergen Notice
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {product.allergens.map((all: string, i: number) => (
+                        <span key={i} className="bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-lg text-[11px] font-bold">
+                          {all}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {hasStorage && (
+                  <div className="space-y-1 pt-1 border-t border-gray-100 mt-2">
+                    <span className="text-[10px] font-extrabold uppercase text-gray-400 block">Storage Instructions</span>
+                    <p className="text-xs text-gray-700 font-medium italic bg-amber-50/40 p-2.5 rounded-xl border border-amber-200/50">
+                      {product.storage_instructions}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ALERTS */}
             {isTimeBlocked && (
               <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-bold flex items-start gap-2 animate-in fade-in">
@@ -755,7 +790,7 @@ export default function ProductDetailPage({
               </div>
             )}
 
-            {/* CUSTOMIZATION */}
+            {/* CUSTOMIZATION OPTIONS & PIECE CUTS */}
             {!isOutOfStock && Array.isArray(product.customization_options) && product.customization_options.length > 0 && (
               <div className="space-y-4">
                 {product.customization_options.map((group: OptionGroup, gIdx: number) => {
@@ -777,13 +812,12 @@ export default function ProductDetailPage({
                         )}
                       </div>
 
-                      {/* RADIO */}
+                      {/* RADIO / SINGLE SELECT */}
                       {(!group.type || group.type === 'radio') && (
                         <div className="space-y-3">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             {group.options.map((opt: Option) => {
                               const isSelected = selectedRadioOptions[group.name]?.name === opt.name
-                              const counterMinimum = opt.has_counter ? getCounterMinimum(opt) : 1
 
                               return (
                                 <button
@@ -819,10 +853,43 @@ export default function ProductDetailPage({
                         </div>
                       )}
 
+                      {/* CHECKBOX / MULTI-SELECT */}
+                      {group.type === 'checkbox' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {group.options.map((opt: Option) => {
+                            const isChecked = Boolean(selectedCheckboxOptions[opt.name])
+
+                            return (
+                              <button
+                                key={opt.name}
+                                type="button"
+                                onClick={() => toggleCheckboxOption(opt.name)}
+                                className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
+                                  isChecked
+                                    ? 'bg-[#0A2E1D] text-white border-[#0A2E1D] shadow-sm'
+                                    : 'bg-[#FDFBF7] text-gray-700 border-gray-200 hover:border-gray-300'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${isChecked ? 'bg-[#EAA823] border-[#EAA823] text-[#0A2E1D]' : 'border-gray-400 bg-white'}`}>
+                                    {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                  </div>
+                                  <span className="text-xs font-bold">{opt.name}</span>
+                                </div>
+                                {opt.price_modifier > 0 && (
+                                  <span className={`text-[10px] font-black ${isChecked ? 'text-[#EAA823]' : 'text-[#0A2E1D]'}`}>
+                                    +₦{opt.price_modifier.toLocaleString()}
+                                  </span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+
                       {/* COUNTER */}
                       {selectedGroupOpt?.has_counter && (() => {
                         const currentOpt = selectedGroupOpt
-                        const multiplier = getOptionMultiplier(currentOpt)
                         const counterMinimum = getCounterMinimum(currentOpt)
                         const currentCount = Math.max(counterMinimum, unitCounters[currentOpt.name] || counterMinimum)
 
@@ -833,11 +900,9 @@ export default function ProductDetailPage({
                               <span className="text-[10px] text-gray-500 block">
                                 ₦{(currentOpt.unit_price || currentOpt.price_modifier || 2000).toLocaleString()} per unit
                               </span>
-                              {multiplier > 0 && (
-                                <span className="text-[9px] text-amber-600 font-black block mt-1">
-                                  Minimum: {counterMinimum} units
-                                </span>
-                              )}
+                              <span className="text-[9px] text-amber-600 font-black block mt-1">
+                                Minimum starts at: {counterMinimum} units
+                              </span>
                             </div>
                             <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-1">
                               <button
@@ -856,6 +921,52 @@ export default function ProductDetailPage({
                               >
                                 <Plus className="w-3.5 h-3.5" />
                               </button>
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* PIECE / CUTS SELECTION */}
+                      {selectedGroupOpt && Boolean(selectedGroupOpt.has_cuts_selection) && Array.isArray(selectedGroupOpt.allowed_cuts) && selectedGroupOpt.allowed_cuts.length > 0 && (() => {
+                        const currentOpt = selectedGroupOpt
+                        const maxSelect = currentOpt.max_cuts_selection || 1
+                        const chosenCuts = selectedCuts[currentOpt.name] || []
+                        const displayCutTitle = currentOpt.cut_selection_title || 'Select Preferred Cut / Parts'
+
+                        return (
+                          <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3.5 space-y-2 mt-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                                <Fish className="w-4 h-4 text-emerald-700" />
+                                {displayCutTitle} ({maxSelect === 1 ? 'Pick 1' : `Up to ${maxSelect}`}):
+                              </span>
+                              <span className="text-[10px] bg-emerald-200/60 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
+                                {chosenCuts.length} / {maxSelect} Selected
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                              {currentOpt.allowed_cuts.map((cutName: string) => {
+                                const isCutChosen = chosenCuts.includes(cutName)
+
+                                return (
+                                  <button
+                                    key={cutName}
+                                    type="button"
+                                    onClick={() => toggleCut(currentOpt.name, cutName, maxSelect)}
+                                    className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                                      isCutChosen
+                                        ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs'
+                                        : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                                    }`}
+                                  >
+                                    <span>{cutName}</span>
+                                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isCutChosen ? 'bg-[#EAA823] border-[#EAA823] text-emerald-950' : 'border-gray-300 bg-white'}`}>
+                                      {isCutChosen && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                    </div>
+                                  </button>
+                                )
+                              })}
                             </div>
                           </div>
                         )
@@ -933,9 +1044,6 @@ export default function ProductDetailPage({
         }
         .animate-bounce-slow {
           animation: bounceSlow 2s ease-in-out infinite;
-        }
-        .animate-spin-slow {
-          animation: spin 8s linear infinite;
         }
       `}</style>
     </div>
