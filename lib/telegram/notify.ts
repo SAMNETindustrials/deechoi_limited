@@ -266,7 +266,7 @@ Time: ${timeString} (WAT)
 }
 
 /**
- * 2. Waitlist Registration Alert
+ * 2. Waitlist Registration Alert (Captures all selected dish configs and training choices)
  */
 export async function sendTelegramWaitlistNotification({
   customerName,
@@ -274,6 +274,8 @@ export async function sendTelegramWaitlistNotification({
   phone,
   promoCode,
   favoriteDish,
+  selectedItems,
+  wantsTraining,
   isReturning,
 }: {
   customerName: string
@@ -281,6 +283,8 @@ export async function sendTelegramWaitlistNotification({
   phone: string
   promoCode: string
   favoriteDish: string
+  selectedItems?: string[]
+  wantsTraining?: boolean
   isReturning: boolean
 }) {
   const safeName = escapeHtml(customerName)
@@ -288,6 +292,7 @@ export async function sendTelegramWaitlistNotification({
   const safePhone = escapeHtml(phone)
   const safeCode = escapeHtml(promoCode)
   const safeDish = escapeHtml(favoriteDish)
+  
   const timeString = new Date().toLocaleString('en-US', {
     timeZone: 'Africa/Lagos',
   })
@@ -304,8 +309,10 @@ ${title}
 📱 <b>Phone:</b> ${safePhone}
 🎟️ <b>VIP Promo Code:</b> <code>${safeCode}</code> (15% OFF)
 
-🍽️ <b>Selected Dishes / Preview:</b>
-${safeDish}
+🍽️ <b>Selected Dishes & Configurations:</b>
+<i>${safeDish}</i>
+
+🎓 <b>Academy Training Interest:</b> ${wantsTraining ? '✅ Yes (Interested in Catering & Baking Training)' : '❌ No'}
 
 ⏰ <b>Time:</b> ${timeString} (WAT)
 ━━━━━━━━━━━━━━━━━━
@@ -319,8 +326,69 @@ Email: ${email}
 Phone: ${phone}
 Promo Code: ${promoCode} (15% OFF)
 Selected Dishes: ${favoriteDish}
+Training Interest: ${wantsTraining ? 'Yes' : 'No'}
 Time: ${timeString} (WAT)
 `.trim()
 
   return sendRawTelegramMessage(htmlMessage, plainMessage)
+}
+
+/**
+ * 3. Send Customer Order Confirmation Email
+ */
+export async function sendOrderConfirmationEmail(
+  toEmail: string,
+  subject: string,
+  messageBody: string
+) {
+  try {
+    const resendApiKey = process.env.RESEND_API_KEY
+    if (!resendApiKey) {
+      console.warn('[Email Notice]: RESEND_API_KEY not configured. Email logged to console:', { toEmail, subject, messageBody })
+      return { success: true }
+    }
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${resendApiKey}`
+      },
+      body: JSON.stringify({
+        from: 'De-echoi Support <orders@deechoi.com>',
+        to: [toEmail],
+        subject: subject,
+        text: messageBody,
+      })
+    })
+
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.message || 'Failed to send email via Resend')
+    return { success: true, data }
+  } catch (err: any) {
+    console.error('[Email Dispatch Error]:', err)
+    return { success: false, error: err.message }
+  }
+}
+
+/**
+ * 4. Send Customer Message / Support Reply Email
+ */
+export async function sendCustomerMessageEmail(
+  toEmail: string,
+  subject: string,
+  messageBody: string
+) {
+  return sendOrderConfirmationEmail(toEmail, subject, messageBody)
+}
+
+/**
+ * 5. Send Email Reply to Customer (Admin Support)
+ */
+export async function sendEmailReply(
+  toEmail: string,
+  subject: string,
+  messageBody: string
+) {
+  return sendOrderConfirmationEmail(toEmail, subject, messageBody)
 }

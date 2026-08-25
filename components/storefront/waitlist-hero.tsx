@@ -255,7 +255,11 @@ export function WaitlistCountdownSection() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim()) {
+    const customerName = formData.name.trim()
+    const email = formData.email.trim().toLowerCase()
+    const phone = formData.phone.trim()
+
+    if (!customerName || !email || !phone) {
       alert('Please complete your name, email address, and phone number.')
       return
     }
@@ -267,13 +271,16 @@ export function WaitlistCountdownSection() {
 
     try {
       setSubmitting(true)
+      const personalPromo = `VIP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+
       const payload = {
-        name: formData.name.trim(),
-        email: formData.email.trim().toLowerCase(),
-        phone: formData.phone.trim(),
+        customerName,
+        email,
+        phone,
         favoriteDish: compileFavoriteDishes(),
         selectedItems,
         wantsTraining,
+        promoCode: personalPromo,
       }
 
       const res = await fetch('/api/waitlist', {
@@ -285,12 +292,15 @@ export function WaitlistCountdownSection() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to join waitlist')
 
-      const personalPromo = data.promoCode || `${formData.name.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}-VIP`
-      setGeneratedPromoCode(personalPromo)
-      setCouponCode(personalPromo)
+      const activeCode = data.promoCode || personalPromo
+      setGeneratedPromoCode(activeCode)
+      setCouponCode(activeCode)
 
       try {
-        localStorage.setItem('deechoi_vip_promo_code', personalPromo)
+        localStorage.setItem('deechoi_customer_session', JSON.stringify({ name: customerName, email, phone }))
+        localStorage.setItem('deechoi_customer_email', email)
+        localStorage.setItem('active_checkout_voucher', activeCode)
+        localStorage.setItem('deechoi_vip_promo_code', activeCode)
       } catch (err) {
         console.warn('Local storage error:', err)
       }

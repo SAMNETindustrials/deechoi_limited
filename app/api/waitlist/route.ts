@@ -15,9 +15,10 @@ function getSupabaseClient() {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { customerName, email, phone, favoriteDish, promoCode } = body
+    const { customerName, name, email, phone, favoriteDish, promoCode, selectedItems, wantsTraining } = body
 
-    if (!customerName || !email || !phone || !promoCode) {
+    const finalName = customerName || name
+    if (!finalName || !email || !phone || !promoCode) {
       return NextResponse.json(
         { error: 'Name, email, phone, and promo code are required.' },
         { status: 400 }
@@ -27,6 +28,7 @@ export async function POST(req: Request) {
     const supabase = getSupabaseClient()
     const cleanEmail = email.trim().toLowerCase()
     const cleanCode = promoCode.trim().toUpperCase()
+    const cleanFavoriteDish = favoriteDish || 'General Menu'
 
     // 1. Check if already registered
     const { data: existing } = await supabase
@@ -43,10 +45,10 @@ export async function POST(req: Request) {
       const { error: waitlistErr } = await supabase
         .from('vip_waitlist')
         .insert({
-          customer_name: customerName.trim(),
+          customer_name: finalName.trim(),
           email: cleanEmail,
           phone: phone.trim(),
-          favorite_dish: favoriteDish?.trim() || 'General Menu',
+          favorite_dish: cleanFavoriteDish,
           promo_code: cleanCode,
         })
 
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2. Ensure voucher claim is recorded in store_event_claims so it shows up in their voucher history!
+    // 2. Ensure voucher claim is recorded in store_event_claims
     try {
       await supabase
         .from('store_event_claims')
@@ -70,14 +72,16 @@ export async function POST(req: Request) {
       console.warn('Store event claim sync notice:', claimErr)
     }
 
-    // 3. Send Telegram Notification
+    // 3. Send detailed Telegram Notification with selected items
     try {
       await sendTelegramWaitlistNotification({
-        customerName: customerName.trim(),
+        customerName: finalName.trim(),
         email: cleanEmail,
         phone: phone.trim(),
         promoCode: cleanCode,
-        favoriteDish: favoriteDish?.trim() || 'General Menu',
+        favoriteDish: cleanFavoriteDish,
+        selectedItems: selectedItems || [],
+        wantsTraining: Boolean(wantsTraining),
         isReturning,
       })
     } catch (telegramErr) {
@@ -87,6 +91,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       promoCode: cleanCode,
+      alreadyRegistered: isReturning,
       message: 'VIP registration successful and voucher saved to your wallet!',
     })
   } catch (err: any) {

@@ -23,7 +23,6 @@ import {
   ShieldCheck,
   Star,
   Eye,
-  ShoppingBag,
   ChevronLeft
 } from 'lucide-react'
 import Link from 'next/link'
@@ -246,7 +245,11 @@ export default function WaitlistPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim()) {
+    const customerName = formData.name.trim()
+    const email = formData.email.trim().toLowerCase()
+    const phone = formData.phone.trim()
+
+    if (!customerName || !email || !phone) {
       alert('Please complete your name, email address, and phone number.')
       return
     }
@@ -261,10 +264,12 @@ export default function WaitlistPage() {
       const personalPromo = `VIP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
 
       const payload = {
-        customerName: formData.name.trim(),
-        email: formData.email.trim().toLowerCase(),
-        phone: formData.phone.trim(),
+        customerName,
+        email,
+        phone,
         favoriteDish: compileFavoriteDishes(),
+        selectedItems,
+        wantsTraining,
         promoCode: personalPromo,
       }
 
@@ -281,9 +286,18 @@ export default function WaitlistPage() {
       setGeneratedPromoCode(activeCode)
       setCouponCode(activeCode)
 
-      localStorage.setItem('deechoi_customer_session', JSON.stringify({ name: formData.name, email: formData.email, phone: formData.phone }))
-      localStorage.setItem('deechoi_customer_email', formData.email.trim().toLowerCase())
+      localStorage.setItem('deechoi_customer_session', JSON.stringify({ name: customerName, email, phone }))
+      localStorage.setItem('deechoi_customer_email', email)
       localStorage.setItem('active_checkout_voucher', activeCode)
+      localStorage.setItem('deechoi_vip_promo_code', activeCode)
+
+      if (data.alreadyRegistered) {
+        setIsAlreadyVip(true)
+        setShowCodePreview(false)
+      } else {
+        setIsAlreadyVip(false)
+        setShowCodePreview(true)
+      }
 
       setSubmitted(true)
     } catch (err: unknown) {
