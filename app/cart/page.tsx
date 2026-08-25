@@ -30,14 +30,12 @@ export default function CartPage() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Hydration safeguard for cart values & Storefront Pre-Order status
   const [isMounted, setIsMounted] = useState(false)
   const [isStoreLive, setIsStoreLive] = useState(true)
 
   useEffect(() => {
     setIsMounted(true)
 
-    // Check if storefront is in live or pre-order mode
     const storeStatus = localStorage.getItem('deechoi_storefront_active')
     if (storeStatus !== null) {
       setIsStoreLive(storeStatus === 'true')
@@ -79,24 +77,61 @@ export default function CartPage() {
     }
   }
 
-  const checkStoredVoucher = () => {
+  const checkStoredVoucher = async () => {
     const activeVoucher = localStorage.getItem('active_checkout_voucher')
     if (activeVoucher) {
       setVoucherCode(activeVoucher)
-      validateAndApplyVoucher(activeVoucher)
+      await validateAndApplyVoucher(activeVoucher, true)
+      return
+    }
+
+    // Automatically check database for any unspent code tied to stored email or session
+    const customerEmail = localStorage.getItem('deechoi_customer_email') || ''
+    if (customerEmail) {
+      try {
+        const { data: claim } = await supabase
+          .from('store_event_claims')
+          .select('*')
+          .ilike('customer_email', customerEmail)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle()
+
+        if (claim?.promo_code) {
+          setVoucherCode(claim.promo_code)
+          await validateAndApplyVoucher(claim.promo_code, true)
+          return
+        }
+
+        const { data: waitlist } = await supabase
+          .from('vip_waitlist')
+          .select('*')
+          .ilike('email', customerEmail)
+          .limit(1)
+          .maybeSingle()
+
+        if (waitlist?.promo_code) {
+          setVoucherCode(waitlist.promo_code)
+          await validateAndApplyVoucher(waitlist.promo_code, true)
+        }
+      } catch (e) {
+        console.warn('Database voucher query note:', e)
+      }
     }
   }
 
-  const validateAndApplyVoucher = async (codeToTest?: string) => {
+  const validateAndApplyVoucher = async (codeToTest?: string, isSilentAutoApply = false) => {
     const targetCode = (codeToTest || voucherCode).trim().toUpperCase()
     if (!targetCode) {
-      setVoucherMessage({ text: 'Please enter a voucher code.', isSuccess: false })
+      if (!isSilentAutoApply) {
+        setVoucherMessage({ text: 'Please enter a voucher code.', isSuccess: false })
+      }
       return
     }
 
     try {
-      setValidatingVoucher(true)
-      setVoucherMessage(null)
+      if (!isSilentAutoApply) setValidatingVoucher(true)
+      if (!isSilentAutoApply) setVoucherMessage(null)
 
       const customerEmail = localStorage.getItem('deechoi_customer_email') || ''
 
@@ -112,24 +147,30 @@ export default function CartPage() {
         const pct = Number(data.discountPercentage) || 15
         setDiscountPercent(pct)
         setAppliedCode(data.code || targetCode)
-        setVoucherMessage({ 
-          text: data.message || `🎉 Voucher Applied! ${pct}% discount granted.`, 
-          isSuccess: true 
-        })
+        if (!isSilentAutoApply) {
+          setVoucherMessage({ 
+            text: data.message || `🎉 Voucher Applied! ${pct}% discount granted.`, 
+            isSuccess: true 
+          })
+        }
         localStorage.setItem('active_checkout_voucher', targetCode)
       } else {
         setDiscountPercent(0)
         setAppliedCode(null)
-        setVoucherMessage({ 
-          text: data.message || 'Invalid, expired, or already used voucher code.', 
-          isSuccess: false 
-        })
+        if (!isSilentAutoApply) {
+          setVoucherMessage({ 
+            text: data.message || 'Invalid, expired, or already used voucher code.', 
+            isSuccess: false 
+          })
+        }
         localStorage.removeItem('active_checkout_voucher')
       }
     } catch (err: any) {
-      setVoucherMessage({ text: 'Could not validate voucher. Please try again.', isSuccess: false })
+      if (!isSilentAutoApply) {
+        setVoucherMessage({ text: 'Could not validate voucher. Please try again.', isSuccess: false })
+      }
     } finally {
-      setValidatingVoucher(false)
+      if (!isSilentAutoApply) setValidatingVoucher(false)
     }
   }
 
@@ -141,7 +182,6 @@ export default function CartPage() {
     localStorage.removeItem('active_checkout_voucher')
   }
 
-  // Calculate Subtotal dynamically exactly as cart items are priced
   const rawSubtotal = Number(total) || items.reduce((acc, item) => {
     const unitPrice = Number(item.price ?? item.unit_price ?? item.final_price ?? 0)
     const qty = Number(item.quantity) || 1
