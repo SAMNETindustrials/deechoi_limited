@@ -233,7 +233,8 @@ export default function AgentDashboard() {
     localStorage.removeItem('deechoi_dispatch_agent')
     setCurrentAgent(null)
     setOrders([])
-    setWithdrawals(0 as any)
+    setWithdrawals([])
+    setStatusMessage('')
   }
 
   const handleSaveBankSettings = async (e: React.FormEvent) => {
@@ -406,8 +407,8 @@ export default function AgentDashboard() {
       <aside className="hidden md:flex flex-col w-64 bg-[#111622] border-r border-white/5 sticky top-0 h-screen z-40 p-4 justify-between">
         <div>
           <div className="flex items-center gap-2 px-2 py-4 mb-4">
-            <div className="w-8 h-8 rounded-full bg-[#EAA823] flex items-center justify-center text-[#0B0F17] font-black">C</div>
-            <span className="text-xl font-black tracking-widest text-white">CARTO</span>
+            <div className="w-8 h-8 rounded-full bg-[#EAA823] flex items-center justify-center text-[#0B0F17] font-black">D</div>
+            <span className="text-xl font-black tracking-widest text-white">DE-ECHOI LTD</span>
           </div>
 
           <nav className="space-y-1.5">
@@ -435,7 +436,7 @@ export default function AgentDashboard() {
 
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 text-xs font-bold transition"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 text-xs font-bold transition cursor-pointer"
         >
           <LogOut className="w-4 h-4" />
           <span>Logout</span>
@@ -490,6 +491,14 @@ export default function AgentDashboard() {
             <button className="w-9 h-9 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center text-gray-300 hover:text-[#EAA823] transition relative">
               <Bell className="w-4 h-4" />
               <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#EAA823]" />
+            </button>
+            {/* Mobile/Quick Logout Button */}
+            <button 
+              onClick={handleLogout}
+              className="md:hidden w-9 h-9 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center text-red-400 hover:bg-red-500/20 transition cursor-pointer"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -608,7 +617,7 @@ export default function AgentDashboard() {
                         </span>
                         <button
                           onClick={() => setSelectedOrderDetails(order)}
-                          className="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-white font-bold"
+                          className="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-white font-bold cursor-pointer"
                         >
                           View
                         </button>
@@ -664,14 +673,14 @@ export default function AgentDashboard() {
                     <button
                       onClick={() => handleCallCustomer(order.id)}
                       disabled={loadingOrderId === order.id}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs font-bold"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs font-bold cursor-pointer"
                     >
                       {loadingOrderId === order.id ? <Loader2 className="w-4 h-4 animate-spin" /> : '📞 Call'}
                     </button>
                     {order.status !== 'completed' && order.status !== 'delivered_pending_confirmation' && (
                       <button
                         onClick={() => handleMarkAsDelivered(order.id)}
-                        className="bg-[#EAA823] text-[#0B0F17] px-4 py-2 rounded-xl text-xs font-black hover:opacity-90"
+                        className="bg-[#EAA823] text-[#0B0F17] px-4 py-2 rounded-xl text-xs font-black hover:opacity-90 cursor-pointer"
                       >
                         Mark Delivered
                       </button>
@@ -704,7 +713,7 @@ export default function AgentDashboard() {
                 <button
                   type="submit"
                   disabled={withdrawing}
-                  className="w-full py-3 rounded-xl bg-[#EAA823] text-[#0B0F17] font-black text-xs"
+                  className="w-full py-3 rounded-xl bg-[#EAA823] text-[#0B0F17] font-black text-xs cursor-pointer"
                 >
                   {withdrawing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Request Payout'}
                 </button>
@@ -740,56 +749,85 @@ export default function AgentDashboard() {
 
         {/* TAB: SETTINGS */}
         {activeTab === 'settings' && (
-          <div className="max-w-xl mx-auto bg-[#111622] p-6 rounded-2xl border border-white/5">
-            <h3 className="text-sm font-bold uppercase text-gray-300 mb-4">Bank Account Settings</h3>
-            <form onSubmit={handleSaveBankSettings} className="space-y-4 text-xs">
+          <div className="max-w-xl mx-auto space-y-6">
+            <div className="bg-[#111622] p-6 rounded-2xl border border-white/5">
+              <h3 className="text-sm font-bold uppercase text-gray-300 mb-4">Bank Account Settings</h3>
+              <form onSubmit={handleSaveBankSettings} className="space-y-4 text-xs">
+                <div>
+                  <label className="block uppercase text-gray-400 mb-1">Bank Name</label>
+                  <input
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    required
+                    className="w-full bg-[#0B0F17] border border-white/10 rounded-xl px-3 py-2.5 text-white outline-none focus:border-[#EAA823]"
+                    placeholder="e.g. Access Bank"
+                  />
+                </div>
+                <div>
+                  <label className="block uppercase text-gray-400 mb-1">Account Number</label>
+                  <input
+                    type="text"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    required
+                    className="w-full bg-[#0B0F17] border border-white/10 rounded-xl px-3 py-2.5 text-white outline-none focus:border-[#EAA823]"
+                    placeholder="e.g. 0123456789"
+                  />
+                </div>
+                <div>
+                  <label className="block uppercase text-gray-400 mb-1">Account Name</label>
+                  <input
+                    type="text"
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    required
+                    className="w-full bg-[#0B0F17] border border-white/10 rounded-xl px-3 py-2.5 text-white outline-none focus:border-[#EAA823]"
+                    placeholder="e.g. John Doe"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingBank}
+                  className="w-full py-3 rounded-xl bg-[#EAA823] text-[#0B0F17] font-black cursor-pointer"
+                >
+                  {savingBank ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Bank Details'}
+                </button>
+              </form>
+            </div>
+
+            {/* Logout Card for Settings Tab */}
+            <div className="bg-[#111622] p-6 rounded-2xl border border-red-500/20 flex items-center justify-between">
               <div>
-                <label className="block uppercase text-gray-400 mb-1">Bank Name</label>
-                <input
-                  type="text"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  required
-                  className="w-full bg-[#0B0F17] border border-white/10 rounded-xl px-3 py-2 text-white outline-none"
-                />
-              </div>
-              <div>
-                <label className="block uppercase text-gray-400 mb-1">Account Number</label>
-                <input
-                  type="text"
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value)}
-                  required
-                  className="w-full bg-[#0B0F17] border border-white/10 rounded-xl px-3 py-2 text-white outline-none"
-                />
-              </div>
-              <div>
-                <label className="block uppercase text-gray-400 mb-1">Account Name</label>
-                <input
-                  type="text"
-                  value={accountName}
-                  onChange={(e) => setAccountName(e.target.value)}
-                  required
-                  className="w-full bg-[#0B0F17] border border-white/10 rounded-xl px-3 py-2 text-white outline-none"
-                />
+                <h4 className="font-bold text-sm text-white">Session Control</h4>
+                <p className="text-xs text-gray-400">Sign out from this agent account securely.</p>
               </div>
               <button
-                type="submit"
-                disabled={savingBank}
-                className="w-full py-3 rounded-xl bg-[#EAA823] text-[#0B0F17] font-black"
+                type="button"
+                onClick={handleLogout}
+                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer transition"
               >
-                Save Bank Details
+                <LogOut className="w-4 h-4" />
+                <span>Log Out</span>
               </button>
-            </form>
+            </div>
           </div>
         )}
 
         {/* TAB: HELP */}
         {activeTab === 'help' && (
-          <div className="max-w-xl mx-auto bg-[#111622] p-6 rounded-2xl border border-white/5 space-y-3 text-xs">
-            <h3 className="text-sm font-bold text-white mb-2">Help & FAQ</h3>
-            <p className="text-gray-400">1. How do I get delivery commissions? Mark an assigned order as delivered. ₦1,500 is credited instantly.</p>
-            <p className="text-gray-400">2. How long do withdrawals take? Withdrawals are processed once confirmed by the admin.</p>
+          <div className="max-w-xl mx-auto bg-[#111622] p-6 rounded-2xl border border-white/5 space-y-4">
+            <h3 className="text-sm font-bold uppercase text-gray-300">Help &amp; Support FAQ</h3>
+            <div className="space-y-3 text-xs text-gray-300">
+              <div className="bg-[#0B0F17] p-3 rounded-xl border border-white/5">
+                <p className="font-bold text-[#EAA823] mb-1">How do I get paid?</p>
+                <p>Ensure your bank details are accurate under Settings. You can request a payout from your Wallet tab anytime.</p>
+              </div>
+              <div className="bg-[#0B0F17] p-3 rounded-xl border border-white/5">
+                <p className="font-bold text-[#EAA823] mb-1">How does customer calling work?</p>
+                <p>Provide your phone receiver number on the dispatches screen, then click Call to trigger an automated secure bridge.</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -797,17 +835,41 @@ export default function AgentDashboard() {
 
       {/* ORDER DETAILS MODAL */}
       {selectedOrderDetails && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#111622] border border-[#EAA823]/40 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
-            <button onClick={() => setSelectedOrderDetails(null)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-base font-black text-white mb-4">Order Details</h2>
-            <div className="bg-[#0B0F17] p-3 rounded-xl text-xs space-y-1 mb-4">
-              <p><span className="text-gray-400">Customer:</span> {selectedOrderDetails.customer_name}</p>
-              <p><span className="text-gray-400">Address:</span> {selectedOrderDetails.delivery_address}</p>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-[#111622] border border-white/10 rounded-2xl max-w-lg w-full p-6 space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <h3 className="font-bold text-sm text-white">Order Details #{selectedOrderDetails.id.slice(0, 8)}</h3>
+              <button onClick={() => setSelectedOrderDetails(null)} className="text-gray-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <button onClick={() => setSelectedOrderDetails(null)} className="w-full py-2 bg-white/10 text-white rounded-xl font-bold text-xs">Close</button>
+
+            <div className="space-y-2 text-gray-300">
+              <p><strong>Customer Name:</strong> {selectedOrderDetails.customer_name}</p>
+              <p><strong>Phone:</strong> {selectedOrderDetails.customer_phone}</p>
+              <p><strong>Address:</strong> {selectedOrderDetails.delivery_address}</p>
+              <p><strong>Total Amount:</strong> ₦{Number(selectedOrderDetails.total_amount).toLocaleString()}</p>
+              <p><strong>Status:</strong> <span className="uppercase text-[#EAA823] font-bold">{selectedOrderDetails.status}</span></p>
+            </div>
+
+            <div className="border-t border-white/5 pt-3">
+              <p className="font-bold text-white mb-2">Order Items:</p>
+              <div className="space-y-1 max-h-40 overflow-y-auto bg-[#0B0F17] p-3 rounded-xl border border-white/5">
+                {selectedOrderDetails.items?.map((item: any, idx: number) => (
+                  <div key={idx} className="flex justify-between">
+                    <span>{item.name || item.title || 'Item'} x {item.quantity || 1}</span>
+                    <span className="text-[#EAA823]">₦{Number((item.price || 0) * (item.quantity || 1)).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setSelectedOrderDetails(null)}
+              className="w-full py-2.5 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 cursor-pointer mt-2"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

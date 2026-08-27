@@ -1,9 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
-import { CartProvider } from '@/lib/cart-context'
-import { PWAInstallPrompt } from '@/components/storefront/pwa-install-prompt'
-import { UnifiedFooter } from '@/components/storefront/unified-footer'
+import ClientLayoutWrapper from '@/components/storefront/client-layout-wrapper'
 import './globals.css'
 
 const geist = Geist({ 
@@ -64,20 +61,9 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/logo.png" />
       </head>
       <body className={`${geist.variable} ${geistMono.variable} font-sans antialiased min-h-screen flex flex-col justify-between`}>
-        <CartProvider>
-          {/* Main Viewport Content */}
-          <div className="flex-1">
-            {children}
-          </div>
-
-          {/* Unified Desktop Footer + Animated Fluid Mobile Tab Bar with SAMNET Branding */}
-          <UnifiedFooter />
-
-          {/* PWA Floating Mini-Icon & Popup Modal */}
-          <PWAInstallPrompt />
-          
-          {process.env.NODE_ENV === 'production' && <Analytics />}
-        </CartProvider>
+        <ClientLayoutWrapper>
+          {children}
+        </ClientLayoutWrapper>
       </body>
     </html>
   )
