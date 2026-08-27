@@ -1,4 +1,6 @@
-export const PH_ZONES: Record<number, { name: string; keywords: string[] }> = {
+export const PH_ZONES: Record<number, {
+  fee: any; name: string; keywords: string[] 
+}> = {
   1: {
     name: 'PH 1 (Woji, Elelenwo, Rumuibekwe, Rumuomasi, Trans Amadi, Peter Odili, Old Aba Road)',
     keywords: [

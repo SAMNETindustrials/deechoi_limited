@@ -80,11 +80,15 @@ export function PaymentRequestModal({
     setError(null)
 
     try {
-      // 1. Google Cloud Vision OCR validation check
+      // 1. Backend OCR validation check
+      // - Checks amount match
+      // - Checks transaction reference presence & uniqueness ("This receipt has already been used.")
+      // - Date & time are optional and recorded passively for database reference only (not a prerequisite for validation)
       const formData = new FormData()
       formData.append('file', file)
       formData.append('expectedAmount', amount.toString())
       formData.append('expectedAccount', BANK_DETAILS.accountNumber)
+      formData.append('inquiryId', inquiryId)
 
       const res = await fetch('/api/validate-receipt', {
         method: 'POST',
@@ -94,7 +98,8 @@ export function PaymentRequestModal({
       const json = await res.json()
 
       if (!res.ok || !json.valid) {
-        setError(json.message || 'Receipt validation failed. Please check the uploaded file.')
+        const errorMessage = json.message || 'Receipt validation failed. Please check the uploaded file.'
+        setError(errorMessage)
         setScanning(false)
         return
       }
@@ -102,7 +107,7 @@ export function PaymentRequestModal({
       setVerifiedReference(json.reference || 'VERIFIED')
       setScanning(false)
 
-      // 2. Submit verified proof
+      // 2. Submit verified proof and lock transaction reference
       setSubmitting(true)
       await onConfirm(json.reference || 'VERIFIED', file)
       setSubmitting(false)
@@ -238,7 +243,7 @@ export function PaymentRequestModal({
           {scanning ? (
             <>
               <ScanLine className="w-4 h-4 animate-pulse text-[#EAA823]" />
-              <span>Scanning receipt for originality...</span>
+              <span>Scanning amount &amp; reference...</span>
             </>
           ) : submitting ? (
             <>
@@ -248,7 +253,7 @@ export function PaymentRequestModal({
           ) : (
             <>
               <ShieldCheck className="w-4 h-4 text-[#EAA823]" />
-              <span>Verify & Complete Payment</span>
+              <span>Verify &amp; Complete Payment</span>
             </>
           )}
         </Button>

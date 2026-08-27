@@ -50,6 +50,11 @@ export const STORE_CATEGORIES = [
   'Beverages',
 ]
 
+interface CutItem {
+  name: string
+  price: number
+}
+
 interface Option {
   name: string
   price_modifier: number
@@ -60,7 +65,7 @@ interface Option {
   min_multiplier_count?: number
   has_cuts_selection?: boolean
   cut_selection_title?: string
-  allowed_cuts?: string[]
+  allowed_cuts?: (string | CutItem)[]
   min_cuts_selection?: number
   max_cuts_selection?: number
 }
@@ -121,7 +126,11 @@ const DEFAULT_7INCH_TIERS: CakeTierPrice[] = [
   { layers: 3, price: 55000, label: '3 Layers' },
 ]
 
-const DEFAULT_FISH_CUTS = ['Head Piece', 'Middle Cut', 'Tail Piece']
+const DEFAULT_FISH_CUTS: CutItem[] = [
+  { name: 'Head Piece', price: 0 },
+  { name: 'Middle Cut', price: 500 },
+  { name: 'Tail Piece', price: 0 }
+]
 
 const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
   'Catfish Pepper Soup (Portions & Cuts)': [
@@ -138,7 +147,11 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
           description: 'Full fresh fish with native Ehuru, Uda & Scent leaf herbs',
           has_cuts_selection: true,
           cut_selection_title: 'Select Preferred Fish Cut / Parts',
-          allowed_cuts: ['Full Fish (All Parts)', 'Extra Head + Middle', 'Middle Cuts Only', 'Tail + Middle'],
+          allowed_cuts: [
+            { name: 'Full Fish (All Parts)', price: 0 },
+            { name: 'Extra Head + Middle', price: 1000 },
+            { name: 'Middle Cuts Only', price: 1500 }
+          ],
           min_cuts_selection: 1,
           max_cuts_selection: 1
         },
@@ -149,7 +162,11 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
           description: 'Pick your preferred cuts from fresh daily catch',
           has_cuts_selection: true,
           cut_selection_title: 'Select Preferred Fish Cut / Parts',
-          allowed_cuts: ['Head Piece', 'Middle Cut', 'Tail Piece'],
+          allowed_cuts: [
+            { name: 'Head Piece', price: 0 },
+            { name: 'Middle Cut', price: 500 },
+            { name: 'Tail Piece', price: 0 }
+          ],
           min_cuts_selection: 1,
           max_cuts_selection: 2
         },
@@ -214,7 +231,11 @@ const WAITLIST_PRESETS: Record<string, OptionGroup[]> = {
           description: 'Crispy fried large turkey cut',
           has_cuts_selection: true,
           cut_selection_title: 'Select Preferred Turkey Cut',
-          allowed_cuts: ['Turkey Wing', 'Turkey Lap / Drumstick', 'Turkey Breast'],
+          allowed_cuts: [
+            { name: 'Turkey Wing', price: 0 },
+            { name: 'Turkey Lap / Drumstick', price: 500 },
+            { name: 'Turkey Breast', price: 800 }
+          ],
           min_cuts_selection: 1,
           max_cuts_selection: 1
         },
@@ -270,6 +291,7 @@ export default function StoreInventoryPage() {
   const [storageInstructions, setStorageInstructions] = useState('')
 
   const [newCutInput, setNewCutInput] = useState<Record<string, string>>({})
+  const [newCutPriceInput, setNewCutPriceInput] = useState<Record<string, string>>({})
   const [newIngredient, setNewIngredient] = useState('')
   const [newAllergen, setNewAllergen] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -362,7 +384,9 @@ export default function StoreInventoryPage() {
         ...opt,
         min_multiplier_count: opt.min_multiplier_count ?? 1,
         cut_selection_title: opt.cut_selection_title || 'Select Preferred Cut / Parts',
-        allowed_cuts: opt.allowed_cuts || (opt.has_cuts_selection ? DEFAULT_FISH_CUTS : []),
+        allowed_cuts: (opt.allowed_cuts || (opt.has_cuts_selection ? DEFAULT_FISH_CUTS : [])).map((c: any) => 
+          typeof c === 'string' ? { name: c, price: 0 } : c
+        ),
         min_cuts_selection: opt.min_cuts_selection ?? (opt.has_cuts_selection ? 1 : 0),
         max_cuts_selection: opt.max_cuts_selection || 1,
       }))
@@ -589,16 +613,18 @@ export default function StoreInventoryPage() {
   const addCutToOption = (groupIndex: number, optionIndex: number) => {
     const key = `${groupIndex}-${optionIndex}`
     const cutName = (newCutInput[key] || '').trim()
+    const cutPrice = parseFloat(newCutPriceInput[key] || '0') || 0
     if (!cutName) return
 
     const updated = [...optionGroups]
-    const currentCuts = updated[groupIndex].options[optionIndex].allowed_cuts || []
+    const currentCuts = (updated[groupIndex].options[optionIndex].allowed_cuts || []) as CutItem[]
 
-    if (!currentCuts.includes(cutName)) {
-      updated[groupIndex].options[optionIndex].allowed_cuts = [...currentCuts, cutName]
+    if (!currentCuts.some(c => (typeof c === 'string' ? c : c.name) === cutName)) {
+      updated[groupIndex].options[optionIndex].allowed_cuts = [...currentCuts, { name: cutName, price: cutPrice }]
       setOptionGroups(updated)
     }
     setNewCutInput({ ...newCutInput, [key]: '' })
+    setNewCutPriceInput({ ...newCutPriceInput, [key]: '' })
   }
 
   const removeCutFromOption = (groupIndex: number, optionIndex: number, cutIndex: number) => {
@@ -1203,7 +1229,6 @@ export default function StoreInventoryPage() {
                                 </div>
                               </div>
                               
-                              {/* REQUIRED TOGGLE RESTORED */}
                               <div className="flex items-center gap-2">
                                 <input
                                   type="checkbox"
@@ -1365,7 +1390,6 @@ export default function StoreInventoryPage() {
                                 {option.has_cuts_selection && (
                                   <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-3.5 space-y-3 mt-2">
                                     
-                                    {/* CUSTOM DISPLAY TITLE INPUT */}
                                     <div>
                                       <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">
                                         Storefront Prompt / Heading Text (Customer UI)
@@ -1409,49 +1433,66 @@ export default function StoreInventoryPage() {
 
                                     <div>
                                       <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">
-                                        Allowed Piece/Cut Names (e.g. Head Piece, Middle Cut, Tail Piece)
+                                        Allowed Piece/Cut Names &amp; Price Per Cut (₦)
                                       </label>
 
-                                      <div className="flex flex-wrap gap-1.5 mb-2">
-                                        {(option.allowed_cuts || []).map((cut, cutIdx) => (
-                                          <span
-                                            key={cutIdx}
-                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-emerald-300 text-emerald-900 rounded-lg text-xs font-bold"
-                                          >
-                                            {cut}
-                                            <button
-                                              type="button"
-                                              onClick={() => removeCutFromOption(groupIdx, optIdx, cutIdx)}
-                                              className="text-emerald-700 hover:text-red-500"
+                                      <div className="flex flex-wrap gap-2 mb-3">
+                                        {(option.allowed_cuts || []).map((cutItem: any, cutIdx: number) => {
+                                          const cName = typeof cutItem === 'string' ? cutItem : cutItem.name
+                                          const cPrice = typeof cutItem === 'string' ? 0 : (cutItem.price || 0)
+
+                                          return (
+                                            <span
+                                              key={cutIdx}
+                                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold shadow-xs"
                                             >
-                                              <X className="w-3 h-3" />
-                                            </button>
-                                          </span>
-                                        ))}
+                                              <span>{cName}</span>
+                                              {cPrice > 0 && <span className="text-[#EAA823] font-black">(+₦{cPrice.toLocaleString()})</span>}
+                                              <button
+                                                type="button"
+                                                onClick={() => removeCutFromOption(groupIdx, optIdx, cutIdx)}
+                                                className="text-emerald-700 hover:text-red-500 ml-1"
+                                              >
+                                                <X className="w-3.5 h-3.5" />
+                                              </button>
+                                            </span>
+                                          )
+                                        })}
                                       </div>
 
-                                      <div className="flex gap-2">
-                                        <Input
-                                          type="text"
-                                          value={newCutInput[`${groupIdx}-${optIdx}`] || ''}
-                                          onChange={(e) => setNewCutInput({ ...newCutInput, [`${groupIdx}-${optIdx}`]: e.target.value })}
-                                          placeholder="Type cut name & click Add (e.g. Head Piece)"
-                                          className="bg-white text-xs rounded-lg flex-1"
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                              e.preventDefault()
-                                              addCutToOption(groupIdx, optIdx)
-                                            }
-                                          }}
-                                        />
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          onClick={() => addCutToOption(groupIdx, optIdx)}
-                                          className="bg-emerald-800 text-white hover:bg-emerald-900 text-xs font-bold"
-                                        >
-                                          Add Cut
-                                        </Button>
+                                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                                        <div className="sm:col-span-6">
+                                          <Input
+                                            type="text"
+                                            value={newCutInput[`${groupIdx}-${optIdx}`] || ''}
+                                            onChange={(e) => setNewCutInput({ ...newCutInput, [`${groupIdx}-${optIdx}`]: e.target.value })}
+                                            placeholder="Cut Name (e.g. Middle Cut)"
+                                            className="bg-white text-xs rounded-lg"
+                                          />
+                                        </div>
+                                        <div className="sm:col-span-4">
+                                          <div className="relative">
+                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">₦</span>
+                                            <Input
+                                              type="number"
+                                              step="any"
+                                              value={newCutPriceInput[`${groupIdx}-${optIdx}`] || ''}
+                                              onChange={(e) => setNewCutPriceInput({ ...newCutPriceInput, [`${groupIdx}-${optIdx}`]: e.target.value })}
+                                              placeholder="Price (₦)"
+                                              className="pl-6 bg-white text-xs rounded-lg font-bold"
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className="sm:col-span-2">
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={() => addCutToOption(groupIdx, optIdx)}
+                                            className="w-full bg-emerald-800 text-white hover:bg-emerald-900 text-xs font-bold"
+                                          >
+                                            Add Cut
+                                          </Button>
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
@@ -1463,109 +1504,6 @@ export default function StoreInventoryPage() {
                       ))}
                     </div>
                   )}
-                </div>
-
-                <div className="border-t border-gray-200 pt-6 space-y-6">
-                  <h3 className="text-md font-bold text-gray-900">Recipe Specs &amp; Storage Details</h3>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase text-gray-700 block">Preparation Time (Minutes)</label>
-                      <Input
-                        type="number"
-                        value={prepTime}
-                        onChange={(e) => setPrepTime(e.target.value)}
-                        className="rounded-xl border-gray-300 font-bold bg-white"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase text-gray-700 block">Estimated Servings</label>
-                      <Input
-                        type="number"
-                        value={servings}
-                        onChange={(e) => setServings(e.target.value)}
-                        className="rounded-xl border-gray-300 font-bold bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase text-gray-700 block">Key Ingredients</label>
-                      <div className="flex gap-2 mb-2">
-                        <Input
-                          type="text"
-                          value={newIngredient}
-                          onChange={(e) => setNewIngredient(e.target.value)}
-                          placeholder="e.g. Fresh Catfish, Ehuru, Scent Leaf"
-                          className="rounded-xl text-xs bg-white"
-                          onKeyDown={(e) => { 
-                            if (e.key === 'Enter') { 
-                              e.preventDefault()
-                              addIngredient()
-                            } 
-                          }}
-                        />
-                        <Button type="button" onClick={addIngredient} size="sm" className="bg-[#0A2E1D] text-white font-bold">
-                          Add
-                        </Button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {ingredients.map((ing, idx) => (
-                          <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 border text-gray-800 rounded-lg text-xs font-medium">
-                            {ing}
-                            <button type="button" onClick={() => removeIngredient(idx)} className="text-gray-500 hover:text-red-500">
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase text-gray-700 block">Allergens</label>
-                      <div className="flex gap-2 mb-2">
-                        <Input
-                          type="text"
-                          value={newAllergen}
-                          onChange={(e) => setNewAllergen(e.target.value)}
-                          placeholder="e.g. Fish, Seafood, Soy, Dairy"
-                          className="rounded-xl text-xs bg-white"
-                          onKeyDown={(e) => { 
-                            if (e.key === 'Enter') { 
-                              e.preventDefault() 
-                              addAllergen()
-                            } 
-                          }}
-                        />
-                        <Button type="button" onClick={addAllergen} size="sm" className="bg-red-700 text-white font-bold">
-                          Add
-                        </Button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {allergens.map((all, idx) => (
-                          <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-medium">
-                            {all}
-                            <button type="button" onClick={() => removeAllergen(idx)} className="text-red-500 hover:text-red-700">
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase text-gray-700 block">Storage Instructions</label>
-                    <Textarea
-                      rows={2}
-                      value={storageInstructions}
-                      onChange={(e) => setStorageInstructions(e.target.value)}
-                      placeholder="e.g. Keep refrigerated below 4°C. Best consumed within 24 hours."
-                      className="rounded-xl border-gray-300 text-xs bg-white"
-                    />
-                  </div>
                 </div>
               </div>
             )}

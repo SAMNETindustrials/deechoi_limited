@@ -1,30 +1,26 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { useState, useEffect, useRef, useMemo, Suspense } from 'react'
 import { StorefrontHeader } from '@/components/storefront/header'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { 
   MessageSquare, 
   Send, 
   Loader2, 
   ShieldCheck, 
   ArrowLeft, 
-  Sparkles, 
   CreditCard, 
-  CheckCircle2, 
-  Upload, 
   ArrowRight,
   ShoppingBag,
-  ExternalLink,
-  FileText,
   Calendar,
   Search,
   X
 } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 interface Message {
   id: string
@@ -44,18 +40,24 @@ interface Inquiry {
   customer_email?: string
   email?: string
   subject?: string
+  message?: string
+  note?: string
   status?: string
   last_message_at?: string
   created_at?: string
 }
 
-export default function CustomerMessagesPage() {
+function CustomerMessagesContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlInquiryId = searchParams.get('inquiryId')
+
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
-  const [selectedInquiryId, setSelectedInquiryId] = useState<string | null>(null)
+  const [selectedInquiryId, setSelectedInquiryId] = useState<string | null>(urlInquiryId)
   const [messages, setMessages] = useState<Message[]>([])
   const [replyText, setReplyText] = useState('')
   const [loading, setLoading] = useState(true)
+  const [messagesLoading, setMessagesLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [isAdminTyping, setIsAdminTyping] = useState(false)
 
@@ -86,49 +88,54 @@ export default function CustomerMessagesPage() {
 
   useEffect(() => {
     loadInquiries()
-  }, [])
+  }, [urlInquiryId])
 
   const loadInquiries = async () => {
     try {
       setLoading(true)
       const session = JSON.parse(localStorage.getItem('deechoi_customer_session') || '{}')
       const userEmail = (session.email || '').trim().toLowerCase()
-      const storedIds: string[] = JSON.parse(localStorage.getItem('deechoi_customer_inquiries') || '[]')
+      let storedIds: string[] = JSON.parse(localStorage.getItem('deechoi_customer_inquiries') || '[]')
+
+      if (urlInquiryId && !storedIds.includes(urlInquiryId)) {
+        storedIds = [urlInquiryId, ...storedIds]
+        localStorage.setItem('deechoi_customer_inquiries', JSON.stringify(storedIds))
+      }
 
       let fetchedInquiries: Inquiry[] = []
 
-      // 1. Query by user email if available
-      if (userEmail) {
-        let { data, error } = await supabase
-          .from('customer_inquiries')
-          .select('*')
-          .ilike('customer_email', userEmail)
-          .order('last_message_at', { ascending: false })
-
-        if (error || !data || data.length === 0) {
-          const fallbackQuery = await supabase
-            .from('customer_inquiries')
-            .select('*')
-            .ilike('email', userEmail)
-            .order('created_at', { ascending: false })
-          
-          if (!fallbackQuery.error && fallbackQuery.data) {
-            data = fallbackQuery.data
-          }
-        }
-
-        if (data && data.length > 0) {
-          fetchedInquiries = data
-        }
-      }
-
-      // 2. Fallback to stored IDs in localStorage
-      if (fetchedInquiries.length === 0 && storedIds.length > 0) {
+      if (storedIds.length > 0) {
         const { data, error } = await supabase
           .from('customer_inquiries')
           .select('*')
           .in('id', storedIds)
-          .order('last_message_at', { ascending: false })
+          .order('last_message_at', { ascending: false, nullsFirst: false })
+
+        if (!error && data) {
+          fetchedInquiries = data
+        }
+      }
+
+      if (userEmail) {
+        const { data, error } = await supabase
+          .from('customer_inquiries')
+          .select('*')
+          .or(`customer_email.ilike.%${userEmail}%,email.ilike.%${userEmail}%`)
+          .order('created_at', { ascending: false })
+
+        if (!error && data && data.length > 0) {
+          const map = new Map()
+          ;[...fetchedInquiries, ...data].forEach((inq) => map.set(inq.id, inq))
+          fetchedInquiries = Array.from(map.values())
+        }
+      }
+
+      if (fetchedInquiries.length === 0) {
+        const { data, error } = await supabase
+          .from('customer_inquiries')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5)
 
         if (!error && data) {
           fetchedInquiries = data
@@ -140,7 +147,12 @@ export default function CustomerMessagesPage() {
       if (fetchedInquiries.length > 0) {
         const validIds = fetchedInquiries.map((inq) => inq.id)
         localStorage.setItem('deechoi_customer_inquiries', JSON.stringify(validIds))
-        setSelectedInquiryId((prev) => prev && validIds.includes(prev) ? prev : validIds[0])
+        
+        setSelectedInquiryId((prev) => {
+          if (urlInquiryId && validIds.includes(urlInquiryId)) return urlInquiryId
+          if (prev && validIds.includes(prev)) return prev
+          return validIds[0]
+        })
       }
     } catch (err: any) {
       console.warn('[Error loading customer inquiries]:', err?.message || JSON.stringify(err))
@@ -150,18 +162,64 @@ export default function CustomerMessagesPage() {
   }
 
   useEffect(() => {
-    if (!selectedInquiryId) return
+    if (!selectedInquiryId) {
+      setMessages([])
+      return
+    }
 
     const fetchMessages = async () => {
-      const { data, error } = await supabase
-        .from('inquiry_messages')
-        .select('*')
-        .eq('inquiry_id', selectedInquiryId)
-        .order('created_at', { ascending: true })
+      setMessagesLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('inquiry_messages')
+          .select('*')
+          .eq('inquiry_id', selectedInquiryId)
+          .order('created_at', { ascending: true })
 
-      if (!error && data) {
-        setMessages(data as Message[])
-        scrollToBottom()
+        if (!error && data && data.length > 0) {
+          setMessages(data as Message[])
+          scrollToBottom()
+        } else {
+          const { data: inqData } = await supabase
+            .from('customer_inquiries')
+            .select('*')
+            .eq('id', selectedInquiryId)
+            .single()
+
+          const initialText = inqData?.message || inqData?.note || inqData?.subject || 'Hello, I need assistance with my kitchen order/inquiry.'
+          const customerName = inqData?.customer_name || inqData?.name || 'Customer'
+
+          const { data: insertedMsg, error: insertErr } = await supabase
+            .from('inquiry_messages')
+            .insert({
+              inquiry_id: selectedInquiryId,
+              sender_type: 'customer',
+              sender_name: customerName,
+              message: initialText,
+              type: 'text',
+            })
+            .select('*')
+            .single()
+
+          if (!insertErr && insertedMsg) {
+            setMessages([insertedMsg as Message])
+          } else {
+            setMessages([{
+              id: `fallback-${Date.now()}`,
+              inquiry_id: selectedInquiryId,
+              sender_type: 'customer',
+              sender_name: customerName,
+              message: initialText,
+              type: 'text',
+              created_at: new Date().toISOString(),
+            }])
+          }
+          scrollToBottom()
+        }
+      } catch (err) {
+        console.warn('[Error fetching messages]:', err)
+      } finally {
+        setMessagesLoading(false)
       }
     }
 
@@ -301,64 +359,12 @@ export default function CustomerMessagesPage() {
     }
   }
 
-  const handleSubmitPaymentProof = async (msg: Message) => {
-    if (!receiptRefInput.trim() && !receiptFileUrl.trim()) {
-      alert('Please enter your transaction reference number or receipt URL.')
-      return
-    }
-
-    try {
-      setSubmittingProof(true)
-      const rawMeta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata || '{}') : (msg.metadata || {})
-      const updatedMetadata = {
-        ...rawMeta,
-        status: 'submitted',
-        reference: receiptRefInput.trim(),
-        receipt_url: receiptFileUrl.trim(),
-        submitted_at: new Date().toISOString(),
-      }
-
-      const { error } = await supabase
-        .from('inquiry_messages')
-        .update({ metadata: updatedMetadata })
-        .eq('id', msg.id)
-
-      if (error) throw error
-
-      const { data: newMsg } = await supabase.from('inquiry_messages').insert({
-        inquiry_id: selectedInquiryId,
-        sender_type: 'customer',
-        sender_name: 'Customer',
-        message: `📄 Payment receipt submitted (Ref: #${receiptRefInput.trim() || 'Online Transfer'}). Awaiting confirmation.`,
-        type: 'text',
-      }).select('*').single()
-
-      if (channelRef.current && newMsg) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'new_chat_message',
-          payload: newMsg,
-        })
-      }
-
-      setUploadingReceiptId(null)
-      setReceiptRefInput('')
-      setReceiptFileUrl('')
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to submit payment receipt.'
-      alert(errorMsg)
-    } finally {
-      setSubmittingProof(false)
-    }
-  }
-
-  // Inquiry options for selecting previous chats / dates
   const formattedInquiryOptions = (() => {
     const seenDates = new Set<string>()
     return inquiries.map((inq) => {
       const timeVal = inq.last_message_at || inq.created_at || new Date().toISOString()
       const dateStr = new Date(timeVal).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-      const label = `${inq.subject || 'Support Chat'} — ${dateStr}`
+      const label = `${inq.subject || inq.message?.slice(0, 25) || 'Support Chat'} — ${dateStr}`
       return { id: inq.id, label, dateStr }
     }).filter((item) => {
       if (seenDates.has(item.dateStr)) {
@@ -369,7 +375,6 @@ export default function CustomerMessagesPage() {
     })
   })()
 
-  // Filter messages based on in-chat keyword search query
   const filteredMessages = useMemo(() => {
     if (!searchQuery.trim()) return messages
     const q = searchQuery.toLowerCase().trim()
@@ -382,7 +387,6 @@ export default function CustomerMessagesPage() {
     })
   }, [messages, searchQuery])
 
-  // Group filtered messages by date banner
   const groupedMessages = (() => {
     const groups: { dateLabel: string; items: Message[] }[] = []
     let lastDateKey = ''
@@ -451,8 +455,8 @@ export default function CustomerMessagesPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* In-Chat Keyword Search Toggle */}
+            {/* Inline Contained Header Controls */}
+            <div className="flex flex-wrap items-center justify-end gap-2 max-w-full">
               <button
                 type="button"
                 onClick={() => {
@@ -468,14 +472,13 @@ export default function CustomerMessagesPage() {
                 <span className="hidden sm:inline">Search</span>
               </button>
 
-              {/* Inquiry Date Selection Dropdown */}
               {formattedInquiryOptions.length > 0 && (
-                <div className="flex items-center gap-1 bg-[#041a11] border border-white/20 rounded-xl px-2.5 py-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-[#EAA823]" />
+                <div className="flex items-center gap-1 bg-[#041a11] border border-white/20 rounded-xl px-2.5 py-1.5 max-w-[220px] sm:max-w-[280px]">
+                  <Calendar className="w-3.5 h-3.5 text-[#EAA823] shrink-0" />
                   <select
                     value={selectedInquiryId || ''}
                     onChange={(e) => setSelectedInquiryId(e.target.value)}
-                    className="bg-transparent text-white text-xs outline-none font-medium cursor-pointer"
+                    className="bg-transparent text-white text-xs outline-none font-medium cursor-pointer truncate w-full"
                   >
                     {formattedInquiryOptions.map((opt) => (
                       <option key={opt.id} value={opt.id} className="bg-[#072d1d] text-white">
@@ -524,10 +527,10 @@ export default function CustomerMessagesPage() {
 
           {/* Messages Body Grouped by Date */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#FDFBF7]/60">
-            {loading ? (
+            {loading || messagesLoading ? (
               <div className="flex flex-col items-center justify-center h-full space-y-2 text-gray-400">
                 <Loader2 className="w-6 h-6 animate-spin text-[#EAA823]" />
-                <span className="text-xs font-semibold">Connecting to conversation...</span>
+                <span className="text-xs font-semibold">Loading conversation history...</span>
               </div>
             ) : messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-3">
@@ -535,16 +538,18 @@ export default function CustomerMessagesPage() {
                   <MessageSquare className="w-8 h-8" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-gray-800">No active messages yet</h3>
+                  <h3 className="font-bold text-sm text-gray-800">No messages in this chat yet</h3>
                   <p className="text-xs text-gray-500 mt-1 max-w-xs">
-                    Send an inquiry through our Contact page or message kitchen support below.
+                    Send a message below or contact our kitchen support team to begin.
                   </p>
                 </div>
-                <Link href="/contact">
-                  <Button className="bg-[#072d1d] hover:bg-[#EAA823] hover:text-[#072d1d] text-white font-bold text-xs rounded-xl py-2 px-4 cursor-pointer shadow-md">
-                    Send Inquiry
-                  </Button>
-                </Link>
+                <div className="flex gap-2">
+                  <Link href="/contact">
+                    <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-50 font-bold text-xs rounded-xl py-2 px-4 cursor-pointer">
+                      Contact Page
+                    </Button>
+                  </Link>
+                </div>
               </div>
             ) : filteredMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-2 text-gray-400">
@@ -561,7 +566,6 @@ export default function CustomerMessagesPage() {
             ) : (
               groupedMessages.map((group, groupIdx) => (
                 <div key={groupIdx} className="space-y-3.5">
-                  {/* Date Divider Banner */}
                   <div className="flex items-center justify-center my-3">
                     <span className="bg-gray-200/80 text-gray-600 text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full shadow-xs flex items-center gap-1.5">
                       <Calendar className="w-3 h-3 text-gray-500" />
@@ -687,80 +691,6 @@ export default function CustomerMessagesPage() {
                                     <span>Proceed to Secure Checkout (₦{requestedAmount.toLocaleString()})</span>
                                     <ArrowRight className="w-4 h-4 ml-1" />
                                   </button>
-
-                                  {uploadingReceiptId === msg.id ? (
-                                    <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-amber-500/30 mt-2">
-                                      <input
-                                        type="text"
-                                        placeholder="Enter Transfer Reference / Session ID..."
-                                        value={receiptRefInput}
-                                        onChange={(e) => setReceiptRefInput(e.target.value)}
-                                        className="w-full bg-[#072d1d] border border-white/20 text-white text-xs px-3 py-2 rounded-lg outline-none"
-                                      />
-                                      <input
-                                        type="url"
-                                        placeholder="Paste Screenshot/Receipt URL (Optional)..."
-                                        value={receiptFileUrl}
-                                        onChange={(e) => setReceiptFileUrl(e.target.value)}
-                                        className="w-full bg-[#072d1d] border border-white/20 text-white text-xs px-3 py-2 rounded-lg outline-none"
-                                      />
-                                      <div className="flex gap-2">
-                                        <Button
-                                          type="button"
-                                          onClick={() => handleSubmitPaymentProof(msg)}
-                                          disabled={submittingProof}
-                                          className="flex-1 bg-[#EAA823] hover:bg-white text-[#072d1d] font-bold text-xs py-2 rounded-lg cursor-pointer"
-                                        >
-                                          {submittingProof ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Submit Proof'}
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          onClick={() => setUploadingReceiptId(null)}
-                                          variant="outline"
-                                          className="text-xs py-2 rounded-lg border-white/20 text-white hover:bg-white/10"
-                                        >
-                                          Cancel
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <Button
-                                      type="button"
-                                      onClick={() => setUploadingReceiptId(msg.id)}
-                                      variant="outline"
-                                      className="w-full border-white/20 text-gray-200 hover:text-white hover:bg-white/10 font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
-                                    >
-                                      <Upload className="w-3.5 h-3.5" />
-                                      <span>I already transferred (Submit Receipt)</span>
-                                    </Button>
-                                  )}
-                                </div>
-                              )}
-
-                              {paymentStatus === 'submitted' && (
-                                <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1">
-                                  <p className="text-xs text-amber-300 font-medium flex items-center gap-1.5">
-                                    <span>⏳ Receipt submitted (Ref: #{rawMeta?.reference || 'Transfer'}). The kitchen is confirming your payment.</span>
-                                  </p>
-                                  {rawMeta?.receipt_url && (
-                                    <a
-                                      href={rawMeta.receipt_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 text-[11px] text-amber-300 hover:underline pt-0.5"
-                                    >
-                                      <FileText className="w-3 h-3 text-amber-400" />
-                                      <span>View Uploaded Proof</span>
-                                      <ExternalLink className="w-3 h-3 opacity-60" />
-                                    </a>
-                                  )}
-                                </div>
-                              )}
-
-                              {paymentStatus === 'confirmed' && (
-                                <div className="text-xs text-emerald-400 flex items-center gap-1.5 font-bold">
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  <span>Payment Verified &amp; Order Approved</span>
                                 </div>
                               )}
                             </div>
@@ -773,59 +703,49 @@ export default function CustomerMessagesPage() {
               ))
             )}
 
-            {/* REAL-TIME TYPING ANIMATION */}
             {isAdminTyping && (
-              <div className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200">
-                <span className="text-[10px] text-[#EAA823] font-bold mb-1 px-1 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[#EAA823]" />
-                  <span>Support is typing a response...</span>
-                </span>
-                
-                <div className="bg-white border border-[#EAA823]/40 rounded-2xl rounded-tl-none px-4 py-3 shadow-md flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#EAA823] animate-bounce [animation-delay:-0.3s]" />
-                  <span className="w-2 h-2 rounded-full bg-[#EAA823] animate-bounce [animation-delay:-0.15s]" />
-                  <span className="w-2 h-2 rounded-full bg-[#EAA823] animate-bounce" />
-                </div>
+              <div className="flex items-center gap-2 text-xs text-gray-500 bg-white/80 p-2.5 rounded-xl border border-gray-200 w-fit animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-[#EAA823] animate-bounce" />
+                <span>Support team is typing a response...</span>
               </div>
             )}
-
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Reply Input Bar */}
-          {selectedInquiryId && (
-            <form
-              onSubmit={handleSendReply}
-              className="p-3 sm:p-4 bg-white border-t border-gray-200 flex items-center gap-2"
+          {/* Reply Form Footer */}
+          <form onSubmit={handleSendReply} className="p-3 sm:p-4 bg-white border-t border-gray-200 flex items-center gap-2">
+            <input
+              type="text"
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              placeholder="Type your reply to support..."
+              disabled={sending || !selectedInquiryId}
+              className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-xs sm:text-sm text-gray-800 outline-none focus:border-[#EAA823]"
+            />
+            <Button
+              type="submit"
+              disabled={sending || !replyText.trim() || !selectedInquiryId}
+              className="bg-[#072d1d] hover:bg-[#072d1d]/90 text-white font-bold px-5 py-3 rounded-xl flex items-center gap-1.5 shrink-0 cursor-pointer"
             >
-              <Input
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                placeholder="Type your message or follow-up question..."
-                className="flex-1 bg-[#FDFBF7] border-gray-200 text-xs sm:text-sm rounded-2xl py-3 px-4 focus-visible:ring-[#072d1d]"
-              />
-
-              <Button
-                type="submit"
-                disabled={sending || !replyText.trim()}
-                className="bg-[#072d1d] hover:bg-[#EAA823] hover:text-[#072d1d] text-white font-extrabold rounded-2xl px-5 py-3 transition shadow-md flex items-center gap-1.5 cursor-pointer"
-              >
-                {sending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <span>Send</span>
-                    <Send className="w-3.5 h-3.5" />
-                  </>
-                )}
-              </Button>
-            </form>
-          )}
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <span className="hidden sm:inline">Send</span>
+            </Button>
+          </form>
 
         </div>
-
       </div>
     </div>
+  )
+}
+
+export default function CustomerMessagesPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#EAA823]" />
+      </div>
+    }>
+      <CustomerMessagesContent />
+    </Suspense>
   )
 }

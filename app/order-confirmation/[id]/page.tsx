@@ -32,7 +32,7 @@ interface Order {
   delivery_fee?: number
   total_amount: number
   payment_method: string
-  status: 'pending' | 'confirmed' | 'dispatched' | 'completed' | 'cancelled'
+  status: 'pending' | 'confirmed' | 'dispatched' | 'delivered_pending_confirmation' | 'completed' | 'cancelled'
   items: any[]
   created_at: string
   confirmed_at: string | null
@@ -166,8 +166,9 @@ export default function OrderConfirmationPage({
     )
   }
 
-  const isConfirmed = order.status === 'confirmed' || order.status === 'dispatched' || order.status === 'completed'
-  const isDispatched = order.status === 'dispatched' || order.status === 'completed'
+  const isConfirmed = order.status === 'confirmed' || order.status === 'dispatched' || order.status === 'delivered_pending_confirmation' || order.status === 'completed'
+  const isDispatched = order.status === 'dispatched' || order.status === 'delivered_pending_confirmation' || order.status === 'completed'
+  const isPendingConfirmation = order.status === 'delivered_pending_confirmation'
   const isCompleted = order.status === 'completed'
 
   return (
@@ -200,6 +201,20 @@ export default function OrderConfirmationPage({
               </h1>
               <p className="text-xs sm:text-sm text-gray-500 max-w-md mx-auto">
                 Thank you for choosing De-echoi! We hope you loved your meal.
+              </p>
+            </>
+          ) : isPendingConfirmation ? (
+            <>
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center text-[#EAA823] shadow-inner animate-pulse">
+                  <PackageCheck className="w-9 h-9 text-[#0A2E1D]" />
+                </div>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#0A2E1D] mb-1">
+                Delivery Arrived — Please Confirm Receipt
+              </h1>
+              <p className="text-xs sm:text-sm text-gray-500 max-w-md mx-auto">
+                Your dispatch agent has marked your order as delivered. Please confirm below once you have received your package.
               </p>
             </>
           ) : order.status === 'dispatched' ? (
@@ -288,7 +303,7 @@ export default function OrderConfirmationPage({
 
             <div className="flex items-start gap-3.5">
               <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                isCompleted
+                isCompleted || isPendingConfirmation
                   ? 'bg-green-500 text-white'
                   : order.status === 'dispatched'
                     ? 'bg-[#0A2E1D] text-[#EAA823] shadow-md animate-pulse'
@@ -301,8 +316,8 @@ export default function OrderConfirmationPage({
                   3. Order Dispatched & On the Way
                 </p>
                 <p className="text-[11px] text-gray-500">
-                  {isCompleted
-                    ? 'Delivery completed'
+                  {isCompleted || isPendingConfirmation
+                    ? 'Delivery arrived at destination'
                     : order.status === 'dispatched'
                       ? 'Dispatched with rider — en-route to your address'
                       : 'Pending dispatch'}
@@ -312,24 +327,34 @@ export default function OrderConfirmationPage({
 
             <div className="flex items-start gap-3.5">
               <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                isCompleted ? 'bg-green-500 text-white shadow-sm' : 'bg-gray-100 text-gray-400 border border-gray-200'
+                isCompleted 
+                  ? 'bg-green-500 text-white shadow-sm' 
+                  : isPendingConfirmation 
+                    ? 'bg-[#EAA823] text-[#0A2E1D] animate-bounce' 
+                    : 'bg-gray-100 text-gray-400 border border-gray-200'
               }`}>
                 <PackageCheck className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <p className={`font-bold text-xs sm:text-sm ${isCompleted ? 'text-[#0A2E1D]' : 'text-gray-400'}`}>
-                  4. Order Delivered
+                <p className={`font-bold text-xs sm:text-sm ${isCompleted || isPendingConfirmation ? 'text-[#0A2E1D]' : 'text-gray-400'}`}>
+                  4. Order Delivered & Confirmed
                 </p>
                 <p className="text-[11px] text-gray-500">
-                  {isCompleted ? 'Delivered and confirmed received.' : 'Customer confirms arrival'}
+                  {isCompleted 
+                    ? 'Delivered and confirmed received.' 
+                    : isPendingConfirmation 
+                      ? 'Agent marked delivered! Please confirm receipt below.' 
+                      : 'Awaiting delivery completion'}
                 </p>
               </div>
             </div>
           </div>
 
-          {isConfirmed && !isCompleted && (
+          {(isConfirmed && !isCompleted) && (
             <div className="mt-6 pt-5 border-t border-gray-100 bg-[#FDFBF7] -mx-6 -mb-6 p-6 rounded-b-3xl text-center space-y-3">
-              <p className="font-extrabold text-sm text-[#0A2E1D]">Has your order arrived?</p>
+              <p className="font-extrabold text-sm text-[#0A2E1D]">
+                {isPendingConfirmation ? 'Your rider has marked this order as delivered. Have you received your package?' : 'Has your order arrived?'}
+              </p>
               <Button
                 onClick={handleMarkAsReceived}
                 disabled={updating}

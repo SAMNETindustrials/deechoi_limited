@@ -25,8 +25,68 @@ export async function POST(req: Request) {
       order,
       orderData,
       transactionCode,
+      sendBatchPendingEmails,
     } = body
     const supabase = getSupabaseClient()
+
+    // ------------------------------------------------------------------------
+    // 0. RETROACTIVE EMAIL DISPATCH FOR PREVIOUS ORDERS (IF REQUESTED)
+    // ------------------------------------------------------------------------
+    if (sendBatchPendingEmails) {
+      const { data: pastOrders, error: fetchErr } = await supabase
+        .from('store_orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (fetchErr || !pastOrders) {
+        return NextResponse.json({ success: false, error: 'Could not fetch past orders.' })
+      }
+
+      let sentCount = 0
+      for (const pastOrder of pastOrders) {
+        const emailTo = pastOrder.customer_email || pastOrder.email
+        if (emailTo) {
+          try {
+            const customerName = pastOrder.customer_name || pastOrder.name || 'Valued Customer'
+            const orderIdStr = String(pastOrder.id || 'N/A')
+            const subject = `Order Confirmation #${orderIdStr} - De-echoi Kitchen`
+            
+            let itemsListFormatted = '• Standard Food Menu Selection'
+            if (Array.isArray(pastOrder.items) && pastOrder.items.length > 0) {
+              itemsListFormatted = pastOrder.items
+                .map((item: any) => {
+                  const name = item.name || item.product_name || 'Item'
+                  const qty = item.quantity || 1
+                  const price = item.price || item.unit_price || 0
+                  return `• ${name} x${qty} (₦${(price * qty).toLocaleString()})`
+                })
+                .join('\n')
+            }
+
+            const fulfillmentType = pastOrder.fulfillment_method === 'pickup' ? 'Direct Pickup Point (De-echoi Kitchen, Woji)' : 'Dispatch Delivery'
+            const deliveryAddress = pastOrder.delivery_address || 'N/A'
+            const phoneStr = pastOrder.customer_phone || pastOrder.phone || 'N/A'
+            const totalAmountStr = Number(pastOrder.total_amount || pastOrder.total || 0).toLocaleString()
+
+            const messageBody = `Hello ${customerName},\n\nThank you for your order with De-echoi Kitchen! We have successfully received your request and are processing it.\n\n============================\nORDER DETAILS (${orderIdStr})\n============================\n\n[CUSTOMER DETAILS]\n• Full Name: ${customerName}\n• Email: ${emailTo}\n• Phone: ${phoneStr}\n• Fulfillment Method: ${fulfillmentType}\n• Delivery Address: ${deliveryAddress}\n\n[ORDERED ITEMS]\n${itemsListFormatted}\n\n[PAYMENT & TOTAL]\n• Total Payable: ₦${totalAmountStr}\n\nWe will update you shortly once your meal is ready or dispatched.\n\nWarm regards,\nDe-echoi Kitchen Operations`
+
+            const emailResult = await sendOrderConfirmationEmail(emailTo, subject, messageBody)
+            if (emailResult && (emailResult as any).success !== false) {
+              sentCount++
+            }
+          } catch (batchErr) {
+            console.error(`[Batch Email Error for Order ${pastOrder.id}]:`, batchErr)
+          }
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Retroactive emails processed successfully for ${sentCount} past orders.`,
+        sentCount,
+      })
+    }
 
     // ------------------------------------------------------------------------
     // 1. AUTO-DETECT TELEGRAM CHAT ID
@@ -85,7 +145,6 @@ export async function POST(req: Request) {
       console.warn('[Notification Settings DB Notice]:', dbErr)
     }
 
-    // Normalized incoming order payload
     const rawOrder = order || orderData
     let telegramSent = false
     let telegramError: string | null = null
@@ -107,7 +166,6 @@ export async function POST(req: Request) {
 <i>De-echoi Automated Notification System</i>
 `.trim()
       } else if (rawOrder) {
-        // Format Items list
         let itemsListFormatted = 'Standard Food Menu Selection'
 
         if (Array.isArray(rawOrder.items) && rawOrder.items.length > 0) {
@@ -116,43 +174,31 @@ export async function POST(req: Request) {
               const name = item.name || item.product_name || 'Item'
               const qty = item.quantity || 1
               const price = item.price || item.unit_price || 0
-
-              let optionsStr = ''
-              if (Array.isArray(item.selected_options) && item.selected_options.length > 0) {
-                optionsStr = `\n   └ <i>${item.selected_options.map((o: any) => `${o.groupName}: ${o.optionName}`).join(', ')}</i>`
-              } else if (typeof item.selected_options === 'object' && item.selected_options !== null) {
-                optionsStr = `\n   └ <i>${Object.entries(item.selected_options).map(([k, v]) => `${k}: ${v}`).join(', ')}</i>`
-              }
-
-              return `• <b>${name}</b> x${qty} (₦${(price * qty).toLocaleString()})${optionsStr}`
+              return `• <b>${name}</b> x${qty} (₦${(price * qty).toLocaleString()})`
             })
             .join('\n')
-        } else if (rawOrder.items_summary) {
-          itemsListFormatted = rawOrder.items_summary
         }
 
         const orderIdStr = rawOrder.id ? `#${String(rawOrder.id).slice(0, 8)}` : '#NEW'
         const totalAmountStr = Number(rawOrder.total_amount || rawOrder.total || 0).toLocaleString()
-        const deliveryFeeStr = Number(rawOrder.delivery_fee || 0).toLocaleString()
-        const paymentMethodStr = (rawOrder.payment_method || 'bank_transfer').toUpperCase()
+        const fulfillmentType = rawOrder.fulfillment_method === 'pickup' ? 'Direct Pickup Point' : 'Dispatch Delivery'
 
         textToSend = `
 🛍️ <b>NEW STORE ORDER RECEIVED!</b>
 ━━━━━━━━━━━━━━━━━━
 🆔 <b>Order ID:</b> <code>${orderIdStr}</code>
+🚚 <b>Fulfillment:</b> ${fulfillmentType}
 👤 <b>Customer:</b> ${rawOrder.customer_name || rawOrder.name || 'Valued Customer'}
 📱 <b>Phone:</b> ${rawOrder.customer_phone || rawOrder.phone || 'N/A'}
 📧 <b>Email:</b> ${rawOrder.customer_email || rawOrder.email || 'N/A'}
-📍 <b>Delivery Address:</b> ${rawOrder.delivery_address || rawOrder.address || 'Port Harcourt'}
+📍 <b>Address:</b> ${rawOrder.delivery_address || 'N/A'}
 
 🍽️ <b>Ordered Items:</b>
 ${itemsListFormatted}
 
-💰 <b>Total Payable:</b> ₦${totalAmountStr} (Includes ₦${deliveryFeeStr} delivery)
-💳 <b>Payment Method:</b> ${paymentMethodStr}
-${rawOrder.payment_proof_url ? `📎 <b>Payment Proof:</b> <a href="${rawOrder.payment_proof_url}">View Uploaded Receipt</a>\n` : ''}⏰ <b>Time:</b> ${new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' })} (WAT)
+💰 <b>Total Payable:</b> ₦${totalAmountStr}
 ━━━━━━━━━━━━━━━━━━
-<i>De-echoi Kitchen & Delivery Operations</i>
+<i>De-echoi Kitchen Operations</i>
 `.trim()
       }
 
@@ -167,46 +213,70 @@ ${rawOrder.payment_proof_url ? `📎 <b>Payment Proof:</b> <a href="${rawOrder.p
                 chat_id: activeChatId,
                 text: textToSend,
                 parse_mode: 'HTML',
-                disable_web_page_preview: false,
               }),
             }
           )
-
           const sendData = await sendRes.json()
           if (sendData.ok) {
             telegramSent = true
           } else {
             telegramError = sendData.description || 'Telegram rejected delivery.'
-            console.error('[Telegram Delivery Error]:', sendData.description)
           }
         } catch (err: unknown) {
           telegramError = err instanceof Error ? err.message : 'Network error'
-          console.error('[Telegram Send Exception]:', err)
         }
       }
-    } else {
-      telegramError = 'Bot Token or Chat ID is not configured.'
-      console.warn('[Telegram Alert]:', telegramError)
     }
 
     // ------------------------------------------------------------------------
-    // 4. DISPATCH CUSTOMER ORDER EMAIL (IF EMAIL PROVIDED)
+    // 4. DISPATCH CUSTOMER ORDER EMAIL (VIA GMAIL SMTP)
     // ------------------------------------------------------------------------
-    if (rawOrder && (rawOrder.customer_email || rawOrder.email)) {
-      const emailRecipient = rawOrder.customer_email || rawOrder.email
+    let emailRecipient = rawOrder?.customer_email || rawOrder?.email
+
+    if (!emailRecipient && rawOrder?.id) {
       try {
-        const emailResult = await sendOrderConfirmationEmail({
-          toEmail: emailRecipient,
-          customerName: rawOrder.customer_name || rawOrder.name || 'Valued Customer',
-          orderId: String(rawOrder.id || Date.now()),
-          items: Array.isArray(rawOrder.items) ? rawOrder.items : [],
-          totalAmount: Number(rawOrder.total_amount || rawOrder.total || 0),
-          deliveryFee: Number(rawOrder.delivery_fee || 0),
-          deliveryAddress: rawOrder.delivery_address || rawOrder.address || 'Port Harcourt',
-          paymentMethod: rawOrder.payment_method || 'bank_transfer',
-          transactionCode: transactionCode,
-        })
-        emailSent = !!emailResult?.success
+        const { data: dbOrderMatch } = await supabase
+          .from('store_orders')
+          .select('customer_email, email')
+          .eq('id', rawOrder.id)
+          .maybeSingle()
+
+        if (dbOrderMatch) {
+          emailRecipient = dbOrderMatch.customer_email || dbOrderMatch.email
+        }
+      } catch (lookupErr) {
+        console.warn('[Email Fallback Lookup Notice]:', lookupErr)
+      }
+    }
+
+    if (rawOrder && emailRecipient) {
+      try {
+        const customerName = rawOrder.customer_name || rawOrder.name || 'Valued Customer'
+        const orderIdStr = String(rawOrder.id || Date.now())
+        const subject = `Order Confirmation #${orderIdStr} - De-echoi Kitchen`
+
+        let itemsListFormatted = '• Standard Food Menu Selection'
+        if (Array.isArray(rawOrder.items) && rawOrder.items.length > 0) {
+          itemsListFormatted = rawOrder.items
+            .map((item: any) => {
+              const name = item.name || item.product_name || 'Item'
+              const qty = item.quantity || 1
+              const price = item.price || item.unit_price || 0
+              return `• ${name} x${qty} (₦${(price * qty).toLocaleString()})`
+            })
+            .join('\n')
+        }
+
+        const fulfillmentType = rawOrder.fulfillment_method === 'pickup' ? 'Direct Pickup Point (De-echoi Kitchen, Woji)' : 'Dispatch Delivery'
+        const deliveryAddress = rawOrder.delivery_address || 'N/A'
+        const phoneStr = rawOrder.customer_phone || rawOrder.phone || 'N/A'
+        const totalAmountStr = Number(rawOrder.total_amount || rawOrder.total || 0).toLocaleString()
+        const deliveryFeeStr = Number(rawOrder.delivery_fee || 0).toLocaleString()
+
+        const messageBody = `Hello ${customerName},\n\nThank you for choosing De-echoi Kitchen! Your order has been placed successfully and is currently being prepared.\n\n============================\nORDER RECEIPT (${orderIdStr})\n============================\n\n[CUSTOMER DETAILS]\n• Full Name: ${customerName}\n• Email: ${emailRecipient}\n• Phone: ${phoneStr}\n• Fulfillment Method: ${fulfillmentType}\n• Delivery Address: ${deliveryAddress}\n\n[ORDERED ITEMS]\n${itemsListFormatted}\n\n[PAYMENT SUMMARY]\n• Delivery Fee: ₦${deliveryFeeStr}\n• Total Amount Paid: ₦${totalAmountStr}\n\nWe will keep you updated as your meal gets ready for delivery or pickup.\n\nWarm regards,\nDe-echoi Kitchen Operations`
+
+        const emailResult = await sendOrderConfirmationEmail(emailRecipient, subject, messageBody)
+        emailSent = !!emailResult && (emailResult as any).success !== false
       } catch (emailErr) {
         console.error('[Order Confirmation Email Dispatch Warning]:', emailErr)
       }
@@ -220,7 +290,6 @@ ${rawOrder.payment_proof_url ? `📎 <b>Payment Proof:</b> <a href="${rawOrder.p
     })
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Server error'
-    console.error('[Notification Route Fatal Error]:', err)
     return NextResponse.json(
       { success: false, telegramSent: false, telegramError: errorMsg },
       { status: 500 }

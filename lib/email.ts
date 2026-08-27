@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import nodemailer from 'nodemailer'
 
 function getSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
@@ -334,7 +335,7 @@ Time: ${timeString} (WAT)
 }
 
 /**
- * 3. Send Customer Order Confirmation Email
+ * 3. Send Customer Order Confirmation Email via Gmail SMTP
  */
 export async function sendOrderConfirmationEmail(
   toEmail: string,
@@ -342,31 +343,32 @@ export async function sendOrderConfirmationEmail(
   messageBody: string
 ) {
   try {
-    const resendApiKey = process.env.RESEND_API_KEY
-    if (!resendApiKey) {
-      console.warn('[Email Notice]: RESEND_API_KEY not configured. Email logged to console:', { toEmail, subject, messageBody })
+    const userEmail = process.env.GMAIL_SENDER_EMAIL
+    const appPassword = process.env.GMAIL_APP_PASSWORD
+
+    if (!userEmail || !appPassword) {
+      console.warn('[Email Notice]: GMAIL_SENDER_EMAIL or GMAIL_APP_PASSWORD not configured. Email logged to console:', { toEmail, subject, messageBody })
       return { success: true }
     }
 
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${resendApiKey}`
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: userEmail,
+        pass: appPassword,
       },
-      body: JSON.stringify({
-        from: 'De-echoi Support <orders@deechoi.com>',
-        to: [toEmail],
-        subject: subject,
-        text: messageBody,
-      })
     })
 
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.message || 'Failed to send email via Resend')
-    return { success: true, data }
+    const info = await transporter.sendMail({
+      from: `"De-echoi Support" <${userEmail}>`,
+      to: toEmail,
+      subject: subject,
+      text: messageBody,
+    })
+
+    return { success: true, data: info }
   } catch (err: any) {
-    console.error('[Email Dispatch Error]:', err)
+    console.error('[Gmail Email Dispatch Error]:', err)
     return { success: false, error: err.message }
   }
 }

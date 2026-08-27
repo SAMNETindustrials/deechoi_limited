@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { StorefrontHeader } from '@/components/storefront/header'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { 
   Package, 
   Truck, 
@@ -22,7 +23,10 @@ import {
   Star,
   Send,
   X,
-  HeartHandshake
+  HeartHandshake,
+  Lock,
+  Hash,
+  LogOut
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -52,8 +56,11 @@ export default function MyOrdersPage() {
   const [loading, setLoading] = useState(true)
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null)
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed'>('all')
-  const [lookupInput, setLookupInput] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
+
+  // Transaction Login States
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginCode, setLoginCode] = useState('')
+  const [loggingIn, setLoggingIn] = useState(false)
 
   // Review Modal State
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null)
@@ -81,21 +88,31 @@ export default function MyOrdersPage() {
     }
   }, [supabase])
 
-  const fetchCustomerOrders = useCallback(async (manualIdentifier?: string) => {
+  const fetchCustomerOrders = useCallback(async (forcedEmail?: string) => {
     try {
       setLoading(true)
       if (typeof window === 'undefined') return
 
       const { data: { user } } = await supabase.auth.getUser()
-      const session: CustomerSession = JSON.parse(localStorage.getItem('deechoi_customer_session') || '{}')
+      let session: CustomerSession = {}
+      
+      try {
+        const storedSession = localStorage.getItem('deechoi_customer_session')
+        if (storedSession) {
+          session = JSON.parse(storedSession)
+        }
+      } catch (e) {
+        console.warn('Failed to parse customer session from localStorage', e)
+      }
+
       setCustomerSession(session)
 
-      // Strictly isolate search to the specific user email
-      const targetEmail = manualIdentifier?.includes('@') 
-        ? manualIdentifier.trim().toLowerCase() 
+      const targetEmail = forcedEmail 
+        ? forcedEmail.trim().toLowerCase() 
         : (user?.email || session.email || '').trim().toLowerCase()
 
-      if (!targetEmail) {
+      // If no valid session email exists, clear orders
+      if (!targetEmail || !targetEmail.includes('@')) {
         setOrders([])
         setLoading(false)
         return
@@ -110,7 +127,10 @@ export default function MyOrdersPage() {
 
       if (error) throw error
       
-      const fetched = data || []
+      const fetched = (data || []).filter(
+        (o) => o.customer_email?.trim().toLowerCase() === targetEmail
+      )
+
       setOrders(fetched)
 
       if (fetched.length > 0) {
@@ -118,9 +138,9 @@ export default function MyOrdersPage() {
       }
     } catch (err: any) {
       console.error('Error fetching customer orders:', err?.message || err)
+      setOrders([])
     } finally {
       setLoading(false)
-      setIsSearching(false)
     }
   }, [supabase, fetchExistingReviews])
 
@@ -128,11 +148,101 @@ export default function MyOrdersPage() {
     fetchCustomerOrders()
   }, [fetchCustomerOrders])
 
-  const handleManualLookup = (e: React.FormEvent) => {
+  // Handle 5-digit code & email login
+  const handleTransactionLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!lookupInput.trim()) return
-    setIsSearching(true)
-    fetchCustomerOrders(lookupInput.trim())
+    const cleanEmail = loginEmail.trim().toLowerCase()
+    const cleanCode = loginCode.trim()
+
+    if (!cleanEmail || !cleanCode) {
+      alert('Please fill in both your email address and transaction code.')
+      return
+    }
+
+    if (!/^\d{5}$/.test(cleanCode)) {
+      alert('Transaction code must be exactly 5 digits (numbers only, no alphabets).')
+      return
+    }
+
+    setLoggingIn(true)
+
+    try {
+      const { data: account, error: accountError } = await supabase
+        .from('customer_accounts')
+        .select('id, customer_email, transaction_code')
+        .ilike('customer_email', cleanEmail)
+        .maybeSingle()
+
+      if (accountError) {
+        console.error('Transaction account lookup error:', accountError)
+        alert('Unable to verify your account. Please try again.')
+        return
+      }
+
+      if (account) {
+        if (account.transaction_code === cleanCode) {
+          localStorage.setItem('deechoi_customer_email', cleanEmail)
+          localStorage.setItem('deechoi_customer_session', JSON.stringify({ email: cleanEmail }))
+          fetchCustomerOrders(cleanEmail)
+          return
+        }
+        alert('Incorrect Transaction Code. Please check your code and try again.')
+        return
+      }
+
+      // Check if code is taken by another account
+      const { data: existingCode, error: codeError } = await supabase
+        .from('customer_accounts')
+        .select('id, customer_email, transaction_code')
+        .eq('transaction_code', cleanCode)
+        .maybeSingle()
+
+      if (codeError) {
+        console.error('Transaction code lookup error:', codeError)
+        alert('Unable to verify the transaction code. Please try again.')
+        return
+      }
+
+      if (existingCode) {
+        alert('This transaction code already belongs to another customer. Please use your registered email address or choose another code.')
+        return
+      }
+
+      // Create new customer account entry
+      const { error: createError } = await supabase
+        .from('customer_accounts')
+        .insert([{ customer_email: cleanEmail, transaction_code: cleanCode }])
+
+      if (createError) {
+        console.error('Customer account creation error:', createError)
+        if (createError.code === '23505') {
+          alert('This email address or transaction code is already registered. Please try your existing login details.')
+        } else {
+          alert('Could not create your customer account. Please try again later.')
+        }
+        return
+      }
+
+      localStorage.setItem('deechoi_customer_email', cleanEmail)
+      localStorage.setItem('deechoi_customer_session', JSON.stringify({ email: cleanEmail }))
+      window.dispatchEvent(new Event('storage'))
+      fetchCustomerOrders(cleanEmail)
+
+    } catch (err) {
+      console.error('Transaction login error:', err)
+      alert('An unexpected error occurred. Please try again.')
+    } finally {
+      setLoggingIn(false)
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('deechoi_customer_email')
+    localStorage.removeItem('deechoi_customer_session')
+    setCustomerSession(null)
+    setOrders([])
+    setLoginEmail('')
+    setLoginCode('')
   }
 
   const handleOpenReviewModal = (order: Order) => {
@@ -223,13 +333,15 @@ export default function MyOrdersPage() {
       ? completedOrders 
       : orders
 
+  const hasSession = Boolean(customerSession?.email && customerSession.email.includes('@'))
+
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans pb-16">
       <StorefrontHeader />
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* Top Breadcrumb & Refresh Button */}
+        {/* Top Breadcrumb */}
         <div className="mb-6 flex items-center justify-between">
           <Link 
             href="/" 
@@ -239,217 +351,283 @@ export default function MyOrdersPage() {
             Return to Storefront
           </Link>
 
-          <button
-            onClick={() => fetchCustomerOrders()}
-            className="text-xs font-bold text-[#0A2E1D] hover:underline flex items-center gap-1 bg-white border border-gray-200 px-3.5 py-1.5 rounded-full shadow-xs active:scale-95 transition cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh Orders</span>
-          </button>
-        </div>
-
-        {/* Hero Banner */}
-        <div className="mb-8 bg-gradient-to-r from-[#072d1d] via-[#0a3a26] to-[#072d1d] text-white p-6 sm:p-8 rounded-3xl shadow-lg border border-amber-500/20">
-          <div className="flex items-center gap-2 text-amber-400 text-xs font-bold uppercase tracking-wider mb-1">
-            <History className="w-4 h-4" />
-            <span>Order History & Reviews</span>
-          </div>
-          
-          <h1 className="text-2xl sm:text-3xl font-black text-white">
-            {customerSession?.name ? `Hello, ${customerSession.name.split(' ')[0]}!` : 'Your Order History'}
-          </h1>
-          
-          <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-lg">
-            Track live dispatches, view receipts, and rate any of your completed meals.
-          </p>
-
-          {customerSession?.email && (
-            <div className="mt-4 pt-4 border-t border-emerald-800/60 flex flex-wrap gap-4 text-xs text-emerald-200">
-              <span className="flex items-center gap-1.5 bg-[#041a11] px-3 py-1 rounded-full border border-emerald-700/40">
-                <Mail className="w-3.5 h-3.5 text-amber-400" />
-                {customerSession.email}
-              </span>
+          {hasSession && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => fetchCustomerOrders()}
+                className="text-xs font-bold text-[#0A2E1D] hover:underline flex items-center gap-1 bg-white border border-gray-200 px-3 py-1.5 rounded-full shadow-xs transition cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+              <button
+                onClick={handleLogout}
+                className="text-xs font-bold text-red-600 hover:underline flex items-center gap-1 bg-red-50 border border-red-200 px-3 py-1.5 rounded-full transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Logout</span>
+              </button>
             </div>
           )}
         </div>
 
-        {/* Lookup / Search Switcher Tool */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs mb-6">
-          <form onSubmit={handleManualLookup} className="flex flex-col sm:flex-row items-center gap-3">
-            <div className="relative flex-1 w-full">
-              <Search className="absolute left-3.5 top-3 w-4 h-4 text-gray-400" />
-              <input
-                type="email"
-                placeholder="Enter your registered order email..."
-                value={lookupInput}
-                onChange={(e) => setLookupInput(e.target.value)}
-                className="w-full bg-[#FDFBF7] border border-gray-200 text-xs sm:text-sm text-[#0A2E1D] pl-10 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0A2E1D]"
-              />
+        {/* IF NOT LOGGED IN: SHOW TRANSACTION LOGIN SCREEN */}
+        {!hasSession ? (
+          <div className="w-full max-w-md mx-auto p-6 sm:p-8 bg-white rounded-3xl border border-stone-200/80 shadow-md my-8">
+            <div className="mb-6 text-center">
+              <div className="w-12 h-12 bg-amber-100 text-amber-800 rounded-full flex items-center justify-center mx-auto mb-3 shadow-xs">
+                <Lock className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">
+                Customer Dashboard Access
+              </h3>
+              <p className="text-xs text-stone-500 mt-1">
+                Enter your email address and 5-digit transaction code to view your orders.
+              </p>
             </div>
-            <Button
-              type="submit"
-              disabled={isSearching}
-              className="w-full sm:w-auto bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white text-xs font-bold px-5 py-2.5 rounded-xl transition cursor-pointer"
-            >
-              {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Lookup Orders'}
-            </Button>
-          </form>
-        </div>
 
-        {/* Filter Tabs */}
-        {orders.length > 0 && (
-          <div className="flex items-center gap-2 mb-6 border-b border-gray-200 pb-3">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                activeTab === 'all'
-                  ? 'bg-[#0A2E1D] text-white shadow-sm'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              All Orders ({orders.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('active')}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'active'
-                  ? 'bg-[#0A2E1D] text-white shadow-sm'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              <Truck className="w-3.5 h-3.5 text-amber-500" />
-              Active ({activeOrders.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('completed')}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'completed'
-                  ? 'bg-[#0A2E1D] text-white shadow-sm'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
-              Delivered ({completedOrders.length})
-            </button>
-          </div>
-        )}
+            <form onSubmit={handleTransactionLogin} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Email Address
+                </label>
+                <div className="relative flex items-center">
+                  <Mail className="absolute left-3.5 w-4 h-4 text-stone-400" />
+                  <Input
+                    type="email"
+                    autoComplete="email"
+                    placeholder="e.g. user@example.com"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    required
+                    className="pl-10 text-xs sm:text-sm bg-stone-50/50 border-stone-200 focus-visible:border-amber-500 focus-visible:ring-amber-500/20 rounded-xl"
+                  />
+                </div>
+              </div>
 
-        {/* Orders Listing */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-[#0A2E1D]" />
-            <p className="text-xs font-bold text-gray-500">Checking your live orders...</p>
-          </div>
-        ) : displayedOrders.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200 p-8 shadow-sm">
-            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-[#EAA823]">
-              <ShoppingBag className="w-8 h-8" />
-            </div>
-            <h2 className="text-lg font-bold text-gray-800 mb-1">No Orders Found</h2>
-            <p className="text-xs text-gray-500 mb-6 max-w-xs mx-auto">
-              {activeTab !== 'all' 
-                ? `You do not have any ${activeTab} orders at the moment.` 
-                : 'No order history associated with your email address. Type your checkout email above to lookup your orders.'}
-            </p>
-            <Link href="/">
-              <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs cursor-pointer">
-                Explore Menu & Order
+              <div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Transaction Code (5 Digits)
+                </label>
+                <div className="relative flex items-center">
+                  <Hash className="absolute left-3.5 w-4 h-4 text-stone-400" />
+                  <Input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={5}
+                    autoComplete="current-password"
+                    placeholder="e.g. 12345"
+                    value={loginCode}
+                    onChange={(e) => {
+                      const numericOnly = e.target.value.replace(/\D/g, '').slice(0, 5)
+                      setLoginCode(numericOnly)
+                    }}
+                    required
+                    className="pl-10 text-xs sm:text-sm bg-stone-50/50 border-stone-200 focus-visible:border-amber-500 focus-visible:ring-amber-500/20 rounded-xl font-mono tracking-widest"
+                  />
+                </div>
+                <p className="text-[10px] text-stone-400 mt-1 pl-1">
+                  Must be exactly 5 numbers (no letters).
+                </p>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full bg-[#072d1d] hover:bg-amber-500 hover:text-[#072d1d] text-white font-bold text-xs sm:text-sm py-2.5 rounded-xl transition shadow-sm cursor-pointer mt-2"
+                disabled={loggingIn}
+              >
+                {loggingIn ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Verifying...
+                  </span>
+                ) : (
+                  'Access Dashboard'
+                )}
               </Button>
-            </Link>
+            </form>
           </div>
         ) : (
-          <div className="space-y-4">
-            {displayedOrders.map((order) => {
-              const itemCount = (order.items || []).reduce((acc: number, item: any) => acc + (item.quantity || 1), 0)
-              const firstItem = order.items?.[0]?.name || order.items?.[0]?.product_name || 'Delicious Meal'
-              const isReviewed = reviewedOrderIds.includes(order.id)
+          /* IF LOGGED IN: SHOW DASHBOARD & ORDERS */
+          <>
+            {/* Hero Banner */}
+            <div className="mb-8 bg-gradient-to-r from-[#072d1d] via-[#0a3a26] to-[#072d1d] text-white p-6 sm:p-8 rounded-3xl shadow-lg border border-amber-500/20">
+              <div className="flex items-center gap-2 text-amber-400 text-xs font-bold uppercase tracking-wider mb-1">
+                <History className="w-4 h-4" />
+                <span>Order History & Reviews</span>
+              </div>
+              
+              <h1 className="text-2xl sm:text-3xl font-black text-white">
+                Your Order History
+              </h1>
+              
+              <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-lg">
+                Track live dispatches, view receipts, and rate any of your completed meals.
+              </p>
 
-              return (
-                <div
-                  key={order.id}
-                  className="bg-white border border-gray-200/80 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-md transition space-y-4"
+              <div className="mt-4 pt-4 border-t border-emerald-800/60 flex flex-wrap gap-4 text-xs text-emerald-200">
+                <span className="flex items-center gap-1.5 bg-[#041a11] px-3 py-1 rounded-full border border-emerald-700/40">
+                  <Mail className="w-3.5 h-3.5 text-amber-400" />
+                  {customerSession?.email}
+                </span>
+              </div>
+            </div>
+
+            {/* Filter Tabs */}
+            {orders.length > 0 && (
+              <div className="flex items-center gap-2 mb-6 border-b border-gray-200 pb-3">
+                <button
+                  onClick={() => setActiveTab('all')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                    activeTab === 'all'
+                      ? 'bg-[#0A2E1D] text-white shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                  }`}
                 >
-                  {/* Order Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-black text-xs text-[#EAA823]">
-                        #{order.id.slice(0, 8).toUpperCase()}
-                      </span>
-                      <span className="text-gray-300">•</span>
-                      <span className="text-xs font-semibold text-gray-500 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5" />
-                        {new Date(order.created_at).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
+                  All Orders ({orders.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('active')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'active'
+                      ? 'bg-[#0A2E1D] text-white shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <Truck className="w-3.5 h-3.5 text-amber-500" />
+                  Active ({activeOrders.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('completed')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'completed'
+                      ? 'bg-[#0A2E1D] text-white shadow-sm'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                  Delivered ({completedOrders.length})
+                </button>
+              </div>
+            )}
 
-                    <div>{getStatusBadge(order.status)}</div>
-                  </div>
-
-                  {/* Order Content */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="space-y-1.5">
-                      <p className="font-extrabold text-sm sm:text-base text-[#0A2E1D]">
-                        {firstItem} {itemCount > 1 ? `+ ${itemCount - 1} more item${itemCount > 2 ? 's' : ''}` : ''}
-                      </p>
-                      <p className="text-xs text-gray-500 flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                        <span className="truncate max-w-xs">{order.delivery_address}, {order.delivery_city}</span>
-                      </p>
-                      <p className="text-[11px] text-gray-400 font-medium">
-                        Recipient: {order.customer_name} ({order.customer_phone})
-                      </p>
-                    </div>
-
-                    {/* Total & Action Buttons */}
-                    <div className="flex items-center justify-between sm:justify-end gap-3 pt-3 sm:pt-0 border-t sm:border-0 border-gray-100">
-                      <div>
-                        <span className="text-[10px] text-gray-400 uppercase font-semibold block sm:text-right">Total Paid</span>
-                        <span className="text-base sm:text-lg font-black text-[#0A2E1D]">
-                          ₦{Number(order.total_amount || 0).toLocaleString()}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {/* Review Button for Delivered Orders */}
-                        {order.status === 'completed' && (
-                          isReviewed ? (
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
-                              <Star className="w-3.5 h-3.5 fill-[#EAA823] text-[#EAA823]" />
-                              Reviewed
-                            </span>
-                          ) : (
-                            <Button
-                              size="sm"
-                              onClick={() => handleOpenReviewModal(order)}
-                              className="bg-amber-500 hover:bg-amber-400 text-[#072d1d] font-bold rounded-xl text-xs gap-1 shadow-sm transition cursor-pointer"
-                            >
-                              <Star className="w-3.5 h-3.5" />
-                              <span>Review</span>
-                            </Button>
-                          )
-                        )}
-
-                        <Link href={`/order-confirmation/${order.id}`}>
-                          <Button
-                            size="sm"
-                            className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold rounded-xl text-xs gap-1.5 shadow-sm transition cursor-pointer"
-                          >
-                            <span>{order.status === 'completed' ? 'Receipt' : 'Track'}</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </Button>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
+            {/* Orders Listing */}
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin text-[#0A2E1D]" />
+                <p className="text-xs font-bold text-gray-500">Checking your live orders...</p>
+              </div>
+            ) : displayedOrders.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200 p-8 shadow-sm">
+                <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-[#EAA823]">
+                  <ShoppingBag className="w-8 h-8" />
                 </div>
-              )
-            })}
-          </div>
+                <h2 className="text-lg font-bold text-gray-800 mb-1">No Orders Found</h2>
+                <p className="text-xs text-gray-500 mb-6 max-w-xs mx-auto">
+                  {activeTab !== 'all' 
+                    ? `You do not have any ${activeTab} orders at the moment.` 
+                    : 'No order history associated with your email address.'}
+                </p>
+                <Link href="/">
+                  <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs cursor-pointer">
+                    Explore Menu & Order
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {displayedOrders.map((order) => {
+                  const itemCount = (order.items || []).reduce((acc: number, item: any) => acc + (item.quantity || 1), 0)
+                  const firstItem = order.items?.[0]?.name || order.items?.[0]?.product_name || 'Delicious Meal'
+                  const isReviewed = reviewedOrderIds.includes(order.id)
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="bg-white border border-gray-200/80 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-md transition space-y-4"
+                    >
+                      {/* Order Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-black text-xs text-[#EAA823]">
+                            #{order.id.slice(0, 8).toUpperCase()}
+                          </span>
+                          <span className="text-gray-300">•</span>
+                          <span className="text-xs font-semibold text-gray-500 flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {new Date(order.created_at).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        </div>
+
+                        <div>{getStatusBadge(order.status)}</div>
+                      </div>
+
+                      {/* Order Content */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1.5">
+                          <p className="font-extrabold text-sm sm:text-base text-[#0A2E1D]">
+                            {firstItem} {itemCount > 1 ? `+ ${itemCount - 1} more item${itemCount > 2 ? 's' : ''}` : ''}
+                          </p>
+                          <p className="text-xs text-gray-500 flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <span className="truncate max-w-xs">{order.delivery_address}, {order.delivery_city}</span>
+                          </p>
+                          <p className="text-[11px] text-gray-400 font-medium">
+                            Recipient: {order.customer_name} ({order.customer_phone})
+                          </p>
+                        </div>
+
+                        {/* Total & Action Buttons */}
+                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-3 sm:pt-0 border-t sm:border-0 border-gray-100">
+                          <div>
+                            <span className="text-[10px] text-gray-400 uppercase font-semibold block sm:text-right">Total Paid</span>
+                            <span className="text-base sm:text-lg font-black text-[#0A2E1D]">
+                              ₦{Number(order.total_amount || 0).toLocaleString()}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {order.status === 'completed' && (
+                              isReviewed ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                                  <Star className="w-3.5 h-3.5 fill-[#EAA823] text-[#EAA823]" />
+                                  Reviewed
+                                </span>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleOpenReviewModal(order)}
+                                  className="bg-amber-500 hover:bg-amber-400 text-[#072d1d] font-bold rounded-xl text-xs gap-1 shadow-sm transition cursor-pointer"
+                                >
+                                  <Star className="w-3.5 h-3.5" />
+                                  <span>Review</span>
+                                </Button>
+                              )
+                            )}
+
+                            <Link href={`/order-confirmation/${order.id}`}>
+                              <Button
+                                size="sm"
+                                className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold rounded-xl text-xs gap-1.5 shadow-sm transition cursor-pointer"
+                              >
+                                <span>{order.status === 'completed' ? 'Receipt' : 'Track'}</span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
         )}
 
       </div>
@@ -540,17 +718,7 @@ export default function MyOrdersPage() {
                   disabled={submittingReview || !reviewText.trim()}
                   className="flex-1 bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black py-5 rounded-xl text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  {submittingReview ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Submitting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4 text-[#EAA823]" />
-                      <span>Post Review</span>
-                    </>
-                  )}
+                  {submittingQueryLoadingCheck(submittingReview)}
                 </Button>
               </div>
             </form>
@@ -559,5 +727,19 @@ export default function MyOrdersPage() {
       )}
 
     </div>
+  )
+}
+
+function submittingQueryLoadingCheck(submittingReview: boolean) {
+  return submittingReview ? (
+    <>
+      <Loader2 className="w-4 h-4 animate-spin" />
+      <span>Submitting...</span>
+    </>
+  ) : (
+    <>
+      <Send className="w-4 h-4 text-[#EAA823]" />
+      <span>Post Review</span>
+    </>
   )
 }

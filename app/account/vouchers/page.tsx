@@ -15,7 +15,8 @@ import {
   ArrowRight,
   ShieldCheck, 
   AlertCircle, 
-  ShoppingBag 
+  ShoppingBag,
+  UtensilsCrossed
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -37,10 +38,43 @@ export default function CustomerVouchersPage() {
   const [loading, setLoading] = useState(true)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  
+  // 10-Day Countdown State (Target: 10 days from component mount/current time)
+  const [timeLeft, setTimeLeft] = useState({ days: 10, hours: 0, minutes: 0, seconds: 0 })
   const supabase = createClient()
 
   useEffect(() => {
     loadUserVouchers()
+
+    // Set target end date to exactly 10 days from now (persisted in localStorage or freshly calculated)
+    const expiryKey = 'deechoi_lunch_vouchers_expiry'
+    let targetTime = localStorage.getItem(expiryKey)
+    
+    if (!targetTime) {
+      const tenDaysFromNow = new Date().getTime() + 10 * 24 * 60 * 60 * 1000
+      localStorage.setItem(expiryKey, tenDaysFromNow.toString())
+      targetTime = tenDaysFromNow.toString()
+    }
+
+    const endTime = parseInt(targetTime, 10)
+
+    const timer = setInterval(() => {
+      const now = new Date().getTime()
+      const difference = endTime - now
+
+      if (difference <= 0) {
+        setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 })
+        clearInterval(timer)
+      } else {
+        const days = Math.floor(difference / (1000 * 60 * 60 * 24))
+        const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+        const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60))
+        const seconds = Math.floor((difference % (1000 * 60)) / 1000)
+        setTimeLeft({ days, hours, minutes, seconds })
+      }
+    }, 1000)
+
+    return () => clearInterval(timer)
   }, [])
 
   const loadUserVouchers = async () => {
@@ -60,7 +94,7 @@ export default function CustomerVouchersPage() {
             discount_percentage: 15,
             status: 'active',
             claimed_at: new Date().toISOString(),
-            store_events: { title: 'VIP Waitlist / Promotion Reward', event_type: 'waitlist' }
+            store_events: { title: 'Lunch Voucher Reward', event_type: 'lunch_voucher' }
           }])
         }
         setLoading(false)
@@ -89,7 +123,7 @@ export default function CustomerVouchersPage() {
           discount_percentage: 15,
           status: 'active',
           claimed_at: new Date().toISOString(),
-          store_events: { title: 'VIP Waitlist & Campaign Reward', event_type: 'waitlist' }
+          store_events: { title: 'Lunch Voucher Campaign Reward', event_type: 'lunch_voucher' }
         })
       }
 
@@ -102,9 +136,30 @@ export default function CustomerVouchersPage() {
   }
 
   const copyCode = (code: string, id: string) => {
-    navigator.clipboard.writeText(code)
+    if (!code) return
     localStorage.setItem('active_checkout_voucher', code)
     setCopiedId(id)
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).catch((err) => {
+        console.warn('Clipboard write failed:', err)
+      })
+    } else {
+      // Fallback for older browsers or restricted contexts
+      const textArea = document.createElement('textarea')
+      textArea.value = code
+      textArea.style.position = 'fixed'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      try {
+        document.execCommand('copy')
+      } catch (err) {
+        console.warn('Fallback copy failed', err)
+      }
+      document.body.removeChild(textArea)
+    }
+
     setTimeout(() => setCopiedId(null), 3000)
   }
 
@@ -137,7 +192,7 @@ export default function CustomerVouchersPage() {
           </Link>
         </div>
 
-        {/* User Status Notice */}
+        {/* User Status Notice (Moved above countdown card) */}
         {!userEmail ? (
           <div className="p-5 bg-amber-50 border border-amber-200 rounded-2xl space-y-2 text-xs text-amber-900">
             <div className="flex items-center gap-2 font-bold text-sm text-amber-800">
@@ -155,6 +210,43 @@ export default function CustomerVouchersPage() {
           </div>
         )}
 
+        {/* Campaign Update Banner & Countdown */}
+        <div className="bg-gradient-to-r from-[#0A2E1D] to-[#123F27] text-white rounded-3xl p-6 shadow-md relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="space-y-2 text-center md:text-left z-10">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EAA823] text-[#0A2E1D] rounded-full text-[11px] font-black uppercase tracking-wider">
+              <UtensilsCrossed className="w-3.5 h-3.5" />
+              VIP Waitlist Concluded • Lunch Vouchers Active
+            </div>
+            <h2 className="text-lg sm:text-xl font-extrabold">Claim Your Special Lunch Vouchers Now!</h2>
+            <p className="text-xs text-gray-300 max-w-lg">
+              The VIP waitlist period has officially ended. Transitioning to our exclusive lunch voucher campaign—grab yours before the countdown runs out!
+            </p>
+          </div>
+
+          {/* Countdown Display */}
+          <div className="bg-white/15 backdrop-blur-md border border-white/20 p-4 rounded-2xl flex items-center gap-3 text-center z-10 shrink-0">
+            <div className="flex flex-col">
+              <span className="text-lg font-black text-[#EAA823]">{timeLeft.days}</span>
+              <span className="text-[10px] text-gray-300 uppercase font-semibold">Days</span>
+            </div>
+            <span className="text-gray-400 font-bold">:</span>
+            <div className="flex flex-col">
+              <span className="text-lg font-black text-white">{String(timeLeft.hours).padStart(2, '0')}</span>
+              <span className="text-[10px] text-gray-300 uppercase font-semibold">Hours</span>
+            </div>
+            <span className="text-gray-400 font-bold">:</span>
+            <div className="flex flex-col">
+              <span className="text-lg font-black text-white">{String(timeLeft.minutes).padStart(2, '0')}</span>
+              <span className="text-[10px] text-gray-300 uppercase font-semibold">Mins</span>
+            </div>
+            <span className="text-gray-400 font-bold">:</span>
+            <div className="flex flex-col">
+              <span className="text-lg font-black text-white">{String(timeLeft.seconds).padStart(2, '0')}</span>
+              <span className="text-[10px] text-gray-300 uppercase font-semibold">Secs</span>
+            </div>
+          </div>
+        </div>
+
         {/* Voucher Cards */}
         {loading ? (
           <div className="py-20 text-center text-gray-500 text-xs">Loading your rewards and voucher history...</div>
@@ -163,12 +255,12 @@ export default function CustomerVouchersPage() {
             <Gift className="w-10 h-10 text-[#EAA823] mx-auto opacity-60" />
             <h3 className="font-bold text-sm text-[#0A2E1D]">No vouchers found in your wallet</h3>
             <p className="text-xs text-gray-500 max-w-sm mx-auto">
-              Join our VIP waitlist or participate in storefront promotional events to unlock personalized discount vouchers!
+              Participate in our active 10-day lunch voucher campaign on the storefront to unlock your discount code!
             </p>
             <div className="pt-2">
-              <Link href="/#waitlist-section">
+              <Link href="/#our-menu-section">
                 <Button className="bg-[#EAA823] hover:bg-[#0A2E1D] text-[#0A2E1D] hover:text-white font-bold text-xs rounded-xl py-2 px-4 cursor-pointer">
-                  Join VIP Waitlist
+                  Explore Menu &amp; Claim Vouchers
                 </Button>
               </Link>
             </div>
@@ -192,7 +284,7 @@ export default function CustomerVouchersPage() {
                         {v.status.toUpperCase()}
                       </span>
                       <h4 className="font-extrabold text-sm text-[#0A2E1D] mt-1.5">
-                        {v.store_events?.title || 'Launch Celebration Reward'}
+                        {v.store_events?.title || 'Lunch Voucher Reward'}
                       </h4>
                     </div>
 
