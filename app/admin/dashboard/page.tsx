@@ -69,7 +69,6 @@ export default function AdminDashboardPage() {
     promo_banner: true
   })
 
-  // Global Store Settings States
   const [salesSessionActive, setSalesSessionActive] = useState(true)
   const [storefrontActive, setStorefrontActive] = useState(true)
   const [lastClosedDate, setLastClosedDate] = useState<string | null>(null)
@@ -122,21 +121,6 @@ export default function AdminDashboardPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    // Load Global Settings from Supabase
-    const fetchGlobalSettings = async () => {
-      const { data, error } = await supabase.from('store_settings').select('*')
-      if (data && !error) {
-        const storeActive = data.find(s => s.key === 'storefront_active')
-        const salesActive = data.find(s => s.key === 'sales_session_active')
-        const lastClosed = data.find(s => s.key === 'last_closed_date')
-
-        if (storeActive) setStorefrontActive(storeActive.value === 'true')
-        if (salesActive) setSalesSessionActive(salesActive.value === 'true')
-        if (lastClosed) setLastClosedDate(lastClosed.value)
-      }
-    }
-    fetchGlobalSettings()
-
     const savedWidgets = localStorage.getItem('deechoi_admin_widgets')
     if (savedWidgets) {
       try {
@@ -148,6 +132,14 @@ export default function AdminDashboardPage() {
         console.warn('Could not load widgets status', e)
       }
     }
+
+    const savedShiftStatus = localStorage.getItem('deechoi_sales_session_active')
+    const savedStoreStatus = localStorage.getItem('deechoi_storefront_active')
+    const savedCloseDate = localStorage.getItem('deechoi_last_closed_date')
+
+    if (savedShiftStatus !== null) setSalesSessionActive(savedShiftStatus === 'true')
+    if (savedStoreStatus !== null) setStorefrontActive(savedStoreStatus === 'true')
+    if (savedCloseDate) setLastClosedDate(savedCloseDate)
 
     const currentHour = new Date().getHours()
     if (currentHour < 12) {
@@ -190,42 +182,37 @@ export default function AdminDashboardPage() {
     return activeWidgets[id] !== false
   }
 
-  const handleCloseSales = async () => {
+  const handleCloseSales = () => {
     if (confirm('Are you sure you want to close dashboard sales for today?')) {
       setSalesSessionActive(false)
       const todayStr = new Date().toLocaleDateString()
       setLastClosedDate(todayStr)
-      
-      await supabase.from('store_settings').upsert([
-        { key: 'sales_session_active', value: 'false', updated_at: new Date().toISOString() },
-        { key: 'last_closed_date', value: todayStr, updated_at: new Date().toISOString() }
-      ])
+      localStorage.setItem('deechoi_sales_session_active', 'false')
+      localStorage.setItem('deechoi_last_closed_date', todayStr)
+      // Broadcast event so storefront picks up changes instantly in same tab
+      window.dispatchEvent(new Event('deechoi_store_status_change'))
     }
   }
 
-  const handleStartSales = async () => {
+  const handleStartSales = () => {
     setSalesSessionActive(true)
-    await supabase.from('store_settings').upsert([
-      { key: 'sales_session_active', value: 'true', updated_at: new Date().toISOString() }
-    ])
+    localStorage.setItem('deechoi_sales_session_active', 'true')
+    // Broadcast event so storefront picks up changes instantly in same tab
+    window.dispatchEvent(new Event('deechoi_store_status_change'))
   }
 
-  const handleToggleStorefront = async () => {
+  const handleToggleStorefront = () => {
     const newState = !storefrontActive
     setStorefrontActive(newState)
-    
-    // Save to Global Database so all customers see it instantly
-    await supabase.from('store_settings').upsert([
-      { key: 'storefront_active', value: String(newState), updated_at: new Date().toISOString() }
-    ])
-
-    // Keep localStorage as a fallback backup
     localStorage.setItem('deechoi_storefront_active', String(newState))
+    
+    // BROADCAST EVENT TO STOREFRONT (Crucial for Next.js Single Page App routing)
+    window.dispatchEvent(new Event('deechoi_store_status_change'))
 
     if (!newState) {
-      alert('Storefront turned OFF. Customers can now only make PRE-ORDERS globally.')
+      alert('Storefront turned OFF. Customers can now only make PRE-ORDERS.')
     } else {
-      alert('Storefront turned ON. Live ordering is now active globally.')
+      alert('Storefront turned ON. Live ordering is now active.')
     }
   }
 

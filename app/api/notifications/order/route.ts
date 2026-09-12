@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       isTest,
       order,
       orderData,
-      transactionCode,
+      receipt,
       sendBatchPendingEmails,
     } = body
     const supabase = getSupabaseClient()
@@ -40,7 +40,10 @@ export async function POST(req: Request) {
         .limit(50)
 
       if (fetchErr || !pastOrders) {
-        return NextResponse.json({ success: false, error: 'Could not fetch past orders.' })
+        return NextResponse.json(
+          { success: false, error: 'Could not fetch past orders.' },
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        )
       }
 
       let sentCount = 0
@@ -85,7 +88,63 @@ export async function POST(req: Request) {
         success: true,
         message: `Retroactive emails processed successfully for ${sentCount} past orders.`,
         sentCount,
-      })
+      }, { headers: { 'Content-Type': 'application/json' } })
+    }
+
+    // ------------------------------------------------------------------------
+    // 0.1. HANDLE CUSTOMER INVOICE & RECEIPT EMAIL DISPATCH
+    // ------------------------------------------------------------------------
+    if (receipt) {
+      const emailTo = receipt.customer_email
+      if (!emailTo) {
+        return NextResponse.json(
+          { success: false, error: 'Customer email is required on receipt.' },
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const subject = `Official Order Invoice & Receipt - Ref: ${receipt.receipt_number}`
+      const itemsListText = (receipt.items || [])
+        .map(
+          (item: any, idx: number) =>
+            `${idx + 1}. ${item.item_name} (${item.quantity} ${item.unit}) @ ₦${Number(item.unit_price).toLocaleString()} = ₦${(item.quantity * item.unit_price).toLocaleString()}`
+        )
+        .join('\n')
+
+      const messageBody = `
+Dear ${receipt.customer_name || 'Valued Customer'},
+
+Thank you for your patronage! Below is your official order invoice and payment receipt from De-echoi Limited.
+
+INVOICE REF: ${receipt.receipt_number}
+DATE: ${new Date(receipt.created_at || Date.now()).toLocaleDateString(undefined, { dateStyle: 'full' })}
+STATUS: PAID / CONFIRMED
+
+----------------------------------------
+ORDERED ITEMS:
+----------------------------------------
+${itemsListText}
+
+----------------------------------------
+FINANCIAL SUMMARY:
+----------------------------------------
+Subtotal: ₦${Number(receipt.subtotal || 0).toLocaleString()}
+${receipt.vat_amount > 0 ? `VAT: ₦${Number(receipt.vat_amount || 0).toLocaleString()}\n` : ''}${receipt.discount_amount > 0 ? `Discount: -₦${Number(receipt.discount_amount || 0).toLocaleString()}\n` : ''}TOTAL AMOUNT PAID: ₦${Number(receipt.total_amount || 0).toLocaleString()}
+
+Notes: ${receipt.notes || 'N/A'}
+
+De-echoi Limited Operations
+Eze Nvuigwe Avenue, Woji, Port Harcourt
+Email: deechoi01@gmail.com | Tel: +234 7046145982
+      `.trim()
+
+      const emailResult = await sendOrderConfirmationEmail(emailTo, subject, messageBody)
+      const emailSent = !!emailResult && (emailResult as any).success !== false
+
+      return NextResponse.json({
+        success: true,
+        emailSent,
+      }, { headers: { 'Content-Type': 'application/json' } })
     }
 
     // ------------------------------------------------------------------------
@@ -108,7 +167,7 @@ export async function POST(req: Request) {
           return NextResponse.json({
             success: true,
             detectedChatId: String(detectedChatId),
-          })
+          }, { headers: { 'Content-Type': 'application/json' } })
         }
       }
 
@@ -116,7 +175,7 @@ export async function POST(req: Request) {
         success: false,
         error:
           'No recent messages found. Open Telegram, search for your bot, click START (or send a message to it), and try again.',
-      })
+      }, { headers: { 'Content-Type': 'application/json' } })
     }
 
     // ------------------------------------------------------------------------
@@ -287,12 +346,13 @@ ${itemsListFormatted}
       telegramSent,
       telegramError,
       emailSent,
-    })
+    }, { headers: { 'Content-Type': 'application/json' } })
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Server error'
+    console.error('[API /api/notifications Fatal Error]:', err)
     return NextResponse.json(
-      { success: false, telegramSent: false, telegramError: errorMsg },
-      { status: 500 }
+      { success: false, telegramSent: false, telegramError: errorMsg, error: errorMsg },
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
 }

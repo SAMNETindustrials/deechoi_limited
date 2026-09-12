@@ -19,7 +19,6 @@ import {
   Utensils,
   Sparkles,
   Flame,
-  Fish,
   Check,
   AlertCircle,
   XCircle,
@@ -163,7 +162,7 @@ export default function ProductDetailPage({
 
   const getCounterMinimum = (option: Option | null | undefined): number => {
     if (!option) return 1
-    const minCount = getPositiveNumber(option.min_multiplier_count)
+    const minCount = getPositiveNumber(option.min_multiplier_count) ?? getPositiveNumber(option.multiplier)
     if (minCount !== null && minCount > 0) {
       return minCount
     }
@@ -220,7 +219,7 @@ export default function ProductDetailPage({
               const defaultOpt = group.options[0]
               defaults[group.name] = defaultOpt
 
-              if (defaultOpt.has_counter) {
+              if (defaultOpt.has_counter || (defaultOpt.multiplier && defaultOpt.multiplier > 0)) {
                 counters[defaultOpt.name] = getCounterMinimum(defaultOpt)
               }
 
@@ -279,7 +278,7 @@ export default function ProductDetailPage({
       [group.name]: opt,
     })
 
-    if (opt.has_counter) {
+    if (opt.has_counter || (opt.multiplier && opt.multiplier > 0)) {
       const counterMinimum = getCounterMinimum(opt)
       setUnitCounters({
         ...unitCounters,
@@ -373,7 +372,7 @@ export default function ProductDetailPage({
         if (!group.type || group.type === 'radio') {
           const selectedOpt = selectedRadioOptions[group.name]
           if (selectedOpt && isStandaloneGroup(group)) {
-            if (selectedOpt.has_counter) {
+            if (selectedOpt.has_counter || (selectedOpt.multiplier && selectedOpt.multiplier > 0)) {
               const minimum = getCounterMinimum(selectedOpt)
               const count = Math.max(minimum, unitCounters[selectedOpt.name] || minimum)
               base = (selectedOpt.unit_price || selectedOpt.price_modifier || 0) * count
@@ -388,7 +387,7 @@ export default function ProductDetailPage({
         if (!group.type || group.type === 'radio') {
           const selectedOpt = selectedRadioOptions[group.name]
           if (selectedOpt && !isStandaloneGroup(group)) {
-            if (selectedOpt.has_counter) {
+            if (selectedOpt.has_counter || (selectedOpt.multiplier && selectedOpt.multiplier > 0)) {
               const minimum = getCounterMinimum(selectedOpt)
               const count = Math.max(minimum, unitCounters[selectedOpt.name] || minimum)
               base += (selectedOpt.unit_price || selectedOpt.price_modifier || 0) * count
@@ -468,7 +467,7 @@ export default function ProductDetailPage({
             let modifier = opt.price_modifier || 0
             let optDisplayName = opt.name
 
-            if (opt.has_counter) {
+            if (opt.has_counter || (opt.multiplier && opt.multiplier > 0)) {
               const minimum = getCounterMinimum(opt)
               const count = Math.max(minimum, unitCounters[opt.name] || minimum)
               modifier = (opt.unit_price || opt.price_modifier || 0) * count
@@ -816,37 +815,103 @@ export default function ProductDetailPage({
                       {(!group.type || group.type === 'radio') && (
                         <div className="space-y-3">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {group.options.map((opt: Option) => {
+                            {group.options.map((opt: Option, oIdx: number) => {
+                              if (opt.is_available === false) return null
                               const isSelected = selectedRadioOptions[group.name]?.name === opt.name
+                              const showCounter = opt.has_counter || (opt.multiplier && opt.multiplier > 0)
+                              const counterMin = getCounterMinimum(opt)
+                              const currentCount = unitCounters[opt.name] || counterMin
+                              const showCuts = Boolean(opt.has_cuts_selection) && Array.isArray(opt.allowed_cuts) && opt.allowed_cuts.length > 0
 
                               return (
-                                <button
-                                  key={opt.name}
-                                  type="button"
+                                <div
+                                  key={oIdx}
                                   onClick={() => handleRadioClick(group, opt)}
-                                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                                  className={`flex flex-col p-3 rounded-xl border-2 cursor-pointer transition-all ${
                                     isSelected
-                                      ? 'bg-[#0A2E1D] text-white border-[#0A2E1D] shadow-sm'
-                                      : 'bg-[#FDFBF7] text-gray-700 border-gray-200 hover:border-gray-300'
+                                      ? 'border-[#0A2E1D] bg-[#0A2E1D]/5 shadow-xs'
+                                      : 'border-gray-200 hover:border-gray-300 bg-white'
                                   }`}
                                 >
-                                  <div className="flex justify-between items-center w-full gap-2">
-                                    <span className="text-xs font-bold flex items-center gap-1.5">
-                                      {isSelected && <span className="w-2 h-2 rounded-full bg-[#EAA823]" />}
-                                      {opt.name}
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-[#0A2E1D] bg-[#0A2E1D]' : 'border-gray-300 bg-white'}`}>
+                                        {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                      </div>
+                                      <span className="text-xs sm:text-sm font-bold text-[#0A2E1D]">{opt.name}</span>
+                                    </div>
+                                    <span className="text-xs font-black text-[#0A2E1D]">
+                                      {opt.price_modifier > 0 ? `+₦${opt.price_modifier.toLocaleString()}` : opt.unit_price ? `₦${opt.unit_price.toLocaleString()}/unit` : 'Free'}
                                     </span>
-                                    {opt.price_modifier > 0 && (
-                                      <span className={`text-[10px] font-black ${isSelected ? 'text-[#EAA823]' : 'text-[#0A2E1D]'}`}>
-                                        {isStandalone ? `₦${opt.price_modifier.toLocaleString()}` : `+₦${opt.price_modifier.toLocaleString()}`}
-                                      </span>
-                                    )}
                                   </div>
+
                                   {opt.description && (
-                                    <span className={`text-[10px] mt-1 block leading-tight ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
-                                      {opt.description}
-                                    </span>
+                                    <p className="text-[11px] text-gray-500 mt-1 pl-6">{opt.description}</p>
                                   )}
-                                </button>
+
+                                  {/* COUNTER / MULTIPLIER CONTROLS */}
+                                  {isSelected && showCounter && (
+                                    <div 
+                                      className="mt-3 pt-3 border-t border-gray-200/70 flex items-center justify-between"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <span className="text-[11px] font-bold text-gray-700">Quantity / Multiplier:</span>
+                                      <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-2 py-1 shadow-xs">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCounterChange(opt, -1)}
+                                          disabled={currentCount <= counterMin}
+                                          className="w-5 h-5 flex items-center justify-center rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-gray-700 font-bold"
+                                        >
+                                          <Minus className="w-3 h-3" />
+                                        </button>
+                                        <span className="text-xs font-black text-[#0A2E1D] w-6 text-center">{currentCount}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCounterChange(opt, 1)}
+                                          className="w-5 h-5 flex items-center justify-center rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* CUTS & PIECES SELECTION */}
+                                  {isSelected && showCuts && (
+                                    <div 
+                                      className="mt-3 pt-3 border-t border-gray-200/70 space-y-2"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="flex items-center justify-between text-[11px]">
+                                        <span className="font-bold text-gray-700">{opt.cut_selection_title || 'Select Cut/Pieces:'}</span>
+                                        <span className="text-gray-500 font-medium">
+                                          ({selectedCuts[opt.name]?.length || 0} / {opt.max_cuts_selection || opt.allowed_cuts?.length || 1})
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {opt.allowed_cuts!.map((cut: string, cIdx: number) => {
+                                          const isCutSelected = (selectedCuts[opt.name] || []).includes(cut)
+                                          const maxSel = opt.max_cuts_selection || 1
+                                          return (
+                                            <button
+                                              key={cIdx}
+                                              type="button"
+                                              onClick={() => toggleCut(opt.name, cut, maxSel)}
+                                              className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                                                isCutSelected
+                                                  ? 'bg-[#0A2E1D] text-white border-[#0A2E1D] shadow-xs'
+                                                  : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-gray-300'
+                                              }`}
+                                            >
+                                              {cut} {isCutSelected && '✓'}
+                                            </button>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               )
                             })}
                           </div>
@@ -856,196 +921,92 @@ export default function ProductDetailPage({
                       {/* CHECKBOX / MULTI-SELECT */}
                       {group.type === 'checkbox' && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          {group.options.map((opt: Option) => {
+                          {group.options.map((opt: Option, oIdx: number) => {
+                            if (opt.is_available === false) return null
                             const isChecked = Boolean(selectedCheckboxOptions[opt.name])
 
                             return (
-                              <button
-                                key={opt.name}
-                                type="button"
+                              <div
+                                key={oIdx}
                                 onClick={() => toggleCheckboxOption(opt.name)}
-                                className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center justify-between ${
+                                className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${
                                   isChecked
-                                    ? 'bg-[#0A2E1D] text-white border-[#0A2E1D] shadow-sm'
-                                    : 'bg-[#FDFBF7] text-gray-700 border-gray-200 hover:border-gray-300'
+                                    ? 'border-[#0A2E1D] bg-[#0A2E1D]/5 shadow-xs'
+                                    : 'border-gray-200 hover:border-gray-300 bg-white'
                                 }`}
                               >
-                                <div className="flex items-center gap-2">
-                                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${isChecked ? 'bg-[#EAA823] border-[#EAA823] text-[#0A2E1D]' : 'border-gray-400 bg-white'}`}>
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${isChecked ? 'border-[#0A2E1D] bg-[#0A2E1D] text-white' : 'border-gray-300 bg-white'}`}>
                                     {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                                   </div>
-                                  <span className="text-xs font-bold">{opt.name}</span>
+                                  <span className="text-xs sm:text-sm font-bold text-[#0A2E1D]">{opt.name}</span>
                                 </div>
-                                {opt.price_modifier > 0 && (
-                                  <span className={`text-[10px] font-black ${isChecked ? 'text-[#EAA823]' : 'text-[#0A2E1D]'}`}>
-                                    +₦{opt.price_modifier.toLocaleString()}
-                                  </span>
-                                )}
-                              </button>
+                                <span className="text-xs font-black text-[#0A2E1D]">
+                                  {opt.price_modifier > 0 ? `+₦${opt.price_modifier.toLocaleString()}` : 'Free'}
+                                </span>
+                              </div>
                             )
                           })}
                         </div>
                       )}
-
-                      {/* COUNTER */}
-                      {selectedGroupOpt?.has_counter && (() => {
-                        const currentOpt = selectedGroupOpt
-                        const counterMinimum = getCounterMinimum(currentOpt)
-                        const currentCount = Math.max(counterMinimum, unitCounters[currentOpt.name] || counterMinimum)
-
-                        return (
-                          <div className="flex items-center justify-between bg-[#FDFBF7] p-3 rounded-xl border border-gray-200 mt-2">
-                            <div>
-                              <span className="text-xs font-bold text-[#0A2E1D]">Quantity Count:</span>
-                              <span className="text-[10px] text-gray-500 block">
-                                ₦{(currentOpt.unit_price || currentOpt.price_modifier || 2000).toLocaleString()} per unit
-                              </span>
-                              <span className="text-[9px] text-amber-600 font-black block mt-1">
-                                Minimum starts at: {counterMinimum} units
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-1">
-                              <button
-                                type="button"
-                                disabled={currentCount <= counterMinimum}
-                                onClick={() => handleCounterChange(currentOpt, -1)}
-                                className="p-1 hover:bg-gray-100 rounded text-gray-700 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                              >
-                                <Minus className="w-3.5 h-3.5" />
-                              </button>
-                              <span className="font-bold text-xs w-8 text-center text-[#0A2E1D]">{currentCount}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleCounterChange(currentOpt, 1)}
-                                className="p-1 hover:bg-gray-100 rounded text-gray-700 cursor-pointer"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })()}
-
-                      {/* PIECE / CUTS SELECTION */}
-                      {selectedGroupOpt && Boolean(selectedGroupOpt.has_cuts_selection) && Array.isArray(selectedGroupOpt.allowed_cuts) && selectedGroupOpt.allowed_cuts.length > 0 && (() => {
-                        const currentOpt = selectedGroupOpt
-                        const maxSelect = currentOpt.max_cuts_selection || 1
-                        const chosenCuts = selectedCuts[currentOpt.name] || []
-                        const displayCutTitle = currentOpt.cut_selection_title || 'Select Preferred Cut / Parts'
-
-                        return (
-                          <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3.5 space-y-2 mt-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                                <Fish className="w-4 h-4 text-emerald-700" />
-                                {displayCutTitle} ({maxSelect === 1 ? 'Pick 1' : `Up to ${maxSelect}`}):
-                              </span>
-                              <span className="text-[10px] bg-emerald-200/60 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
-                                {chosenCuts.length} / {maxSelect} Selected
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
-                              {currentOpt.allowed_cuts.map((cutName: string) => {
-                                const isCutChosen = chosenCuts.includes(cutName)
-
-                                return (
-                                  <button
-                                    key={cutName}
-                                    type="button"
-                                    onClick={() => toggleCut(currentOpt.name, cutName, maxSelect)}
-                                    className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-between cursor-pointer ${
-                                      isCutChosen
-                                        ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs'
-                                        : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
-                                    }`}
-                                  >
-                                    <span>{cutName}</span>
-                                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isCutChosen ? 'bg-[#EAA823] border-[#EAA823] text-emerald-950' : 'border-gray-300 bg-white'}`}>
-                                      {isCutChosen && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                                    </div>
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        )
-                      })()}
                     </div>
                   )
                 })}
               </div>
             )}
 
-            {/* BOTTOM CART BAR */}
-            <div className="p-4 bg-white rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between gap-4">
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex items-center gap-2 bg-[#FDFBF7] border border-gray-300 rounded-xl p-1">
+            {/* QUANTITY & ADD TO CART BAR */}
+            <div className="pt-6 border-t border-gray-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs sm:text-sm font-bold text-[#0A2E1D] uppercase tracking-wider">
+                  Quantity
+                </span>
+                <div className="flex items-center gap-3 bg-white border border-gray-300 rounded-full px-4 py-2 shadow-xs">
                   <button
                     type="button"
-                    disabled={isOutOfStock || quantity <= minimumQuantity}
                     onClick={() => handleQuantityChange(-1)}
-                    className="p-2 rounded-lg hover:bg-white text-gray-700 cursor-pointer transition active:scale-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled={quantity <= minimumQuantity}
+                    className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-700 disabled:opacity-40 transition"
                   >
-                    <Minus className="w-4 h-4" />
+                    <Minus className="w-3.5 h-3.5" />
                   </button>
-                  <span className="font-black text-sm w-7 text-center text-[#0A2E1D]">{quantity}</span>
+                  <span className="text-base font-black text-[#0A2E1D] w-8 text-center">{quantity}</span>
                   <button
                     type="button"
-                    disabled={isOutOfStock}
                     onClick={() => handleQuantityChange(1)}
-                    className="p-2 rounded-lg hover:bg-white text-gray-700 cursor-pointer transition active:scale-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-700 transition"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
-                {minimumQuantityEnabled && minimumQuantity > 1 && (
-                  <span className="text-[8px] sm:text-[9px] font-black text-amber-600 uppercase tracking-wide whitespace-nowrap">
-                    Minimum: {minimumQuantity}
-                  </span>
-                )}
               </div>
 
-              <Button
-                onClick={handleAddToCart}
-                disabled={isOutOfStock}
-                className={`flex-1 font-black text-xs sm:text-sm py-6 rounded-xl shadow-md transition flex items-center justify-center gap-2 ${
-                  isOutOfStock
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    : 'bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white active:scale-95 cursor-pointer'
-                }`}
-              >
-                {isOutOfStock ? (
-                  <>
-                    <XCircle className="w-4 h-4 text-red-500" />
-                    <span>Out of Stock</span>
-                  </>
-                ) : (
-                  <>
-                    <ShoppingBag className="w-4 h-4" />
-                    <span>
-                      {!isStoreLive && mounted 
-                        ? `Pre-Order • ₦${calculateTotal().toLocaleString()}`
-                        : `Add to Cart • ₦${calculateTotal().toLocaleString()}`
-                      }
-                    </span>
-                  </>
-                )}
-              </Button>
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex flex-col">
+                  <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">Total Amount</span>
+                  <span className="text-2xl sm:text-3xl font-black text-[#0A2E1D]">
+                    ₦{calculateTotal().toLocaleString()}
+                  </span>
+                </div>
+
+                <Button
+                  onClick={handleAddToCart}
+                  disabled={isUnavailable}
+                  className={`font-black rounded-full px-8 py-6 text-sm sm:text-base shadow-xl transition-all cursor-pointer ${
+                    isUnavailable
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] active:scale-95'
+                  }`}
+                >
+                  <ShoppingBag className="w-5 h-5 mr-2" />
+                  {isOutOfStock ? 'Sold Out' : isTimeBlocked ? 'Menu Closed' : !isStoreLive && mounted ? 'Pre-Order Now' : 'Add to Cart'}
+                </Button>
+              </div>
             </div>
+
           </div>
         </div>
       </main>
-
-      <style jsx global>{`
-        @keyframes bounceSlow {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-2px); }
-        }
-        .animate-bounce-slow {
-          animation: bounceSlow 2s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   )
 }

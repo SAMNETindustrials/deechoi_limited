@@ -1,13 +1,11 @@
 'use client'
 
-import React, { createContext, useContext, useState, useCallback, Key } from 'react'
+import React, { createContext, useContext, useState, useCallback, Key, ReactNode } from 'react'
 
 export interface CartItem {
-  prep_time: any
+  image: any
   prep_time: any
   cooking_time: any
-  cooking_time: any
-  fulfillment_time: any
   fulfillment_time: any
   name: string | undefined
   id: Key | null | undefined
@@ -19,6 +17,7 @@ export interface CartItem {
   unit_price: number
   final_price: number
   selected_options?: Array<{
+    choiceLabel: ReactNode
     groupName: string
     optionName: string
     priceModifier: number

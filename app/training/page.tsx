@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
-import Image from 'next/image'
+import React from 'react'
 import Link from 'next/link'
 import { StorefrontHeader } from '@/components/storefront/header'
 import { 
@@ -10,23 +9,17 @@ import {
   Clock, 
   CheckCircle2, 
   ShieldCheck, 
-  Calendar, 
   BookOpen, 
   ChefHat, 
-  Layers, 
-  Send, 
   Award, 
   Flame, 
   Utensils, 
   Cake, 
-  Phone, 
-  Mail, 
   ArrowRight,
-  User,
-  Check
+  Check,
+  Search
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 
 const COURSES = [
   {
@@ -77,38 +70,42 @@ const COURSES = [
 ]
 
 export default function TrainingAcademyPage() {
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    preferredCourse: 'Professional Cake Artistry & Tiered Bakes',
-    sessionType: 'Weekend Session'
-  })
-  const [submitted, setSubmitted] = useState(false)
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!formData.fullName || !formData.email || !formData.phone) return
-    setSubmitted(true)
-  }
-
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans pb-16 selection:bg-[#EAA823] selection:text-[#072d1d]">
       <StorefrontHeader />
 
-      {/* HERO SECTION WITH COMING SOON BANNER */}
+      {/* HERO SECTION WITH REGISTRATION & VERIFY CERTIFICATE BUTTONS */}
       <section className="relative overflow-hidden bg-[#072d1d] text-white pt-10 pb-16 lg:pb-24 border-b border-[#EAA823]/30">
         <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#EAA823_1px,transparent_1px)] [background-size:16px_16px]" />
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="bg-[#EAA823] text-[#072d1d] font-black text-xs uppercase px-3.5 py-1.5 rounded-full shadow-md flex items-center gap-1.5 animate-pulse">
-              <Sparkles className="w-3.5 h-3.5 fill-current" />
-              <span>Cohorts Opening Soon</span>
-            </span>
-            <span className="bg-white/10 text-emerald-100 text-xs px-3 py-1.5 rounded-full border border-white/15">
-              Woji, Port Harcourt &bull; Practical Hands-On
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="bg-[#EAA823] text-[#072d1d] font-black text-xs uppercase px-3.5 py-1.5 rounded-full shadow-md flex items-center gap-1.5 animate-pulse">
+                <Sparkles className="w-3.5 h-3.5 fill-current" />
+                <span>Cohorts Opening Soon</span>
+              </span>
+              <span className="bg-white/10 text-emerald-100 text-xs px-3 py-1.5 rounded-full border border-white/15">
+                Woji, Port Harcourt &bull; Practical Hands-On
+              </span>
+            </div>
+
+            {/* Header Action Buttons */}
+            <div className="flex items-center gap-3">
+              <Link href="/verify-certificate">
+                <Button className="bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-1.5">
+                  <Search className="w-3.5 h-3.5 text-[#EAA823]" />
+                  Verify Certificate
+                </Button>
+              </Link>
+
+              <Link href="/training/register">
+                <Button className="bg-[#EAA823] hover:bg-[#f5d547] text-[#072d1d] font-black text-xs px-5 py-2.5 rounded-xl shadow-lg transition flex items-center gap-1.5">
+                  <span>Register for Course</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+              </Link>
+            </div>
           </div>
 
           <div className="max-w-3xl space-y-4">
@@ -221,14 +218,13 @@ export default function TrainingAcademyPage() {
                   </div>
                 </div>
 
-                <a 
-                  href="#enroll-form"
-                  onClick={() => setFormData({ ...formData, preferredCourse: course.title })}
+                <Link 
+                  href="/training/register"
                   className="w-full bg-[#072d1d] group-hover:bg-[#EAA823] text-white group-hover:text-[#072d1d] font-bold text-xs py-3 rounded-xl transition text-center flex items-center justify-center gap-1.5 shadow-sm mt-4"
                 >
                   <span>Apply for Waitlist</span>
                   <ArrowRight className="w-3.5 h-3.5" />
-                </a>
+                </Link>
               </div>
             ))}
           </div>
@@ -264,131 +260,6 @@ export default function TrainingAcademyPage() {
                 Seat reservation requires upfront deposit upon cohort opening. Training fees cover raw materials, baking tool kits, recipe manuals, and exam ingredients.
               </p>
             </div>
-          </div>
-        </section>
-
-        {/* ADMISSION APPLICATION FORM */}
-        <section id="enroll-form" className="bg-white rounded-3xl p-6 sm:p-10 border border-stone-200/80 shadow-xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center scroll-mt-24">
-          <div className="lg:col-span-5 space-y-4">
-            <span className="text-xs font-bold text-[#EAA823] uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4" /> Priority Admissions
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-black text-[#072d1d] leading-tight">
-              Reserve Your Seat for the Upcoming Cohort.
-            </h2>
-            <p className="text-xs text-stone-600 leading-relaxed">
-              Fill out the priority registration form below. Our admissions coordinator will reach out with cohort timetables, syllabus details, and tuition guidance.
-            </p>
-
-            <div className="space-y-2.5 pt-2 text-xs font-semibold text-stone-700">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Small class sizes (maximum 10 students per batch)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Lifetime recipe handbook included</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Post-training business mentorship &amp; vendor networks</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-7 bg-[#F9F6F0] p-6 sm:p-8 rounded-3xl border border-stone-200">
-            {submitted ? (
-              <div className="p-8 text-center space-y-3">
-                <div className="w-12 h-12 bg-emerald-600 text-white rounded-full flex items-center justify-center mx-auto shadow-md">
-                  <Check className="w-6 h-6 stroke-[3]" />
-                </div>
-                <h3 className="text-lg font-black text-[#072d1d]">Application Received!</h3>
-                <p className="text-xs text-stone-600 max-w-md mx-auto">
-                  Thank you, <strong>{formData.fullName}</strong>. Your priority waitlist application has been registered. Our admissions desk will contact you via WhatsApp and phone shortly.
-                </p>
-                <Button 
-                  onClick={() => setSubmitted(false)}
-                  className="bg-[#072d1d] text-white text-xs font-bold px-6 py-2 rounded-xl mt-2 cursor-pointer"
-                >
-                  Submit Another Inquiry
-                </Button>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-stone-800">Full Name *</label>
-                    <Input
-                      type="text"
-                      required
-                      placeholder="e.g. Joy Okafor"
-                      value={formData.fullName}
-                      onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                      className="bg-white border-stone-300 text-xs py-2.5 rounded-xl"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-stone-800">Phone Number (WhatsApp) *</label>
-                    <Input
-                      type="tel"
-                      required
-                      placeholder="e.g. 08012345678"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="bg-white border-stone-300 text-xs py-2.5 rounded-xl"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-stone-800">Email Address *</label>
-                  <Input
-                    type="email"
-                    required
-                    placeholder="e.g. joy@example.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="bg-white border-stone-300 text-xs py-2.5 rounded-xl"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-stone-800">Preferred Track</label>
-                    <select
-                      value={formData.preferredCourse}
-                      onChange={(e) => setFormData({ ...formData, preferredCourse: e.target.value })}
-                      className="w-full bg-white border border-stone-300 text-xs p-2.5 rounded-xl text-stone-800 outline-none focus:ring-1 focus:ring-[#EAA823]"
-                    >
-                      {COURSES.map((c) => (
-                        <option key={c.id} value={c.title}>{c.title}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-stone-800">Preferred Schedule</label>
-                    <select
-                      value={formData.sessionType}
-                      onChange={(e) => setFormData({ ...formData, sessionType: e.target.value })}
-                      className="w-full bg-white border border-stone-300 text-xs p-2.5 rounded-xl text-stone-800 outline-none focus:ring-1 focus:ring-[#EAA823]"
-                    >
-                      <option value="Weekday Intensive">Weekday Intensive (Mon &ndash; Wed)</option>
-                      <option value="Weekend Session">Weekend Track (Saturdays Only)</option>
-                      <option value="Private 1-on-1 Coaching">Private 1-on-1 Coaching</option>
-                    </select>
-                  </div>
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full bg-[#072d1d] hover:bg-[#EAA823] text-white hover:text-[#072d1d] font-black text-xs py-3.5 rounded-xl transition shadow-md flex items-center justify-center gap-2 cursor-pointer mt-2"
-                >
-                  <span>Submit Priority Registration</span>
-                  <Send className="w-4 h-4" />
-                </Button>
-              </form>
-            )}
           </div>
         </section>
       </main>

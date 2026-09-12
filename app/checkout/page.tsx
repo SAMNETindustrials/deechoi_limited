@@ -23,7 +23,9 @@ import {
   Store,
   Sparkles,
   Map,
-  KeyRound
+  KeyRound,
+  UserCheck,
+  Edit3
 } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -56,6 +58,11 @@ export default function CheckoutPage() {
     city: 'Port Harcourt',
     state: 'Rivers',
   })
+
+  // Logged-in User & Saved Address States
+  const [isLoggedInUser, setIsLoggedInUser] = useState<boolean>(false)
+  const [savedUserAddress, setSavedUserAddress] = useState<string>('')
+  const [useExistingAddress, setUseExistingAddress] = useState<boolean>(true)
 
   // 5-Digit Transaction PIN Setup States
   const [hasTransactionPin, setHasTransactionPin] = useState<boolean>(false)
@@ -91,26 +98,106 @@ export default function CheckoutPage() {
   // Effective Delivery Fee based on fulfillment choice
   const activeDeliveryFee = fulfillmentMethod === 'pickup' ? 0 : calculatedZoneFee
 
-  // Auto-fill from returning customer session & fetch active voucher
+  // Comprehensive Session & Database Profile/Address Fetching
   useEffect(() => {
-    try {
-      const savedSession = localStorage.getItem('deechoi_customer_session')
-      if (savedSession) {
-        const parsed = JSON.parse(savedSession)
-        setCustomerInfo(prev => ({
-          ...prev,
-          firstName: parsed.firstName || prev.firstName,
-          lastName: parsed.lastName || prev.lastName,
-          email: parsed.email || prev.email,
-          phone: parsed.phone || prev.phone,
-          address: parsed.address || prev.address,
-        }))
-        if (parsed.address) {
-          detectZoneFromAddress(parsed.address)
-        }
-      }
+    const checkUserSessionAndDatabaseProfile = async () => {
+      try {
+        // 1. Get active Supabase Auth user session
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-      // Load active voucher from Cart
+        if (user && !authError) {
+          setIsLoggedInUser(true)
+          let resolvedAddress = ''
+          let resolvedPhone = ''
+          let resolvedName = ''
+
+          // A. Attempt to query profiles table for saved address
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single()
+
+          if (profileData) {
+            resolvedAddress = profileData.delivery_address || profileData.address || ''
+            resolvedPhone = profileData.phone || ''
+            resolvedName = profileData.full_name || profileData.name || ''
+          }
+
+          // B. If no address in profile, check user's most recent order in store_orders
+          if (!resolvedAddress && user.email) {
+            const { data: recentOrder } = await supabase
+              .from('store_orders')
+              .select('delivery_address, customer_phone, customer_name')
+              .eq('customer_email', user.email)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .single()
+
+            if (recentOrder) {
+              resolvedAddress = recentOrder.delivery_address || ''
+              resolvedPhone = recentOrder.customer_phone || ''
+              resolvedName = recentOrder.customer_name || ''
+            }
+          }
+
+          // Fallback to user metadata if database lookup is empty
+          const meta = user.user_metadata || {}
+          if (!resolvedName) resolvedName = meta.full_name || meta.name || ''
+          if (!resolvedAddress) resolvedAddress = meta.address || meta.delivery_address || ''
+          if (!resolvedPhone) resolvedPhone = meta.phone || meta.phone_number || ''
+
+          const nameParts = resolvedName.trim().split(' ')
+          const fName = nameParts[0] || ''
+          const lName = nameParts.slice(1).join(' ') || ''
+
+          if (resolvedAddress) {
+            setSavedUserAddress(resolvedAddress)
+          }
+
+          setCustomerInfo(prev => ({
+            ...prev,
+            firstName: fName || prev.firstName,
+            lastName: lName || prev.lastName,
+            email: user.email || prev.email,
+            phone: resolvedPhone || prev.phone,
+            address: resolvedAddress || prev.address,
+          }))
+
+          if (resolvedAddress) {
+            detectZoneFromAddress(resolvedAddress)
+          }
+          return
+        }
+
+        // 2. Fallback to localStorage session
+        const savedSession = localStorage.getItem('deechoi_customer_session')
+        if (savedSession) {
+          const parsed = JSON.parse(savedSession)
+          setIsLoggedInUser(true)
+          if (parsed.address) {
+            setSavedUserAddress(parsed.address)
+          }
+          setCustomerInfo(prev => ({
+            ...prev,
+            firstName: parsed.firstName || prev.firstName,
+            lastName: parsed.lastName || prev.lastName,
+            email: parsed.email || prev.email,
+            phone: parsed.phone || prev.phone,
+            address: parsed.address || prev.address,
+          }))
+          if (parsed.address) {
+            detectZoneFromAddress(parsed.address)
+          }
+        }
+      } catch (e) {
+        console.warn('Could not verify user session or query database profile:', e)
+      }
+    }
+
+    checkUserSessionAndDatabaseProfile()
+
+    try {
       const voucher = localStorage.getItem('active_checkout_voucher')
       const pct = localStorage.getItem('active_discount_percent')
       if (voucher) {
@@ -118,7 +205,7 @@ export default function CheckoutPage() {
         setDiscountPercent(Number(pct) || 0)
       }
     } catch (e) {
-      console.warn('Could not read session:', e)
+      console.warn('Could not read voucher:', e)
     }
   }, [])
 
@@ -446,6 +533,11 @@ export default function CheckoutPage() {
     setValidationError(null)
     setPinError(null)
 
+    if (paymentMethod === 'card') {
+      alert('Online Card Payment is currently coming soon. Please select Bank Transfer to complete your order.')
+      return
+    }
+
     // Validate 5-digit PIN if created
     if (hasTransactionPin && !skipPinForNow) {
       if (!transactionPin || transactionPin.length !== 5 || !/^\d+$/.test(transactionPin)) {
@@ -772,6 +864,52 @@ export default function CheckoutPage() {
                 onSubmit={handleProceedToPayment}
                 className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-sm space-y-6"
               >
+                {/* Logged in User Greeting & Saved Address Suggestion Banner */}
+                {isLoggedInUser && (
+                  <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl flex items-start gap-3">
+                    <UserCheck className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 text-xs text-gray-700 space-y-1.5">
+                      <p className="font-bold text-[#0A2E1D]">
+                        Welcome back, {customerInfo.firstName || 'Valued Customer'}!
+                      </p>
+                      <p>
+                        We have retrieved your saved contact details and delivery address from your profile. You can proceed instantly or change your address below.
+                      </p>
+                      {savedUserAddress && (
+                        <div className="pt-1 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUseExistingAddress(true)
+                              setCustomerInfo(prev => ({ ...prev, address: savedUserAddress }))
+                              detectZoneFromAddress(savedUserAddress)
+                            }}
+                            className={`px-3 py-1.5 rounded-lg font-bold transition text-xs ${
+                              useExistingAddress ? 'bg-[#0A2E1D] text-white' : 'bg-white text-gray-700 border border-gray-300'
+                            }`}
+                          >
+                            Use Saved Address
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUseExistingAddress(false)
+                              setCustomerInfo(prev => ({ ...prev, address: '' }))
+                              setDetectedZone(null)
+                              setIsOutOfZone(false)
+                            }}
+                            className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1 text-xs ${
+                              !useExistingAddress ? 'bg-[#0A2E1D] text-white' : 'bg-white text-gray-700 border border-gray-300'
+                            }`}
+                          >
+                            <Edit3 className="w-3 h-3" /> Change Address
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <h2 className="text-lg sm:text-xl font-black text-[#0A2E1D] mb-4">
                     Contact Information
@@ -945,6 +1083,23 @@ export default function CheckoutPage() {
 
                             <MapPin className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
                           </div>
+
+                          {/* Zone Matching Status Feedback */}
+                          {customerInfo.address.trim() && (
+                            <div className="mt-2 text-xs">
+                              {detectedZone ? (
+                                <p className="text-emerald-700 font-semibold flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  Matched to Zone {detectedZone}: {PH_ZONES[detectedZone as keyof typeof PH_ZONES]?.name} (Delivery Fee: ₦{calculatedZoneFee.toLocaleString()})
+                                </p>
+                              ) : isOutOfZone ? (
+                                <p className="text-amber-700 font-semibold flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                  Address outside standard zones. Applied out-of-zone delivery fee: ₦{OUT_OF_ZONE_FEE.toLocaleString()}
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
                         </div>
 
                         <div>
@@ -1054,22 +1209,15 @@ export default function CheckoutPage() {
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('card')}
-                      className={`p-4 rounded-2xl border-2 text-left flex items-center justify-between transition-all ${
-                        paymentMethod === 'card'
-                          ? 'border-[#0A2E1D] bg-[#0A2E1D]/5 text-[#0A2E1D]'
-                          : 'border-gray-200 bg-[#FDFBF7] text-gray-600 hover:border-gray-300'
-                      }`}
+                      className="p-4 rounded-2xl border-2 border-gray-200 bg-gray-50 text-gray-400 text-left flex items-center justify-between cursor-not-allowed opacity-75 relative"
                     >
                       <div className="flex items-center gap-2.5">
-                        <CreditCard className="w-5 h-5 text-[#EAA823]" />
+                        <CreditCard className="w-5 h-5 text-gray-400" />
                         <div>
                           <p className="text-xs sm:text-sm font-bold">Online Card</p>
-                          <p className="text-[10px] text-gray-500">Paystack Gateway</p>
+                          <p className="text-[10px] font-amber-600 text-amber-700 font-bold">Coming Soon</p>
                         </div>
                       </div>
-                      {paymentMethod === 'card' && (
-                        <CheckCircle2 className="w-4 h-4 text-[#0A2E1D]" />
-                      )}
                     </button>
                   </div>
 
@@ -1144,9 +1292,9 @@ export default function CheckoutPage() {
                   ) : (
                     <div className="p-6 bg-amber-50/60 rounded-2xl border border-amber-200 text-center space-y-3">
                       <CreditCard className="w-8 h-8 text-amber-700 mx-auto" />
-                      <p className="text-xs font-bold text-[#0A2E1D]">Secure Paystack Checkout</p>
+                      <p className="text-xs font-bold text-[#0A2E1D]">Secure Paystack Checkout (Coming Soon)</p>
                       <p className="text-[11px] text-gray-600">
-                        You will be redirected to complete your card transaction securely after order placement.
+                        Online card payments are temporarily disabled. Please use Bank Transfer.
                       </p>
                     </div>
                   )}
@@ -1269,9 +1417,11 @@ export default function CheckoutPage() {
               )}
 
               <div className="flex justify-between text-gray-600">
-                <span>Delivery Fee ({fulfillmentMethod === 'pickup' ? 'Store Pickup' : 'Port Harcourt Zone'})</span>
+                <span>
+                  Delivery Fee ({fulfillmentMethod === 'pickup' ? 'Store Pickup' : detectedZone ? `Zone ${detectedZone} Match` : isOutOfZone ? 'Out of Zone' : 'Port Harcourt Zone'})
+                </span>
                 <span className="font-semibold text-gray-800">
-                  {activeDeliveryFee === 0 ? 'FREE' : `₦{activeDeliveryFee.toLocaleString()}`}
+                  {activeDeliveryFee === 0 ? 'FREE' : `₦${activeDeliveryFee.toLocaleString()}`}
                 </span>
               </div>
 

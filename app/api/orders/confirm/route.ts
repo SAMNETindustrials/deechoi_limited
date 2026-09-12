@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { ImageAnnotatorClient } from '@google-cloud/vision'
 import { NextRequest, NextResponse } from 'next/server'
+import { sendCustomerInvoiceEmail } from '@/lib/email'
 
 // Initialize Google Cloud Vision OCR Client with explicit service account credentials
 const visionClient = new ImageAnnotatorClient({
@@ -18,23 +19,18 @@ const visionClient = new ImageAnnotatorClient({
 function extractReferenceFromText(fullText: string): string | null {
   if (!fullText) return null
 
-  // Normalize text for matching keywords
   const lines = fullText.split('\n').map((l) => l.trim())
-  
-  // Example keywords that usually precede transaction references on bank receipts/transfer screenshots
   const keywords = ['ref', 'reference', 'transaction id', 'trans id', 'session id', 'code', 'teller', 'receipt']
 
   for (let i = 0; i < lines.length; i++) {
     const lineLower = lines[i].toLowerCase()
     for (const kw of keywords) {
       if (lineLower.includes(kw)) {
-        // Check if the value is on the same line after a colon or space
         const parts = lines[i].split(/[:\s]+/)
         const lastPart = parts[parts.length - 1]
         if (lastPart && lastPart.length >= 5 && !lastPart.toLowerCase().includes(kw)) {
           return lastPart.toUpperCase()
         }
-        // Otherwise check the next immediate line
         if (i + 1 < lines.length && lines[i + 1].length >= 5) {
           return lines[i + 1].toUpperCase()
         }
@@ -42,7 +38,6 @@ function extractReferenceFromText(fullText: string): string | null {
     }
   }
 
-  // Fallback: search for long alphanumeric token blocks (e.g. 10-20 character unique transaction hashes)
   const words = fullText.replace(/[^\w\s]/gi, '').split(/\s+/)
   const candidate = words.find((w) => w.length >= 10 && /\d/.test(w) && /[A-Z]/i.test(w))
   if (candidate) return candidate.toUpperCase()
@@ -52,7 +47,7 @@ function extractReferenceFromText(fullText: string): string | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const { orderId } = await request.json()
+    const { orderId, resend } = await request.json()
 
     if (!orderId) {
       return NextResponse.json({ error: 'Order ID is required' }, { status: 400 })
@@ -60,10 +55,10 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // 1. Fetch the target order
+    // 1. Fetch the target order with all customer & financial details
     const { data: targetOrder, error: fetchError } = await supabase
       .from('store_orders')
-      .select('id, transaction_reference, payment_proof_url, status')
+      .select('*')
       .eq('id', orderId)
       .single()
 
@@ -71,123 +66,157 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    let currentReference = targetOrder.transaction_reference
-    let extractedRawText: string | null = null
+    let updatedOrder = targetOrder
 
-    // 2. If no reference is saved yet, but a payment proof URL/receipt image exists, run OCR extraction via Google Vision
-    if (!currentReference && targetOrder.payment_proof_url) {
-      try {
-        // Fetch image buffer from URL or Supabase storage bucket link
-        const imageRes = await fetch(targetOrder.payment_proof_url)
-        if (imageRes.ok) {
-          const arrayBuffer = await imageRes.arrayBuffer()
-          const inputBuffer = Buffer.from(arrayBuffer)
+    // If this is not a pure resend request, perform OCR verification and confirmation
+    if (!resend) {
+      let currentReference = targetOrder.transaction_reference
+      let extractedRawText: string | null = null
 
-          // Perform Google Cloud Vision Text Detection (OCR)
-          const [result] = await visionClient.textDetection({
-            image: { content: inputBuffer },
-          })
-          
-          const detections = result.textAnnotations
-          if (detections && detections.length > 0 && detections[0].description) {
-            extractedRawText = detections[0].description
-            const parsedRef = extractReferenceFromText(extractedRawText)
+      if (!currentReference && targetOrder.payment_proof_url) {
+        try {
+          const imageRes = await fetch(targetOrder.payment_proof_url)
+          if (imageRes.ok) {
+            const arrayBuffer = await imageRes.arrayBuffer()
+            const inputBuffer = Buffer.from(arrayBuffer)
 
-            if (parsedRef) {
-              currentReference = parsedRef
+            const [result] = await visionClient.textDetection({
+              image: { content: inputBuffer },
+            })
+            
+            const detections = result.textAnnotations
+            if (detections && detections.length > 0 && detections[0].description) {
+              extractedRawText = detections[0].description
+              const parsedRef = extractReferenceFromText(extractedRawText)
+
+              if (parsedRef) {
+                currentReference = parsedRef
+              }
             }
           }
+        } catch (ocrErr) {
+          console.error('[v0] Google Vision OCR processing warning:', ocrErr)
         }
-      } catch (ocrErr) {
-        console.error('[v0] Google Vision OCR processing warning:', ocrErr)
+
+        if (!currentReference) {
+          currentReference = targetOrder.payment_proof_url
+        }
       }
 
-      // Fallback reference assignment if OCR cannot parse explicit transaction code string
-      if (!currentReference) {
-        currentReference = targetOrder.payment_proof_url
+      if (currentReference) {
+        const { data: existingRefRecord, error: refLookupError } = await supabase
+          .from('receipt_references')
+          .select('order_id')
+          .eq('transaction_reference', currentReference)
+          .maybeSingle()
+
+        if (existingRefRecord && existingRefRecord.order_id !== orderId) {
+          return NextResponse.json(
+            { 
+              error: 'Duplicate Receipt Detected: This payment receipt or transaction reference has already been used and approved for another order. Reusing receipts is strictly prohibited.' 
+            },
+            { status: 400 }
+          )
+        }
+
+        const { data: duplicateOrders } = await supabase
+          .from('store_orders')
+          .select('id, status')
+          .eq('transaction_reference', currentReference)
+          .neq('id', orderId)
+          .in('status', ['confirmed', 'processing', 'completed', 'shipped', 'delivered'])
+
+        if (duplicateOrders && duplicateOrders.length > 0) {
+          return NextResponse.json(
+            { 
+              error: 'Duplicate Receipt Detected: This payment receipt or transaction reference has already been used and approved for another order. Reusing receipts is strictly prohibited.' 
+            },
+            { status: 400 }
+          )
+        }
       }
-    }
 
-    // 3. Check the dedicated 'receipt_references' table for duplicate usage across orders
-    if (currentReference) {
-      const { data: existingRefRecord, error: refLookupError } = await supabase
-        .from('receipt_references')
-        .select('order_id')
-        .eq('transaction_reference', currentReference)
-        .maybeSingle()
-
-      if (refLookupError) {
-        console.error('[v0] Error querying receipt_references table:', refLookupError)
-      }
-
-      if (existingRefRecord && existingRefRecord.order_id !== orderId) {
-        return NextResponse.json(
-          { 
-            error: 'Duplicate Receipt Detected: This payment receipt or transaction reference has already been used and approved for another order. Reusing receipts is strictly prohibited.' 
-          },
-          { status: 400 }
-        )
-      }
-
-      // Fallback check against store_orders table transaction references
-      const { data: duplicateOrders, error: dupError } = await supabase
+      const { data, error } = await supabase
         .from('store_orders')
-        .select('id, status')
-        .eq('transaction_reference', currentReference)
-        .neq('id', orderId)
-        .in('status', ['confirmed', 'processing', 'completed', 'shipped', 'delivered'])
+        .update({
+          status: 'confirmed',
+          transaction_reference: currentReference,
+          confirmed_at: new Date().toISOString(),
+        })
+        .eq('id', orderId)
+        .select()
+        .single()
 
-      if (dupError) {
-        console.error('[v0] Error querying store_orders for duplicate references:', dupError)
-      }
+      if (error) throw error
+      updatedOrder = data
 
-      if (duplicateOrders && duplicateOrders.length > 0) {
-        return NextResponse.json(
-          { 
-            error: 'Duplicate Receipt Detected: This payment receipt or transaction reference has already been used and approved for another order. Reusing receipts is strictly prohibited.' 
-          },
-          { status: 400 }
-        )
+      if (currentReference) {
+        await supabase
+          .from('receipt_references')
+          .upsert(
+            {
+              order_id: orderId,
+              transaction_reference: currentReference,
+              receipt_url: targetOrder.payment_proof_url,
+              extracted_text: extractedRawText,
+            },
+            { onConflict: 'transaction_reference' }
+          )
       }
     }
 
-    // 4. Update the order with the verified transaction reference and confirm status
-    const { data, error } = await supabase
-      .from('store_orders')
-      .update({
-        status: 'confirmed',
-        transaction_reference: currentReference,
-        confirmed_at: new Date().toISOString(),
-      })
-      .eq('id', orderId)
-      .select()
-      .single()
+    // 2. Prepare receipt items payload for email dispatch
+    let formattedItems: Array<{ item_name: string; unit: string; quantity: number; unit_price: number }> = []
+    
+    if (Array.isArray(updatedOrder.items) && updatedOrder.items.length > 0) {
+      formattedItems = updatedOrder.items.map((it: any) => ({
+        item_name: it.name || it.item_name || 'Item',
+        unit: it.unit || 'pcs',
+        quantity: Number(it.quantity || 1),
+        unit_price: Number(it.price || it.unit_price || 0),
+      }))
+    } else {
+      formattedItems = [{
+        item_name: 'Standard Food / Order Selection',
+        unit: 'unit',
+        quantity: 1,
+        unit_price: Number(updatedOrder.total_amount || updatedOrder.total || 0),
+      }]
+    }
 
-    if (error) throw error
+    const customerEmail = updatedOrder.customer_email || updatedOrder.email
+    let emailResult = { success: true }
 
-    // 5. Save the verified reference securely into the 'receipt_references' lookup table
-    if (currentReference) {
-      await supabase
-        .from('receipt_references')
-        .upsert(
-          {
-            order_id: orderId,
-            transaction_reference: currentReference,
-            receipt_url: targetOrder.payment_proof_url,
-            extracted_text: extractedRawText,
-          },
-          { onConflict: 'transaction_reference' }
-        )
+    if (customerEmail) {
+      const receiptPayload = {
+        receipt_number: `RCP-${String(updatedOrder.id).slice(0, 8).toUpperCase()}`,
+        customer_name: updatedOrder.customer_name || updatedOrder.name || 'Valued Customer',
+        customer_email: customerEmail,
+        customer_phone: updatedOrder.customer_phone || updatedOrder.phone || 'N/A',
+        customer_address: updatedOrder.delivery_address || 'N/A',
+        subtotal: Number(updatedOrder.total_amount || updatedOrder.total || 0),
+        vat_amount: 0,
+        discount_amount: 0,
+        total_amount: Number(updatedOrder.total_amount || updatedOrder.total || 0),
+        notes: `Order Confirmed & Verified. Payment Ref: ${updatedOrder.transaction_reference || 'N/A'}`,
+        created_at: updatedOrder.created_at || new Date().toISOString(),
+        items: formattedItems,
+      }
+
+      emailResult = await sendCustomerInvoiceEmail(receiptPayload)
     }
 
     return NextResponse.json({
-      message: 'Order confirmed and receipt verified successfully',
-      order: data,
+      message: resend 
+        ? 'Order invoice receipt successfully resent to client email' 
+        : 'Order confirmed and receipt emailed successfully',
+      order: updatedOrder,
+      emailSent: emailResult.success,
     })
   } catch (error) {
-    console.error('[v0] Error confirming order:', error)
+    console.error('[v0] Error confirming/resending order invoice:', error)
     return NextResponse.json(
-      { error: 'Failed to confirm order' },
+      { error: 'Failed to process order confirmation/invoice email' },
       { status: 500 }
     )
   }

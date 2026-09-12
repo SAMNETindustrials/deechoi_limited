@@ -343,11 +343,11 @@ export async function sendOrderConfirmationEmail(
   messageBody: string
 ) {
   try {
-    const userEmail = process.env.GMAIL_SENDER_EMAIL
+    const userEmail = process.env.GMAIL_SENDER_EMAIL || process.env.GMAIL_USER
     const appPassword = process.env.GMAIL_APP_PASSWORD
 
     if (!userEmail || !appPassword) {
-      console.warn('[Email Notice]: GMAIL_SENDER_EMAIL or GMAIL_APP_PASSWORD not configured. Email logged to console:', { toEmail, subject, messageBody })
+      console.warn('[Email Notice]: GMAIL_SENDER_EMAIL / GMAIL_USER or GMAIL_APP_PASSWORD not configured. Email logged to console:', { toEmail, subject, messageBody })
       return { success: true }
     }
 
@@ -360,7 +360,7 @@ export async function sendOrderConfirmationEmail(
     })
 
     const info = await transporter.sendMail({
-      from: `"De-echoi Support" <${userEmail}>`,
+      from: `"De-echoi Limited" <${userEmail}>`,
       to: toEmail,
       subject: subject,
       text: messageBody,
@@ -374,7 +374,68 @@ export async function sendOrderConfirmationEmail(
 }
 
 /**
- * 4. Send Customer Message / Support Reply Email
+ * 4. Automatically Send Customer Order Invoice & Receipt Email
+ */
+export async function sendCustomerInvoiceEmail(receipt: {
+  receipt_number: string
+  customer_name: string
+  customer_email: string
+  customer_phone?: string
+  customer_address?: string
+  subtotal: number
+  vat_amount: number
+  discount_amount: number
+  total_amount: number
+  notes?: string
+  created_at: string
+  items: Array<{
+    item_name: string
+    unit: string
+    quantity: number
+    unit_price: number
+  }>
+}) {
+  const subject = `Official Order Invoice & Receipt - Ref: ${receipt.receipt_number}`
+  
+  const itemsTextList = (receipt.items || [])
+    .map(
+      (item, idx) =>
+        `${idx + 1}. ${item.item_name} (${item.quantity} ${item.unit}) @ ₦${Number(item.unit_price).toLocaleString()} = ₦${(item.quantity * item.unit_price).toLocaleString()}`
+    )
+    .join('\n')
+
+  const messageBody = `
+Dear ${receipt.customer_name || 'Valued Customer'},
+
+Thank you for your patronage! Below is your official order invoice and payment receipt from De-echoi Limited.
+
+INVOICE REF: ${receipt.receipt_number}
+DATE: ${new Date(receipt.created_at || Date.now()).toLocaleDateString(undefined, { dateStyle: 'full' })}
+STATUS: PAID / CONFIRMED
+
+----------------------------------------
+ORDERED ITEMS:
+----------------------------------------
+${itemsTextList}
+
+----------------------------------------
+FINANCIAL SUMMARY:
+----------------------------------------
+Subtotal: ₦${Number(receipt.subtotal || 0).toLocaleString()}
+${receipt.vat_amount > 0 ? `VAT: ₦${Number(receipt.vat_amount || 0).toLocaleString()}\n` : ''}${receipt.discount_amount > 0 ? `Discount: -₦${Number(receipt.discount_amount || 0).toLocaleString()}\n` : ''}TOTAL AMOUNT PAID: ₦${Number(receipt.total_amount || 0).toLocaleString()}
+
+Notes: ${receipt.notes || 'N/A'}
+
+De-echoi Limited Operations
+Eze Nvuigwe Avenue, Woji, Port Harcourt
+Email: deechoi01@gmail.com | Tel: +234 7046145982
+`.trim()
+
+  return sendOrderConfirmationEmail(receipt.customer_email, subject, messageBody)
+}
+
+/**
+ * 5. Send Customer Message / Support Reply Email
  */
 export async function sendCustomerMessageEmail(
   toEmail: string,
@@ -385,7 +446,7 @@ export async function sendCustomerMessageEmail(
 }
 
 /**
- * 5. Send Email Reply to Customer (Admin Support)
+ * 6. Send Email Reply to Customer (Admin Support)
  */
 export async function sendEmailReply(
   toEmail: string,

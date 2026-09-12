@@ -199,14 +199,14 @@ export function UnifiedFooter() {
               <ul className="space-y-2 text-[11px]">
                 <li className="flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 text-[#EAA823] flex-shrink-0" />
-                  <a href="mailto:deechoion@gmail.com" className="hover:text-white transition">deechoion@gmail.com</a>
+                  <a href="mailto:deechoion@gmail.com" className="hover:text-white transition">deechoion@gmail.com | help@de-echoi.com</a>
                 </li>
                 <li className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 text-[#EAA823] flex-shrink-0" />
-                  <a href="tel:+2347046145982" className="hover:text-white transition">+234 704 614 5982</a>
+                  <a href="tel:+2347046145982" className="hover:text-white transition">+234 704 614 5982 | +234 703 138 5337</a>
                 </li>
                 <li className="text-gray-400 pt-1 leading-relaxed">
-                  Eze Nvuigwe Avenue, Woji, Port Harcourt, Rivers State.
+                  Woji, Port Harcourt, Rivers State, Nigeria.
                 </li>
               </ul>
             </div>

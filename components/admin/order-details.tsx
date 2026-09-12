@@ -36,6 +36,8 @@ interface OrderDetailsProps {
     status: 'pending' | 'confirmed' | 'dispatched' | 'completed' | 'cancelled'
     items: any[]
     created_at: string
+    startSales: string
+    closeSales: string
   }
   onStatusChange?: (newStatus: string) => void
 }
