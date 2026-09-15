@@ -93,6 +93,9 @@ export function ProductCard({
       checkTime()
       const intervalId = setInterval(checkTime, 60000) // Re-verify every 60 seconds
       return () => clearInterval(intervalId)
+    } else {
+      // If product is not explicitly time bound, ensure it remains visible and valid by default
+      setIsTimeValid(true)
     }
   }, [isTimeBound, availableFrom, availableTo])
 
