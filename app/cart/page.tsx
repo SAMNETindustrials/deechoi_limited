@@ -19,7 +19,9 @@ import {
   Info, 
   Loader2,
   AlertTriangle,
-  Clock
+  Clock,
+  Layers,
+  Utensils
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -353,7 +355,7 @@ export default function CartPage() {
                       )}
                     </div>
 
-                    <div className="flex-1 space-y-1 text-center sm:text-left">
+                    <div className="flex-1 space-y-1.5 text-center sm:text-left">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between sm:justify-start gap-1 sm:gap-2">
                         {isPromoAddon && (
                           <span className="bg-emerald-600 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full w-fit mx-auto sm:mx-0">
@@ -375,20 +377,59 @@ export default function CartPage() {
                         {isFreeAddon ? 'FREE GIFT' : `₦${unitPrice.toLocaleString()} each`}
                       </p>
 
-                      {/* Render customized cut/part options and specs */}
+                      {/* Render customized cut/part options and specs with structured headings & explicit pricing breakdown */}
                       {Array.isArray(options) && options.length > 0 ? (
-                        <div className="mt-2 text-[11px] bg-white/60 p-2.5 rounded-xl border border-gray-100 space-y-1 text-left">
-                          {options.map((opt: Option, i: number) => (
-                            <div key={i} className="flex justify-between sm:justify-start gap-1.5 text-gray-700">
-                              <span className="font-bold text-[#0A2E1D]">{opt.groupName}:</span>
-                              <span>{opt.optionName}</span>
-                              {Number(opt.priceModifier) > 0 && (
-                                <span className="text-[10px] text-[#EAA823] font-bold">
-                                  (+₦{Number(opt.priceModifier).toLocaleString()})
-                                </span>
-                              )}
-                            </div>
-                          ))}
+                        <div className="mt-3 bg-gray-50/80 p-3 rounded-2xl border border-gray-200/60 space-y-2 text-left">
+                          <div className="flex items-center gap-1.5 text-[10px] font-black text-gray-400 uppercase tracking-wider border-b border-gray-200/60 pb-1">
+                            <Utensils className="w-3 h-3 text-[#EAA823]" />
+                            <span>Customizations &amp; Selections</span>
+                          </div>
+                          
+                          <div className="space-y-1.5">
+                            {options.map((opt: Option, i: number) => {
+                              const rawOptName = String(opt.optionName || '')
+                              let mainOptionText = rawOptName
+                              let extractedPartsText = ''
+                              
+                              if (rawOptName.includes('[Parts:')) {
+                                const partsSplit = rawOptName.split('[Parts:')
+                                mainOptionText = partsSplit[0].trim()
+                                extractedPartsText = partsSplit[1].replace(']', '').trim()
+                              }
+
+                              const optionPriceMod = Number(opt.priceModifier) || 0
+
+                              return (
+                                <div key={i} className="text-xs bg-white p-2.5 rounded-xl border border-gray-100 shadow-2xs space-y-1.5">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                    <span className="font-extrabold text-[#0A2E1D] flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#EAA823]"></span>
+                                      {opt.groupName}:
+                                    </span>
+                                    <span className="font-bold text-gray-800">{mainOptionText}</span>
+                                    {optionPriceMod > 0 ? (
+                                      <span className="text-[10px] bg-amber-50 text-amber-800 font-extrabold px-2 py-0.5 rounded-md border border-amber-200/60 w-fit">
+                                        Assigned Price: +₦{optionPriceMod.toLocaleString()}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400 font-medium">Included / Free</span>
+                                    )}
+                                  </div>
+
+                                  {extractedPartsText && (
+                                    <div className="mt-1 pt-1 border-t border-gray-100 text-[11px] text-gray-600 flex flex-col sm:flex-row sm:items-center justify-between gap-1 font-medium">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded uppercase">
+                                          Selected Cuts/Parts:
+                                        </span>
+                                        <span className="font-bold text-[#0A2E1D]">{extractedPartsText}</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
                         </div>
                       ) : null}
                     </div>

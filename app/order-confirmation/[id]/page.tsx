@@ -15,7 +15,10 @@ import {
   ShoppingBag, 
   Star, 
   Send,
-  HeartHandshake
+  HeartHandshake,
+  MessageSquare,
+  CornerDownRight,
+  ShieldCheck
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -38,6 +41,26 @@ interface Order {
   confirmed_at: string | null
 }
 
+interface ReviewResponse {
+  id: string
+  review_id: string
+  user_name: string
+  response_text: string
+  is_approved: boolean
+  created_at: string
+}
+
+interface Review {
+  id: string
+  order_id: string
+  customer_name: string
+  rating: number
+  review_text: string
+  item_ordered: string
+  created_at: string
+  responses?: ReviewResponse[]
+}
+
 export default function OrderConfirmationPage({
   params: paramsPromise,
 }: {
@@ -55,6 +78,15 @@ export default function OrderConfirmationPage({
   const [submittingReview, setSubmittingReview] = useState(false)
   const [reviewSubmitted, setReviewSubmitted] = useState(false)
 
+  // Public & Community Reviews States
+  const [reviews, setReviews] = useState<Review[]>([])
+  const [loadingReviews, setLoadingReviews] = useState(true)
+  const [replyingToReviewId, setReplyingToReviewId] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [submittingReply, setSubmittingReply] = useState(false)
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
+  const [currentUserName, setCurrentUserName] = useState<string>('Valued Customer')
+
   const supabase = createClient()
 
   useEffect(() => {
@@ -64,6 +96,32 @@ export default function OrderConfirmationPage({
       return () => clearInterval(interval)
     }
   }, [params?.id])
+
+  useEffect(() => {
+    fetchCommunityReviews()
+    checkUserSession()
+  }, [])
+
+  const checkUserSession = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user?.email) {
+        setCurrentUserEmail(session.user.email)
+        setCurrentUserName(session.user.user_metadata?.full_name || session.user.email.split('@')[0])
+        return
+      }
+
+      if (typeof window !== 'undefined') {
+        const storedEmail = localStorage.getItem('deechoi_customer_email')
+        if (storedEmail) {
+          setCurrentUserEmail(storedEmail)
+          setCurrentUserName(localStorage.getItem('deechoi_customer_name') || storedEmail.split('@')[0])
+        }
+      }
+    } catch (e) {
+      console.warn('Session check note:', e)
+    }
+  }
 
   const fetchOrder = async () => {
     try {
@@ -79,6 +137,21 @@ export default function OrderConfirmationPage({
       console.error('Error fetching order:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchCommunityReviews = async () => {
+    try {
+      setLoadingReviews(true)
+      const res = await fetch('/api/reviews')
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        setReviews(data)
+      }
+    } catch (err) {
+      console.error('Failed to load reviews:', err)
+    } finally {
+      setLoadingReviews(false)
     }
   }
 
@@ -128,11 +201,41 @@ export default function OrderConfirmationPage({
 
       if (!res.ok) throw new Error('Failed to submit review')
       setReviewSubmitted(true)
+      fetchCommunityReviews()
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to submit review.'
       alert(message)
     } finally {
       setSubmittingReview(false)
+    }
+  }
+
+  const handleReplySubmit = async (reviewId: string, e: React.FormEvent) => {
+    e.preventDefault()
+    if (!replyText.trim()) return
+
+    try {
+      setSubmittingReply(true)
+      const res = await fetch('/api/reviews/responses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reviewId,
+          userName: currentUserName || 'Community Member',
+          responseText: replyText.trim(),
+        }),
+      })
+
+      if (!res.ok) throw new Error('Failed to submit response')
+      setReplyText('')
+      setReplyingToReviewId(null)
+      alert('Your response has been submitted! It will appear publicly once approved by our admin team.')
+      fetchCommunityReviews()
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to submit response.'
+      alert(message)
+    } finally {
+      setSubmittingReply(false)
     }
   }
 
@@ -172,7 +275,7 @@ export default function OrderConfirmationPage({
   const isCompleted = order.status === 'completed'
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans pb-16">
+    <div className="min-h-screen bg-[#FDFBF7] text-[#0A2E1D] font-sans pb-24">
       <StorefrontHeader />
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -281,7 +384,7 @@ export default function OrderConfirmationPage({
               </div>
               <div className="flex-1">
                 <p className="font-bold text-xs sm:text-sm text-[#0A2E1D]">1. Order & Receipt Received</p>
-                <p className="text-[11px] text-gray-500">Order logged into bakery system</p>
+                <p className="text-[11px] text-gray-500">Order logged into kitchen system</p>
               </div>
             </div>
 
@@ -448,6 +551,139 @@ export default function OrderConfirmationPage({
                 )}
               </Button>
             </form>
+          )}
+        </div>
+
+        {/* Community Customer Reviews Feed & Interactive Responses */}
+        <div className="bg-white border border-gray-200 rounded-3xl p-6 sm:p-8 mb-6 shadow-sm space-y-6">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-[#EAA823]" />
+              <h3 className="font-black text-sm uppercase tracking-wider text-[#0A2E1D]">
+                Community Reviews &amp; Conversations
+              </h3>
+            </div>
+            <span className="text-xs font-bold bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full">
+              {reviews.length} Review{reviews.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          {loadingReviews ? (
+            <div className="text-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto text-[#0A2E1D]" />
+              <p className="text-xs text-gray-400 mt-2">Loading community feedback...</p>
+            </div>
+          ) : reviews.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-6">No customer reviews yet. Be the first to leave feedback above!</p>
+          ) : (
+            <div className="space-y-6">
+              {reviews.map((rev) => {
+                // Filter only approved responses to display publicly
+                const approvedResponses = (rev.responses || []).filter((resp: ReviewResponse) => resp.is_approved)
+                const isReplying = replyingToReviewId === rev.id
+
+                return (
+                  <div key={rev.id} className="p-4 sm:p-5 bg-gray-50/70 border border-gray-200/80 rounded-2xl space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-xs sm:text-sm text-[#0A2E1D]">{rev.customer_name}</span>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
+                            Verified Order
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-0.5">Ordered: <span className="font-bold text-gray-600">{rev.item_ordered}</span> • {new Date(rev.created_at).toLocaleDateString()}</p>
+                      </div>
+
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Star 
+                            key={s} 
+                            className={`w-3.5 h-3.5 ${s <= rev.rating ? 'fill-[#EAA823] text-[#EAA823]' : 'text-gray-300'}`} 
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="text-xs sm:text-sm text-gray-700 font-medium leading-relaxed bg-white p-3 rounded-xl border border-gray-100">
+                      &ldquo;{rev.review_text}&rdquo;
+                    </p>
+
+                    {/* Approved Responses Thread */}
+                    {approvedResponses.length > 0 && (
+                      <div className="space-y-2.5 pl-4 sm:pl-6 border-l-2 border-[#EAA823]/60 pt-2">
+                        {approvedResponses.map((resp: ReviewResponse) => (
+                          <div key={resp.id} className="bg-white p-3 rounded-xl border border-gray-200/60 shadow-2xs space-y-1">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-extrabold text-[#0A2E1D] flex items-center gap-1">
+                                <CornerDownRight className="w-3.5 h-3.5 text-[#EAA823]" />
+                                {resp.user_name}
+                              </span>
+                              <span className="text-[9px] text-gray-400">{new Date(resp.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <p className="text-xs text-gray-700 pl-4">{resp.responseText || resp.response_text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Reply Action Trigger */}
+                    <div className="flex justify-end pt-1">
+                      {currentUserEmail ? (
+                        <button
+                          onClick={() => setReplyingToReviewId(isReplying ? null : rev.id)}
+                          className="text-xs font-bold text-[#0A2E1D] hover:underline flex items-center gap-1 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-2xs"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5 text-[#EAA823]" />
+                          {isReplying ? 'Cancel Reply' : 'Reply to this Review'}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-gray-400 italic">Log in or place an order to reply to reviews.</span>
+                      )}
+                    </div>
+
+                    {/* Reply Form */}
+                    {isReplying && (
+                      <form onSubmit={(e) => handleReplySubmit(rev.id, e)} className="mt-3 pt-3 border-t border-gray-200 space-y-3 bg-white p-4 rounded-xl">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#0A2E1D]">Replying as <span className="text-emerald-700">{currentUserName}</span></span>
+                          <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3" /> Subject to admin approval
+                          </span>
+                        </div>
+                        <textarea
+                          rows={2}
+                          required
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          placeholder="Write your friendly response or advice..."
+                          className="w-full text-xs bg-[#FDFBF7] border border-gray-200 p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#0A2E1D]"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setReplyingToReviewId(null)}
+                            className="text-xs h-8"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="submit"
+                            size="sm"
+                            disabled={submittingReply || !replyText.trim()}
+                            className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] text-xs h-8 font-bold"
+                          >
+                            {submittingReply ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Submit for Approval'}
+                          </Button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
 

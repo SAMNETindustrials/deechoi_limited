@@ -9,7 +9,7 @@ import {
   ArrowUpRight, ArrowDownRight, ChevronRight, Search, Clock, CheckCircle2, Truck,
   MessageSquare, Layers, Sparkles, Sun, Moon, CloudSun, Users, UserCheck, Lightbulb, Flame, Award,
   Target, LineChart, Megaphone, HelpCircle, Wind, Droplets, Gauge, CloudRain, MapPin, Power, PlayCircle,
-  Grid, Plus, Check, SlidersHorizontal, Eye, EyeOff, ShieldCheck, Zap, Activity, Store, Ban
+  Grid, Plus, Check, SlidersHorizontal, Eye, EyeOff, ShieldCheck, Zap, Activity, Store, Ban, Star
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -26,6 +26,27 @@ interface Order {
   status: string
   created_at: string
   items?: any[]
+}
+
+interface ReviewResponse {
+  id: string
+  review_id: string
+  user_name: string
+  responseText?: string
+  response_text?: string
+  is_approved: boolean
+  created_at: string
+}
+
+interface AdminReview {
+  id: string
+  customer_name: string
+  rating: number
+  review_text: string
+  item_ordered?: string
+  is_verified?: boolean
+  created_at: string
+  responses?: ReviewResponse[]
 }
 
 interface NotificationItem {
@@ -94,6 +115,10 @@ export default function AdminDashboardPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [mrTellOpen, setMrTellOpen] = useState(false)
+
+  // Review & Response moderation state
+  const [adminReviews, setAdminReviews] = useState<AdminReview[]>([])
+  const [loadingReviews, setLoadingReviews] = useState(false)
 
   const [weatherTab, setWeatherTab] = useState<'hourly' | 'daily' | 'graph'>('graph')
   const [weatherData, setWeatherData] = useState({
@@ -171,12 +196,42 @@ export default function AdminDashboardPage() {
       } else {
         setUser(user)
         loadDashboardData()
+        loadAdminReviews()
       }
       setLoading(false)
     }
 
     checkAuth()
   }, [router, supabase])
+
+  const loadAdminReviews = async () => {
+    try {
+      setLoadingReviews(true)
+      const res = await fetch('/api/reviews')
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        setAdminReviews(data)
+      }
+    } catch (e) {
+      console.warn('Could not load reviews for admin:', e)
+    } finally {
+      setLoadingReviews(false)
+    }
+  }
+
+  const handleApproveResponse = async (responseId: string, approve: boolean) => {
+    try {
+      const res = await fetch('/api/reviews/responses', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ responseId, isApproved: approve }),
+      })
+      if (!res.ok) throw new Error('Failed to update response')
+      loadAdminReviews()
+    } catch (err: any) {
+      alert(err.message || 'Failed to update review response')
+    }
+  }
 
   const isWidgetActive = (id: string) => {
     return activeWidgets[id] !== false
@@ -189,7 +244,6 @@ export default function AdminDashboardPage() {
       setLastClosedDate(todayStr)
       localStorage.setItem('deechoi_sales_session_active', 'false')
       localStorage.setItem('deechoi_last_closed_date', todayStr)
-      // Broadcast event so storefront picks up changes instantly in same tab
       window.dispatchEvent(new Event('deechoi_store_status_change'))
     }
   }
@@ -197,7 +251,6 @@ export default function AdminDashboardPage() {
   const handleStartSales = () => {
     setSalesSessionActive(true)
     localStorage.setItem('deechoi_sales_session_active', 'true')
-    // Broadcast event so storefront picks up changes instantly in same tab
     window.dispatchEvent(new Event('deechoi_store_status_change'))
   }
 
@@ -205,8 +258,6 @@ export default function AdminDashboardPage() {
     const newState = !storefrontActive
     setStorefrontActive(newState)
     localStorage.setItem('deechoi_storefront_active', String(newState))
-    
-    // BROADCAST EVENT TO STOREFRONT (Crucial for Next.js Single Page App routing)
     window.dispatchEvent(new Event('deechoi_store_status_change'))
 
     if (!newState) {
@@ -427,6 +478,7 @@ export default function AdminDashboardPage() {
   const coreNavigation = [
     { id: 'dash', icon: BarChart3, label: 'Dashboard', path: '/admin/dashboard', active: true },
     { id: 'orders', icon: ShoppingCart, label: 'Orders', path: '/admin/orders' },
+    { id: 'reviews', icon: Star, label: 'Reviews & Replies', path: '/admin/dashboard#reviews-section' },
     { id: 'messages', icon: MessageSquare, label: 'Messages & AI', path: '/admin/messages' },
     { id: 'products', icon: Layers, label: 'Products', path: '/admin/products' },
     { id: 'inventory', icon: Package, label: 'Stock & Inventory', path: '/admin/inventory' }
@@ -827,6 +879,102 @@ export default function AdminDashboardPage() {
               </div>
             </div>
           )}
+
+          {/* REVIEWS & RESPONSES MODERATION PAGE WIDGET */}
+          <div id="reviews-section" className="bg-gradient-to-br from-[#1a1f2e] to-[#131821] rounded-3xl p-6 border border-[#EAA823]/20 shadow-xl mb-8 space-y-4 scroll-mt-24">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black">
+                  <Star className="w-4 h-4 fill-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-white">Customer Reviews &amp; Reply Moderation</h3>
+                  <p className="text-xs text-gray-400">Review customer feedback and approve community responses before they go live.</p>
+                </div>
+              </div>
+              <Button
+                onClick={loadAdminReviews}
+                size="sm"
+                variant="outline"
+                className="text-xs bg-white/5 border-white/10 text-white hover:bg-white/10 cursor-pointer"
+              >
+                Refresh Reviews
+              </Button>
+            </div>
+
+            {loadingReviews ? (
+              <div className="text-center py-8 text-xs text-gray-400">Loading reviews and responses...</div>
+            ) : adminReviews.length === 0 ? (
+              <div className="text-center py-8 text-xs text-gray-400 bg-white/5 rounded-2xl">No customer reviews submitted yet.</div>
+            ) : (
+              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                {adminReviews.map((rev) => (
+                  <div key={rev.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-white">{rev.customer_name}</span>
+                          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md font-bold">Verified</span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          Ordered: <span className="text-amber-400 font-semibold">{rev.item_ordered || 'Meal'}</span> • {new Date(rev.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 text-amber-400">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <Star key={i} className={`w-3.5 h-3.5 ${i < rev.rating ? 'fill-amber-400' : 'text-gray-600'}`} />
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-gray-200 bg-black/30 p-3 rounded-xl border border-white/5 italic">
+                      &ldquo;{rev.review_text}&rdquo;
+                    </p>
+
+                    {/* Responses Sub-thread */}
+                    {rev.responses && rev.responses.length > 0 && (
+                      <div className="mt-3 space-y-2 pl-3 sm:pl-4 border-l-2 border-amber-500/40 pt-2">
+                        <p className="text-[11px] font-bold text-gray-300 uppercase tracking-wider">Community Replies ({rev.responses.length})</p>
+                        {rev.responses.map((resp) => (
+                          <div key={resp.id} className="bg-white/5 p-3 rounded-xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="font-bold text-amber-300">{resp.user_name}</span>
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${resp.is_approved ? 'bg-green-500/20 text-green-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                  {resp.is_approved ? 'Approved & Public' : 'Pending Approval'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-300">{resp.responseText || resp.response_text}</p>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {resp.is_approved ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleApproveResponse(resp.id, false)}
+                                  className="bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs h-7 px-3 cursor-pointer"
+                                >
+                                  Reject / Hide
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleApproveResponse(resp.id, true)}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-7 px-3 font-bold cursor-pointer"
+                                >
+                                  Approve &amp; Publish
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
             {isWidgetActive('trending_products') && (

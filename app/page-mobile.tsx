@@ -643,7 +643,10 @@ export default function MobileHomePage() {
           </div>
         </section>
 
-        <CustomerReviewsSection />
+        {/* Community Customer Reviews Section */}
+        <section className="py-2">
+          <CustomerReviewsSection />
+        </section>
 
         {/* 4. MENU & DYNAMIC MR. TELL INTELLIGENCE CARD */}
         <section id="our-menu-section" className="pt-4 scroll-mt-52 space-y-4">

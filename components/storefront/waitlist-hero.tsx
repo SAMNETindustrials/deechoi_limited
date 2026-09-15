@@ -9,12 +9,10 @@ import {
   X, 
   Loader2, 
   PartyPopper,
-  Flame,
   Check,
   Plus,
   Minus,
   GraduationCap,
-  Tag,
   Utensils,
   Copy,
   CheckCheck,
@@ -22,11 +20,14 @@ import {
   ShieldCheck,
   Star,
   Eye,
-  Flower2
+  MapPin,
+  Clock,
+  Calendar,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-// 10-day launch countdown target: August 27, 2026 at 00:00:00 GMT+1
 const LAUNCH_TARGET_DATE = new Date('2026-08-27T00:00:00+01:00').getTime()
 
 interface MenuItemConfig {
@@ -54,6 +55,17 @@ export function WaitlistCountdownSection() {
     seconds: 0,
   })
   const [isLive, setIsLive] = useState(false)
+  
+  // Real-time Clock & Operating Schedule State
+  const [currentDayIndex, setCurrentDayIndex] = useState(0)
+  const [currentDayName, setCurrentDayName] = useState('')
+  const [currentTimeString, setCurrentTimeString] = useState('')
+  const [kitchenStatus, setKitchenStatus] = useState<'breakfast' | 'regular' | 'closed' | 'sunday' | 'saturday_closed'>('closed')
+  const [statusMessage, setStatusMessage] = useState('')
+
+  // Inline Schedule Callout Toggle State
+  const [showScheduleCallout, setShowScheduleCallout] = useState(false)
+
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
@@ -61,39 +73,90 @@ export function WaitlistCountdownSection() {
     phone: '',
   })
 
-  // Multi-Selection State
   const [selectedItems, setSelectedItems] = useState<string[]>(['shawarma', 'noodles'])
-  
-  // Dynamic Item Configurations & Pricing Models
   const [shawarmaSize, setShawarmaSize] = useState<'Medium size' | 'Jumbo size'>('Jumbo size')
   const [noodleProtein, setNoodleProtein] = useState<'Full Turkey' | 'Turkey Cubes'>('Full Turkey')
   const [noodleQuantity, setNoodleQuantity] = useState(1)
   const [noodleTurkeyCubesCount, setNoodleTurkeyCubesCount] = useState(2)
   const [riceStyle, setRiceStyle] = useState<'Signature Fried Rice' | 'Smokey Jollof Rice' | 'Mixed Fried & Jollof Rice'>('Mixed Fried & Jollof Rice')
   
-  // Parfait Menu Configurations from Price List
   const [parfaitCategory, setParfaitCategory] = useState<'Classic Parfait' | 'Tropical' | 'Nutty Essence' | 'Cake Parfait' | 'Mini Cakeloaf'>('Classic Parfait')
   const [parfaitSize, setParfaitSize] = useState<'350ml' | '1 liter'>('350ml')
   const [cakeloafFlavor, setCakeloafFlavor] = useState<'Chocolate' | 'Red Velvet' | 'Vanilla' | '2 Mixed Flavours'>('Chocolate')
   
   const [wantsTraining, setWantsTraining] = useState(false)
 
-  // Unique Dynamic Promo Code State
   const [generatedPromoCode, setGeneratedPromoCode] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState(false)
 
-  // Already-Registered & Preview Control State
   const [isAlreadyVip, setIsAlreadyVip] = useState(false)
   const [showCodePreview, setShowCodePreview] = useState(false)
   const [showAppliedPrompt, setShowAppliedPrompt] = useState(false)
 
-  // Live Simulator Coupon State
-  const [couponCode, setCouponCode] = useState('')
-  const [couponApplied, setCouponApplied] = useState(false)
-  const [couponError, setCouponError] = useState<string | null>(null)
-
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+
+  // Real-world Time, World Clock & Operating Schedule Effect
+  useEffect(() => {
+    const updateOperatingHours = () => {
+      const now = new Date()
+      const dayOfWeek = now.getDay() // 0: Sun, 1: Mon, ..., 6: Sat
+      const daysList = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      
+      setCurrentDayIndex(dayOfWeek)
+      setCurrentDayName(daysList[dayOfWeek])
+      setCurrentTimeString(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
+
+      const hours = now.getHours()
+      const minutes = now.getMinutes()
+      const totalMinutes = hours * 60 + minutes
+
+      const breakfastStart = 7 * 60 + 30 // 7:30 AM
+      const breakfastEnd = 9 * 60 + 30   // 9:30 AM
+      const regularStart = 10 * 60       // 10:00 AM
+      let regularEnd = 17 * 60           // 5:00 PM default
+
+      if (dayOfWeek === 5) {
+        // Friday: close by 3:30 PM
+        regularEnd = 15 * 60 + 30
+      } else if (dayOfWeek === 0) {
+        // Sunday: 12:00 PM to 6:00 PM
+        const sunStart = 12 * 60
+        const sunEnd = 18 * 60
+        if (totalMinutes >= sunStart && totalMinutes < sunEnd) {
+          setKitchenStatus('sunday')
+          setStatusMessage('Sunday Special Hours Active (12:00 PM - 6:00 PM)')
+        } else {
+          setKitchenStatus('closed')
+          setStatusMessage('Sunday Hours: 12:00 PM - 6:00 PM')
+        }
+        return
+      } else if (dayOfWeek === 6) {
+        // Saturday: Closed (Pre-order against Sunday)
+        setKitchenStatus('saturday_closed')
+        setStatusMessage('Saturdays: Closed (Pre-orders open for Sunday)')
+        return
+      }
+
+      if (totalMinutes >= breakfastStart && totalMinutes < breakfastEnd) {
+        setKitchenStatus('breakfast')
+        setStatusMessage('Breakfast Menu is Active (7:30 AM - 9:30 AM)')
+      } else if (totalMinutes >= breakfastEnd && totalMinutes < regularStart) {
+        setKitchenStatus('closed')
+        setStatusMessage('Breakfast closed. Regular menu opens at 10:00 AM')
+      } else if (totalMinutes >= regularStart && totalMinutes < regularEnd) {
+        setKitchenStatus('regular')
+        setStatusMessage('Store Open for Regular Menu Orders (10:00 AM - 5:00 PM)')
+      } else {
+        setKitchenStatus('closed')
+        setStatusMessage('Kitchen is currently closed for the day.')
+      }
+    }
+
+    updateOperatingHours()
+    const timer = setInterval(updateOperatingHours, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -106,49 +169,13 @@ export function WaitlistCountdownSection() {
       const seconds = Math.floor((difference % (1000 * 60)) / 1000)
 
       setTimeLeft({ days, hours, minutes, seconds })
-
-      if (difference <= 0) {
-        setIsLive(true)
-      }
+      if (difference <= 0) setIsLive(true)
     }
 
     updateCountdown()
-    const timer = setInterval(updateCountdown, 1000)
-    return () => clearInterval(timer)
+    const countdownTimer = setInterval(updateCountdown, 1000)
+    return () => clearInterval(countdownTimer)
   }, [])
-
-  // Falling flower petals effect generator when live
-  useEffect(() => {
-    if (!isLive) return
-
-    const createPetal = () => {
-      const container = document.getElementById('live-petal-container')
-      if (!container) return
-
-      const petal = document.createElement('div')
-      petal.className = 'absolute pointer-events-none animate-fall'
-      
-      const size = Math.floor(Math.random() * 14) + 10
-      petal.style.width = `${size}px`
-      petal.style.height = `${size}px`
-      petal.style.left = `${Math.random() * 100}%`
-      petal.style.top = `-20px`
-      petal.style.backgroundColor = Math.random() > 0.5 ? '#EAA823' : '#FF6B6B'
-      petal.style.borderRadius = '100% 0 100% 0'
-      petal.style.opacity = String(Math.random() * 0.7 + 0.3)
-      petal.style.transform = `rotate(${Math.random() * 360}deg)`
-      petal.style.animationDuration = `${Math.random() * 3 + 2}s`
-      petal.style.animationTimingFunction = 'ease-in-out'
-
-      container.appendChild(petal)
-      setTimeout(() => {
-        petal.remove()
-      }, 5000)
-    }
-
-    const interval = setInterval(createPetal, 250)
-    return () => clearInterval(interval)
-  }, [isLive])
 
   const handleToggleItem = (itemId: string) => {
     setSelectedItems((prev) => 
@@ -162,10 +189,7 @@ export function WaitlistCountdownSection() {
     if (parfaitCategory === 'Classic Parfait') {
       return parfaitSize === '1 liter' ? 13000 : 5500
     }
-    if (parfaitCategory === 'Tropical') {
-      return parfaitSize === '1 liter' ? 14000 : 6500
-    }
-    if (parfaitCategory === 'Nutty Essence') {
+    if (parfaitCategory === 'Tropical' || parfaitCategory === 'Nutty Essence') {
       return parfaitSize === '1 liter' ? 14000 : 6500
     }
     if (parfaitCategory === 'Cake Parfait') {
@@ -182,7 +206,6 @@ export function WaitlistCountdownSection() {
 
   const compileFavoriteDishes = () => {
     const parts: string[] = []
-
     if (selectedItems.includes('shawarma')) {
       parts.push(`Shawarma (${shawarmaSize} - ₦${(shawarmaSize === 'Jumbo size' ? 12000 : 5000).toLocaleString()})`)
     }
@@ -212,7 +235,6 @@ export function WaitlistCountdownSection() {
     if (wantsTraining) {
       parts.push('Interested in De-echoi Catering & Baking Training Academy')
     }
-
     return parts.length > 0 ? parts.join(' • ') : 'General Kitchen Menu & Cakes'
   }
 
@@ -243,27 +265,12 @@ export function WaitlistCountdownSection() {
 
   const handleCopyCode = async () => {
     if (!generatedPromoCode) return
-
     try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(generatedPromoCode)
-      } else {
-        const textArea = document.createElement('textarea')
-        textArea.value = generatedPromoCode
-        textArea.style.position = 'fixed'
-        textArea.style.left = '-999999px'
-        textArea.style.top = '-999999px'
-        document.body.appendChild(textArea)
-        textArea.focus()
-        textArea.select()
-        document.execCommand('copy')
-        textArea.remove()
-      }
+      await navigator.clipboard.writeText(generatedPromoCode)
       setCopiedCode(true)
       setShowAppliedPrompt(true)
       setTimeout(() => setCopiedCode(false), 2500)
-    } catch (err) {
-      console.warn('Clipboard copy failed:', err)
+    } catch {
       setCopiedCode(true)
       setShowAppliedPrompt(true)
       setTimeout(() => setCopiedCode(false), 2500)
@@ -286,11 +293,6 @@ export function WaitlistCountdownSection() {
 
     if (!customerName || !email || !phone) {
       alert('Please complete your name, email address, and phone number.')
-      return
-    }
-
-    if (selectedItems.length === 0 && !wantsTraining) {
-      alert('Please select at least one menu item or toggle training.')
       return
     }
 
@@ -322,14 +324,9 @@ export function WaitlistCountdownSection() {
       const activeCode = data.promoCode || personalPromo
       setGeneratedPromoCode(activeCode)
 
-      try {
-        localStorage.setItem('deechoi_customer_session', JSON.stringify({ name: customerName, email, phone }))
-        localStorage.setItem('deechoi_customer_email', email)
-        localStorage.setItem('active_checkout_voucher', activeCode)
-        localStorage.setItem('deechoi_vip_promo_code', activeCode)
-      } catch (err) {
-        console.warn('Local storage error:', err)
-      }
+      localStorage.setItem('deechoi_customer_session', JSON.stringify({ name: customerName, email, phone }))
+      localStorage.setItem('deechoi_customer_email', email)
+      localStorage.setItem('active_checkout_voucher', activeCode)
 
       if (data.alreadyRegistered) {
         setIsAlreadyVip(true)
@@ -338,7 +335,6 @@ export function WaitlistCountdownSection() {
         setIsAlreadyVip(false)
         setShowCodePreview(true)
       }
-
       setSubmitted(true)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error processing request'
@@ -348,114 +344,142 @@ export function WaitlistCountdownSection() {
     }
   }
 
-  const rawTotal = calculateEstimatedTotal()
-  const discountAmount = Math.round(rawTotal * (isLive ? 0.20 : 0.15))
-  const finalDiscountedTotal = rawTotal - discountAmount
+  const weeklySchedule = [
+    { day: 'Monday', hours: 'Breakfast: 7:30 - 9:30 AM | Regular: 10:00 AM - 5:00 PM', idx: 1 },
+    { day: 'Tuesday', hours: 'Breakfast: 7:30 - 9:30 AM | Regular: 10:00 AM - 5:00 PM', idx: 2 },
+    { day: 'Wednesday', hours: 'Breakfast: 7:30 - 9:30 AM | Regular: 10:00 AM - 5:00 PM', idx: 3 },
+    { day: 'Thursday', hours: 'Breakfast: 7:30 - 9:30 AM | Regular: 10:00 AM - 5:00 PM', idx: 4 },
+    { day: 'Friday', hours: 'Breakfast: 7:30 - 9:30 AM | Close Early: 3:30 PM', idx: 5 },
+    { day: 'Saturday', hours: 'Closed (Pre-orders against Sunday)', idx: 6 },
+    { day: 'Sunday', hours: 'Special Hours: 12:00 PM - 6:00 PM', idx: 0 },
+  ]
 
   return (
     <>
-      {/* Launch Countdown & Live Celebration Bar */}
-      <section className={`py-5 sm:py-6 px-4 border-b-2 shadow-2xl relative overflow-hidden transition-colors duration-500 ${
-        isLive 
-          ? 'bg-gradient-to-r from-[#041a11] via-[#0b4d2e] to-[#041a11] border-amber-400 animate-pulse' 
-          : 'bg-gradient-to-r from-[#051B10] via-[#072d1d] to-[#051B10] border-[#EAA823]/40'
-      }`}>
-        
-        {/* Flower Petals & Confetti Container when Live */}
-        {isLive && <div id="live-petal-container" className="absolute inset-0 overflow-hidden pointer-events-none z-0" />}
+      {/* Dynamic Operational Schedule & World Clock Section */}
+      <section className="py-6 px-4 bg-gradient-to-r from-[#051B10] via-[#072d1d] to-[#051B10] border-b-2 border-[#EAA823]/40 shadow-2xl relative overflow-hidden text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(#EAA823_1px,transparent_1px)] [background-size:16px_16px] opacity-10 pointer-events-none" />
 
-        <div className="absolute inset-0 bg-[radial-gradient(#EAA823_1px,transparent_1px)] [background-size:12px_12px] opacity-10 pointer-events-none" />
-
-        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-6 relative z-10">
+        <div className="max-w-5xl mx-auto space-y-4 relative z-10">
           
-          {/* Header & Value Proposition */}
-          <div className="text-center lg:text-left space-y-1.5 max-w-xl">
-            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase shadow-sm ${
-              isLive ? 'bg-amber-400 text-[#041a11] animate-bounce' : 'bg-[#EAA823]/20 border border-[#EAA823]/40 text-[#EAA823]'
-            }`}>
-              <Flame className="w-3.5 h-3.5" />
-              <span>{isLive ? '🎉 Official Store Launch Active!' : 'Official Launch Preview'}</span>
+          {/* Top Info Header: 3D Calendar Badge with full weekday name, Location, and Single-Line Time & Status */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 py-2">
+            
+            <div className="flex items-center gap-4 text-center md:text-left">
+              {/* 3D Calendar-style Badge displaying full weekday */}
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-b from-amber-300 via-amber-500 to-amber-700 text-[#041a11] flex flex-col items-center justify-center font-black shadow-[0_8px_20px_rgba(234,168,35,0.4),inset_0_2px_4px_rgba(255,255,255,0.6),inset_0_-3px_6px_rgba(0,0,0,0.3)] flex-shrink-0 border border-amber-200/50 transform hover:scale-105 transition-transform overflow-hidden">
+                <div className="w-full bg-[#041a11]/20 py-0.5 text-[8px] uppercase tracking-wider font-extrabold text-[#041a11] text-center border-b border-amber-600/30">
+                  Today
+                </div>
+                <div className="flex-1 flex items-center justify-center px-1">
+                  <span className="text-xs font-black tracking-tighter text-center uppercase leading-tight">
+                    {currentDayName || 'Tuesday'}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-1.5 justify-center md:justify-start">
+                  <MapPin className="w-4 h-4 text-[#EAA823]" />
+                  <span>Woji, Port Harcourt, Rivers State</span>
+                </h3>
+                
+                {/* Single line: Rotating clock icon + Time + Dim bright kitchen status */}
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mt-1">
+                  <div className="flex items-center gap-1 bg-black/30 px-2 py-0.5 rounded-md border border-amber-400/20">
+                    <Clock className="w-3.5 h-3.5 text-[#EAA823] animate-[spin_10s_linear_infinite]" />
+                    <span className="font-mono text-xs font-bold text-[#EAA823]">
+                      {currentTimeString || '00:00:00 AM'}
+                    </span>
+                  </div>
+
+                  {kitchenStatus === 'breakfast' ? (
+                    <span className="text-xs font-black text-amber-300 uppercase tracking-wide animate-pulse drop-shadow-[0_0_8px_rgba(252,211,77,0.8)]">
+                      ⚡ BREAKFAST ACTIVE! (7:30am - 9:30am)
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-gray-300/80 tracking-wide drop-shadow-[0_0_6px_rgba(255,255,255,0.3)]">
+                      {statusMessage}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <h2 className="text-xl sm:text-3xl font-black text-white tracking-tight">
-              {isLive ? 'WE ARE LIVE NOW!' : `We Are Launching in ${timeLeft.days} ${timeLeft.days === 1 ? 'Day' : 'Days'}!`}
-            </h2>
+            {/* Right Action: Long Clickable Button for Schedule */}
+            <div className="w-full md:w-auto">
+              <button
+                type="button"
+                onClick={() => setShowScheduleCallout(!showScheduleCallout)}
+                className="w-full md:w-auto bg-gradient-to-r from-emerald-800 to-[#072d1d] hover:from-amber-500 hover:to-amber-600 hover:text-[#041a11] text-amber-300 border border-amber-400/40 px-5 py-3 rounded-2xl text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              >
+                <Calendar className="w-4 h-4" />
+                <span>{showScheduleCallout ? 'Hide Operating Schedule' : 'View Full Operating Schedule'}</span>
+                {showScheduleCallout ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
 
-            <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-              {isLive 
-                ? 'Storefront orders are officially unlocked! Claim your launch voucher for an instant discount on all meals and celebration cakes.' 
-                : `Explore our fresh kitchen menu & bespoke celebration cakes. Online orders unlock on launch day! Join the waitlist to receive your Unique 15% OFF VIP Code.`}
-            </p>
           </div>
 
-          {/* Live Countdown Clocks or Live Badge */}
-          {!isLive ? (
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="bg-[#12422C] border border-[#EAA823]/40 rounded-2xl p-2.5 sm:p-3.5 text-center min-w-[62px] sm:min-w-[76px] shadow-lg">
-                <span className="block text-2xl sm:text-3xl font-black text-[#EAA823] font-mono leading-none">
-                  {String(timeLeft.days).padStart(2, '0')}
-                </span>
-                <span className="text-[9px] sm:text-[10px] uppercase font-extrabold text-gray-300 tracking-wider">Days</span>
+          {/* Closable Inline Schedule Callout */}
+          {showScheduleCallout && (
+            <div className="bg-[#041a11]/95 border-2 border-amber-400/50 p-4 sm:p-5 rounded-3xl shadow-2xl relative animate-in fade-in slide-in-from-top-2 duration-300">
+              
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-emerald-500/30">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-[#EAA823]" />
+                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-300">
+                    Woji Kitchen Weekly Timings & Schedule
+                  </h4>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleCallout(false)}
+                  className="flex items-center justify-center w-7 h-7 rounded-full bg-white/10 hover:bg-amber-500 hover:text-[#041a11] text-amber-300 transition cursor-pointer"
+                  title="Close Schedule Callout"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              <span className="text-xl sm:text-2xl font-black text-[#EAA823]">:</span>
-
-              <div className="bg-[#12422C] border border-[#EAA823]/40 rounded-2xl p-2.5 sm:p-3.5 text-center min-w-[62px] sm:min-w-[76px] shadow-lg">
-                <span className="block text-2xl sm:text-3xl font-black text-[#EAA823] font-mono leading-none">
-                  {String(timeLeft.hours).padStart(2, '0')}
-                </span>
-                <span className="text-[9px] sm:text-[10px] uppercase font-extrabold text-gray-300 tracking-wider">Hours</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {weeklySchedule.map((sch) => {
+                  const isToday = sch.idx === currentDayIndex
+                  return (
+                    <div
+                      key={sch.day}
+                      className={`p-3 rounded-2xl border transition-all ${
+                        isToday
+                          ? 'bg-amber-400 text-[#041a11] border-amber-300 shadow-md font-bold'
+                          : 'bg-[#0a3a26]/60 text-gray-200 border-emerald-800/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-xs font-black uppercase ${isToday ? 'text-[#041a11]' : 'text-amber-400'}`}>
+                          {sch.day}
+                        </span>
+                        {isToday && (
+                          <span className="bg-[#041a11] text-amber-300 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase">
+                            Today
+                          </span>
+                        )}
+                      </div>
+                      <p className={`text-[11px] leading-snug ${isToday ? 'text-[#041a11]' : 'text-gray-300'}`}>
+                        {sch.hours}
+                      </p>
+                    </div>
+                  )
+                })}
               </div>
 
-              <span className="text-xl sm:text-2xl font-black text-[#EAA823]">:</span>
-
-              <div className="bg-[#12422C] border border-[#EAA823]/40 rounded-2xl p-2.5 sm:p-3.5 text-center min-w-[62px] sm:min-w-[76px] shadow-lg">
-                <span className="block text-2xl sm:text-3xl font-black text-[#EAA823] font-mono leading-none">
-                  {String(timeLeft.minutes).padStart(2, '0')}
-                </span>
-                <span className="text-[9px] sm:text-[10px] uppercase font-extrabold text-gray-300 tracking-wider">Mins</span>
-              </div>
-
-              <span className="text-xl sm:text-2xl font-black text-[#EAA823]">:</span>
-
-              <div className="bg-[#12422C] border border-[#EAA823]/40 rounded-2xl p-2.5 sm:p-3.5 text-center min-w-[62px] sm:min-w-[76px] shadow-lg">
-                <span className="block text-2xl sm:text-3xl font-black text-[#EAA823] font-mono leading-none">
-                  {String(timeLeft.seconds).padStart(2, '0')}
-                </span>
-                <span className="text-[9px] sm:text-[10px] uppercase font-extrabold text-gray-300 tracking-wider">Secs</span>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-amber-400 text-[#041a11] px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center gap-2 shadow-2xl animate-pulse">
-              <Flower2 className="w-5 h-5" />
-              <span>Grand Opening Live</span>
             </div>
           )}
-
-          {/* Action Trigger Button (Redirects to /launch if live, opens modal if pre-launch) */}
-          <Button
-            onClick={() => {
-              if (isLive) {
-                router.push('/launch')
-              } else {
-                setIsModalOpen(true)
-                setSubmitted(false)
-                setIsAlreadyVip(false)
-                setShowCodePreview(false)
-              }
-            }}
-            className={`font-black text-xs sm:text-sm px-7 py-6 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer ${
-              isLive ? 'bg-amber-400 hover:bg-white text-[#041a11]' : 'bg-[#EAA823] hover:bg-white text-[#0A2E1D]'
-            }`}
-          >
-            <Gift className="w-4 h-4" />
-            <span>{isLive ? 'Claim Your Launch Offer' : 'Join VIP Waitlist'}</span>
-          </Button>
 
         </div>
       </section>
 
-      {/* Join Waitlist Modal (For pre-launch state) */}
+      {/* Waitlist Modal */}
       {isModalOpen && !isLive && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-gray-100 space-y-5 text-[#0A2E1D] relative max-h-[90vh] overflow-y-auto">
@@ -468,580 +492,80 @@ export function WaitlistCountdownSection() {
             </button>
 
             {submitted ? (
-              <div className="text-center py-4 space-y-4 animate-in zoom-in-95 duration-200">
-                
+              <div className="text-center py-4 space-y-4">
                 {showAppliedPrompt ? (
-                  <div className="bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] text-white p-5 sm:p-6 rounded-3xl border-2 border-amber-400/60 shadow-2xl space-y-4 text-left relative animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    
-                    <button
-                      type="button"
-                      onClick={handleCancelPrompt}
-                      className="absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full bg-white/10 hover:bg-amber-500 hover:text-[#072d1d] text-amber-300 transition-transform active:scale-90 cursor-pointer shadow-md group border border-amber-400/30"
-                      title="Cancel & Return to Storefront"
-                    >
-                      <Star className="w-4 h-4 fill-amber-400 group-hover:fill-current" />
-                    </button>
-
-                    <div className="flex items-center gap-2 text-amber-400">
-                      <ShieldCheck className="w-5 h-5" />
-                      <h4 className="text-xs font-black uppercase tracking-wider">
-                        VIP Code Applied Successfully!
-                      </h4>
-                    </div>
-
-                    <div className="bg-[#041a11] p-3 rounded-2xl border border-emerald-500/40 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] text-gray-400 block">Active Code:</span>
-                        <strong className="font-mono text-base text-[#EAA823] tracking-widest">{generatedPromoCode}</strong>
-                      </div>
-                      <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-2.5 py-1 rounded-full">
-                        15% APPLIED
-                      </span>
-                    </div>
-
-                    <div className="bg-white/5 p-3.5 rounded-2xl border border-white/10 space-y-2 text-xs">
-                      <div className="flex items-center justify-between border-b border-white/10 pb-1.5 text-gray-300">
-                        <span>Configured Items ({selectedItems.length}):</span>
-                        <span>₦{rawTotal.toLocaleString()}</span>
-                      </div>
-
-                      <p className="text-[10px] text-emerald-200/80 leading-relaxed italic">
-                        {compileFavoriteDishes()}
-                      </p>
-
-                      <div className="flex items-center justify-between text-amber-300 font-bold pt-1">
-                        <span>VIP 15% Launch Savings:</span>
-                        <span>-₦{discountAmount.toLocaleString()}</span>
-                      </div>
-
-                      <div className="flex items-center justify-between text-white font-black text-sm pt-2 border-t border-white/10">
-                        <span>Discounted Launch Total:</span>
-                        <span className="text-[#EAA823] text-base">₦{finalDiscountedTotal.toLocaleString()}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2.5 pt-1">
-                      <Button
-                        type="button"
-                        onClick={handleCancelPrompt}
-                        className="flex-1 bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-black text-xs py-3 rounded-xl cursor-pointer shadow-md transition flex items-center justify-center gap-1.5"
-                      >
-                        <span>Return to Storefront</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ) : isAlreadyVip && !showCodePreview ? (
-                  <div className="bg-gradient-to-br from-[#072d1d] via-[#0a3a26] to-[#041a11] text-white p-6 rounded-3xl border-2 border-amber-400/50 shadow-2xl space-y-4 text-center relative animate-in fade-in zoom-in-95 duration-200">
-                    <div className="w-14 h-14 bg-amber-400/20 text-[#EAA823] rounded-full flex items-center justify-center mx-auto border border-amber-400/30">
-                      <Sparkles className="w-7 h-7" />
-                    </div>
-
-                    <div className="space-y-1">
-                      <h3 className="text-xl font-extrabold text-white">Thank you, you&apos;re already a VIP!</h3>
-                      <p className="text-xs text-emerald-100/80 leading-relaxed max-w-xs mx-auto">
-                        Your phone number or email is already registered on our priority launch list.
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
-                      <Button
-                        type="button"
-                        onClick={() => setShowCodePreview(true)}
-                        className="flex-1 bg-[#EAA823] hover:bg-white text-[#0A2E1D] font-black text-xs py-3.5 rounded-xl cursor-pointer shadow-md transition flex items-center justify-center gap-2"
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span>Preview My Code</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={handleCancelPrompt}
-                        variant="outline"
-                        className="flex-1 border-white/20 text-white hover:bg-white/10 text-xs py-3.5 rounded-xl cursor-pointer"
-                      >
-                        Back to Home
-                      </Button>
-                    </div>
+                  <div className="bg-[#072d1d] text-white p-5 rounded-3xl border-2 border-amber-400/60 shadow-xl space-y-3 text-left">
+                    <h4 className="text-xs font-black uppercase text-amber-400">VIP Code Applied Successfully!</h4>
+                    <p className="font-mono text-xl text-[#EAA823] font-bold">{generatedPromoCode}</p>
+                    <Button onClick={handleCancelPrompt} className="w-full bg-[#EAA823] text-[#0A2E1D] font-bold">Return to Store</Button>
                   </div>
                 ) : (
                   <>
-                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
                       <PartyPopper className="w-8 h-8" />
                     </div>
                     <h3 className="text-2xl font-black text-[#0A2E1D]">You&apos;re on the VIP List!</h3>
-                    <p className="text-xs text-gray-600 leading-relaxed max-w-xs mx-auto">
-                      Priority spot secured for <strong>{formData.name}</strong>. Copy your single-use launch discount code below:
-                    </p>
-
-                    <div className="bg-[#072d1d] text-[#EAA823] p-4 sm:p-5 rounded-3xl border-2 border-amber-400/50 shadow-xl space-y-3 relative overflow-hidden">
-                      <span className="text-[10px] uppercase font-bold text-emerald-200/80 tracking-wider block">
-                        Your Personalized 15% VIP Voucher
-                      </span>
-                      
-                      <div className="flex items-center justify-center gap-2 bg-[#041a11] py-3 px-4 rounded-2xl border border-emerald-700/50">
-                        <p className="font-mono font-black text-2xl tracking-widest text-[#EAA823]">
-                          {generatedPromoCode}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={handleCopyCode}
-                          className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition active:scale-90 cursor-pointer ml-2 flex items-center justify-center"
-                          title="Copy Unique Code & Apply Discount"
-                        >
-                          {copiedCode ? <CheckCheck className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5 text-amber-300" />}
-                        </button>
-                      </div>
-
-                      <p className="text-[11px] text-emerald-100 font-medium">
-                        Click the copy icon above to copy and check your instant 15% discount.
-                      </p>
+                    <div className="bg-[#072d1d] text-[#EAA823] p-4 rounded-3xl space-y-2">
+                      <p className="font-mono font-black text-2xl tracking-widest">{generatedPromoCode}</p>
+                      <button onClick={handleCopyCode} className="flex items-center justify-center gap-1 mx-auto bg-white/10 px-3 py-1.5 rounded-xl text-xs text-white">
+                        {copiedCode ? <CheckCheck className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                        <span>Copy Code</span>
+                      </button>
                     </div>
-
-                    <Button
-                      onClick={handleCancelPrompt}
-                      className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold text-xs rounded-full px-8 py-5 mt-2 cursor-pointer transition"
-                    >
-                      Explore Storefront Menu
-                    </Button>
+                    <Button onClick={handleCancelPrompt} className="bg-[#0A2E1D] text-white rounded-full px-8 py-4">Close</Button>
                   </>
                 )}
-
               </div>
             ) : (
-              /* FORM SUBMISSION VIEW */
-              <>
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-1.5 bg-amber-100 text-amber-900 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full mb-1">
-                    <Sparkles className="w-3 h-3 text-[#EAA823]" />
-                    <span>Exclusive 15% Launch Discount</span>
-                  </div>
-                  <h3 className="text-2xl font-black text-[#0A2E1D]">Join Priority Waitlist</h3>
-                  <p className="text-xs text-gray-500">
-                    Select your favorite dishes. We&apos;ll generate your unique 15% VIP promo code instantly.
-                  </p>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <h3 className="text-xl font-black">Join Priority Waitlist (Woji, Port Harcourt)</h3>
+                <Input
+                  required
+                  placeholder="Full Name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                />
+                <Input
+                  type="email"
+                  required
+                  placeholder="Email Address"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                />
+                <Input
+                  type="tel"
+                  required
+                  placeholder="Phone Number"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                />
+
+                <div className="grid grid-cols-3 gap-2">
+                  {MENU_CATALOG.map((item) => {
+                    const isSelected = selectedItems.includes(item.id)
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleToggleItem(item.id)}
+                        className={`p-2 rounded-xl border text-center text-xs font-bold ${
+                          isSelected ? 'bg-[#072d1d] text-[#EAA823]' : 'bg-gray-50 text-gray-700'
+                        }`}
+                      >
+                        {item.icon} {item.label}
+                      </button>
+                    )
+                  })}
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Full Name *</label>
-                      <Input
-                        type="text"
-                        required
-                        placeholder="e.g. Joy Williams"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="bg-[#FDFBF7] border-gray-200 text-xs sm:text-sm rounded-xl py-3"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Email Address *</label>
-                        <Input
-                          type="email"
-                          required
-                          placeholder="e.g. joy@example.com"
-                          value={formData.email}
-                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          className="bg-[#FDFBF7] border-gray-200 text-xs sm:text-sm rounded-xl py-3"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Phone Number (WhatsApp) *</label>
-                        <Input
-                          type="tel"
-                          required
-                          placeholder="e.g. +234 703 000 0000"
-                          value={formData.phone}
-                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                          className="bg-[#FDFBF7] border-gray-200 text-xs sm:text-sm rounded-xl py-3"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* MULTI-SELECT MENU CATEGORIES */}
-                  <div className="pt-2 border-t border-gray-100 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs font-black uppercase text-[#0A2E1D] flex items-center gap-1.5">
-                        <Utensils className="w-3.5 h-3.5 text-amber-600" />
-                        Select Dishes You Want (Pick Multiple)
-                      </label>
-                      <span className="text-[10px] text-gray-400 font-bold">
-                        {selectedItems.length} selected
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      {MENU_CATALOG.map((item) => {
-                        const isSelected = selectedItems.includes(item.id)
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => handleToggleItem(item.id)}
-                            className={`p-2.5 rounded-xl border text-center transition cursor-pointer flex flex-col items-center gap-1 relative ${
-                              isSelected
-                                ? 'bg-[#072d1d] text-[#EAA823] border-[#072d1d] shadow-sm ring-2 ring-[#EAA823]/40'
-                                : 'bg-[#FDFBF7] text-gray-700 border-gray-200 hover:bg-amber-50/50'
-                            }`}
-                          >
-                            <span className="text-lg leading-none">{item.icon}</span>
-                            <span className="text-[11px] font-extrabold leading-tight text-center">
-                              {item.label}
-                            </span>
-                            {isSelected && (
-                              <div className="absolute top-1 right-1 bg-[#EAA823] text-[#072d1d] rounded-full p-0.5">
-                                <Check className="w-2.5 h-2.5 stroke-[3]" />
-                              </div>
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* DYNAMIC CONFIGURATION FOR SELECTED ITEMS */}
-                  <div className="space-y-3 pt-1">
-                    
-                    {selectedItems.includes('shawarma') && (
-                      <div className="bg-[#FDFBF7] p-3 rounded-2xl border border-gray-200 space-y-2 animate-in fade-in duration-150">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] font-bold text-gray-700 uppercase">🫔 Shawarma Size:</span>
-                          <span className="text-[10px] text-amber-700 font-bold">Jumbo: ₦12,000 | Medium: ₦5,000</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { size: 'Medium size', price: '₦5,000', desc: 'Classic single sausage roll' },
-                            { size: 'Jumbo size', price: '₦12,000', desc: 'Double sausage + extra meat' },
-                          ].map((opt) => (
-                            <button
-                              key={opt.size}
-                              type="button"
-                              onClick={() => setShawarmaSize(opt.size as any)}
-                              className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                                shawarmaSize === opt.size
-                                  ? 'bg-[#072d1d] text-white border-[#072d1d] shadow-xs'
-                                  : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
-                              }`}
-                            >
-                              <div className="flex justify-between items-center">
-                                <p className="text-xs font-black">{opt.size}</p>
-                                <span className="text-[10px] font-black text-[#EAA823]">{opt.price}</span>
-                              </div>
-                              <p className="text-[10px] opacity-75 leading-tight mt-0.5">{opt.desc}</p>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedItems.includes('noodles') && (
-                      <div className="bg-[#FDFBF7] p-3 rounded-2xl border border-gray-200 space-y-2.5 animate-in fade-in duration-150">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] font-bold text-gray-700 uppercase">🍜 Noodles (Base ₦3,000):</span>
-                          <span className="text-[10px] text-emerald-800 font-bold">Turkey ₦6k | Cubes ₦2k/ea</span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { protein: 'Full Turkey', price: '+₦6,000', desc: 'Crispy fried large turkey cut' },
-                            { protein: 'Turkey Cubes', price: '₦2,000/cube', desc: 'Tender diced turkey chunks' },
-                          ].map((prot) => (
-                            <button
-                              key={prot.protein}
-                              type="button"
-                              onClick={() => setNoodleProtein(prot.protein as any)}
-                              className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                                noodleProtein === prot.protein
-                                  ? 'bg-[#072d1d] text-white border-[#072d1d] shadow-xs'
-                                  : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
-                              }`}
-                            >
-                              <div className="flex justify-between items-center">
-                                <p className="text-xs font-black">{prot.protein}</p>
-                                <span className="text-[10px] font-black text-[#EAA823]">{prot.price}</span>
-                              </div>
-                              <p className="text-[10px] opacity-75 leading-tight mt-0.5">{prot.desc}</p>
-                            </button>
-                          ))}
-                        </div>
-
-                        {noodleProtein === 'Turkey Cubes' && (
-                          <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-gray-200">
-                            <div>
-                              <span className="text-xs font-bold text-gray-700">Turkey Cubes Count</span>
-                              <span className="text-[10px] text-gray-400 block">₦2,000 per cube</span>
-                            </div>
-                            <div className="flex items-center gap-2 border border-gray-300 rounded-lg p-1">
-                              <button
-                                type="button"
-                                onClick={() => setNoodleTurkeyCubesCount(Math.max(1, noodleTurkeyCubesCount - 1))}
-                                className="p-1 hover:bg-gray-100 rounded text-gray-700 cursor-pointer"
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-                              <span className="font-bold text-xs w-4 text-center">{noodleTurkeyCubesCount}</span>
-                              <button
-                                type="button"
-                                onClick={() => setNoodleTurkeyCubesCount(noodleTurkeyCubesCount + 1)}
-                                className="p-1 hover:bg-gray-100 rounded text-gray-700 cursor-pointer"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between pt-1 border-t border-gray-200">
-                          <span className="text-xs font-bold text-[#0A2E1D]">Portion Count:</span>
-                          <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-xl p-1 shadow-xs">
-                            <button
-                              type="button"
-                              onClick={() => setNoodleQuantity(Math.max(1, noodleQuantity - 1))}
-                              className="p-1 rounded-lg hover:bg-gray-100 text-gray-700 cursor-pointer"
-                            >
-                              <Minus className="w-3 h-3" />
-                            </button>
-                            <span className="font-black text-xs text-[#0A2E1D] w-5 text-center">
-                              {noodleQuantity}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setNoodleQuantity(noodleQuantity + 1)}
-                              className="p-1 rounded-lg hover:bg-gray-100 text-gray-700 cursor-pointer"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedItems.includes('pepper_soup') && (
-                      <div className="bg-[#FDFBF7] p-3 rounded-2xl border border-gray-200 flex items-center justify-between text-xs animate-in fade-in duration-150">
-                        <div>
-                          <p className="font-extrabold text-[#0A2E1D]">Catfish Pepper Soup</p>
-                          <p className="text-[10px] text-gray-500">Prepared fresh with aromatic native herbs</p>
-                        </div>
-                        <span className="text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-xl">
-                          Full Catfish (1 Liter) &bull; ₦16,000
-                        </span>
-                      </div>
-                    )}
-
-                    {selectedItems.includes('rice') && (
-                      <div className="bg-[#FDFBF7] p-3 rounded-2xl border border-gray-200 space-y-2 animate-in fade-in duration-150">
-                        <span className="text-[11px] font-bold text-gray-700 uppercase">🍚 Rice Preparation:</span>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {[
-                            { name: 'Signature Fried Rice', price: '₦3,000' },
-                            { name: 'Smokey Jollof Rice', price: '₦3,000' },
-                            { name: 'Mixed Fried & Jollof Rice', price: '₦3,500' },
-                          ].map((style) => (
-                            <button
-                              key={style.name}
-                              type="button"
-                              onClick={() => setRiceStyle(style.name as any)}
-                              className={`p-2 rounded-xl border text-center transition cursor-pointer text-[10px] font-bold leading-snug ${
-                                riceStyle === style.name
-                                  ? 'bg-[#072d1d] text-[#EAA823] border-[#072d1d] shadow-xs'
-                                  : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
-                              }`}
-                            >
-                              <span className="block">{style.name}</span>
-                              <span className="text-[9px] opacity-80 text-[#EAA823] font-bold">{style.price}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {selectedItems.includes('parfait') && (
-                      <div className="bg-[#FDFBF7] p-3 rounded-2xl border border-gray-200 space-y-2.5 animate-in fade-in duration-150">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] font-bold text-gray-700 uppercase">🍓 Parfait & Cake Menu:</span>
-                          <span className="text-[10px] font-black text-amber-700">Price: ₦{getParfaitPrice().toLocaleString()}</span>
-                        </div>
-
-                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
-                          {[
-                            'Classic Parfait',
-                            'Tropical',
-                            'Nutty Essence',
-                            'Cake Parfait',
-                            'Mini Cakeloaf',
-                          ].map((cat) => (
-                            <button
-                              key={cat}
-                              type="button"
-                              onClick={() => setParfaitCategory(cat as any)}
-                              className={`p-1.5 rounded-lg border text-center transition cursor-pointer text-[9px] font-bold ${
-                                parfaitCategory === cat
-                                  ? 'bg-[#072d1d] text-[#EAA823] border-[#072d1d]'
-                                  : 'bg-white text-gray-700 border-gray-200'
-                              }`}
-                            >
-                              {cat}
-                            </button>
-                          ))}
-                        </div>
-
-                        {parfaitCategory !== 'Mini Cakeloaf' ? (
-                          <div className="space-y-1.5">
-                            <span className="text-[10px] text-gray-500 block">
-                              {parfaitCategory === 'Classic Parfait' && 'Yogurt layered with apples, grapes, granola, coconut flakes & cashew.'}
-                              {parfaitCategory === 'Tropical' && 'Yogurt with apple, grape slices, coconut flakes, cashew & almond.'}
-                              {parfaitCategory === 'Nutty Essence' && 'Granola, coconut flakes, cashew, almonds with little/no fruit.'}
-                              {parfaitCategory === 'Cake Parfait' && 'Vanilla, chocolate & red velvet layers with whipped cream & caramel.'}
-                            </span>
-                            <div className="grid grid-cols-2 gap-2">
-                              {[
-                                { 
-                                  size: '350ml', 
-                                  price: parfaitCategory === 'Classic Parfait' ? '₦5,500' : parfaitCategory === 'Cake Parfait' ? '₦6,000' : '₦6,500'
-                                },
-                                { 
-                                  size: '1 liter', 
-                                  price: parfaitCategory === 'Classic Parfait' ? '₦13,000' : '₦14,000'
-                                },
-                              ].map((sz) => (
-                                <button
-                                  key={sz.size}
-                                  type="button"
-                                  onClick={() => setParfaitSize(sz.size as any)}
-                                  className={`p-2 rounded-xl border flex justify-between items-center text-xs font-bold ${
-                                    parfaitSize === sz.size
-                                      ? 'bg-[#072d1d] text-white border-[#072d1d]'
-                                      : 'bg-white text-gray-700 border-gray-200'
-                                  }`}
-                                >
-                                  <span>{sz.size}</span>
-                                  <span className="text-[#EAA823] text-[11px]">{sz.price}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <span className="text-[10px] text-gray-500 block">Comes with whipped cream and luxury toppings:</span>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                              {[
-                                { flavor: 'Chocolate', price: '₦4,000' },
-                                { flavor: 'Red Velvet', price: '₦4,500' },
-                                { flavor: 'Vanilla', price: '₦4,300' },
-                                { flavor: '2 Mixed Flavours', price: '₦4,600' },
-                              ].map((loaf) => (
-                                <button
-                                  key={loaf.flavor}
-                                  type="button"
-                                  onClick={() => setCakeloafFlavor(loaf.flavor as any)}
-                                  className={`p-2 rounded-xl border text-center text-[10px] font-bold ${
-                                    cakeloafFlavor === loaf.flavor
-                                      ? 'bg-[#072d1d] text-white border-[#072d1d]'
-                                      : 'bg-white text-gray-700 border-gray-200'
-                                  }`}
-                                >
-                                  <span className="block">{loaf.flavor}</span>
-                                  <span className="text-[#EAA823] text-[9px] font-black">{loaf.price}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {selectedItems.includes('zobo') && (
-                      <div className="bg-[#FDFBF7] p-3 rounded-2xl border border-gray-200 flex items-center justify-between text-xs animate-in fade-in duration-150">
-                        <div>
-                          <p className="font-extrabold text-[#0A2E1D]">Signature Spiced Zobo Drink</p>
-                          <p className="text-[10px] text-gray-500">Slow-brewed with fresh ginger, pineapple & cloves</p>
-                        </div>
-                        <span className="text-xs font-black text-amber-800 bg-amber-50 border border-emerald-200 px-2.5 py-1.5 rounded-xl">
-                          ₦2,500
-                        </span>
-                      </div>
-                    )}
-
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setWantsTraining(!wantsTraining)}
-                      className={`w-full p-3.5 rounded-2xl border-2 transition cursor-pointer flex items-center justify-between gap-3 ${
-                        wantsTraining
-                          ? 'bg-gradient-to-r from-[#072d1d] to-[#12422C] text-white border-[#EAA823] shadow-md'
-                          : 'bg-[#FDFBF7] text-[#0A2E1D] border-dashed border-gray-300 hover:border-gray-400'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 text-left">
-                        <div className={`p-2 rounded-xl ${wantsTraining ? 'bg-[#EAA823] text-[#072d1d]' : 'bg-gray-100 text-gray-600'}`}>
-                          <GraduationCap className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-black">
-                            {wantsTraining ? '✓ Registered for De-echoi Academy' : 'Enroll in De-echoi Training Academy'}
-                          </p>
-                          <p className={`text-[10px] ${wantsTraining ? 'text-emerald-200' : 'text-gray-500'}`}>
-                            Learn professional baking, catering & food production in Port Harcourt.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 ${
-                        wantsTraining ? 'bg-[#EAA823] border-[#EAA823] text-[#072d1d]' : 'border-gray-300 bg-white'
-                      }`}>
-                        {wantsTraining && <Check className="w-3 h-3 stroke-[3]" />}
-                      </div>
-                    </button>
-                  </div>
-
-                  <Button
-                    type="submit"
-                    disabled={submitting}
-                    className="w-full bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-black py-6 rounded-2xl text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer mt-2"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Processing VIP Pass...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Gift className="w-4 h-4 text-[#EAA823]" />
-                        <span>Claim 15% VIP Launch Pass</span>
-                      </>
-                    )}
-                  </Button>
-                </form>
-              </>
+                <Button type="submit" disabled={submitting} className="w-full bg-[#0A2E1D] text-white py-4 rounded-xl">
+                  {submitting ? <Loader2 className="animate-spin" /> : 'Claim 15% VIP Pass'}
+                </Button>
+              </form>
             )}
-
           </div>
         </div>
       )}
-
-      {/* Falling Flower Petals CSS Animation */}
-      <style jsx global>{`
-        @keyframes fall {
-          0% {
-            transform: translateY(-20px) rotate(0deg);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(120px) rotate(720deg);
-            opacity: 0;
-          }
-        }
-        .animate-fall {
-          animation-name: fall;
-          animation-iteration-count: infinite;
-        }
-      `}</style>
     </>
   )
 }

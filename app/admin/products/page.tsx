@@ -9,6 +9,7 @@ import {
   Trash2,
   Edit2,
   Plus,
+  Minus,
   X,
   ChevronLeft,
   Cake,
@@ -53,6 +54,7 @@ export const STORE_CATEGORIES = [
 interface CutItem {
   name: string
   price: number
+  fixed_count?: number
 }
 
 interface Option {
@@ -68,6 +70,9 @@ interface Option {
   allowed_cuts?: (string | CutItem)[]
   min_cuts_selection?: number
   max_cuts_selection?: number
+  has_fixed_cuts_matrix?: boolean
+  fixed_total_cuts?: number
+  has_cubes_count_selection?: boolean
 }
 
 interface OptionGroup {
@@ -292,6 +297,7 @@ export default function StoreInventoryPage() {
 
   const [newCutInput, setNewCutInput] = useState<Record<string, string>>({})
   const [newCutPriceInput, setNewCutPriceInput] = useState<Record<string, string>>({})
+  const [newCutCountInput, setNewCutCountInput] = useState<Record<string, string>>({})
   const [newIngredient, setNewIngredient] = useState('')
   const [newAllergen, setNewAllergen] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -301,6 +307,9 @@ export default function StoreInventoryPage() {
   const [cakeFlavor, setCakeFlavor] = useState<'Vanilla' | 'Chocolate' | 'Red Velvet' | 'Multi-Flavor Combo'>('Vanilla')
   const [cakeTiers, setCakeTiers] = useState<CakeTierPrice[]>(DEFAULT_6INCH_TIERS)
   const [allowInscription, setAllowInscription] = useState(true)
+
+  // Simulation state for storefront preview testing of cube counts & plus buttons
+  const [previewSelections, setPreviewSelections] = useState<Record<string, Record<string, number>>>({})
 
   const router = useRouter()
   const supabase = createClient()
@@ -385,10 +394,13 @@ export default function StoreInventoryPage() {
         min_multiplier_count: opt.min_multiplier_count ?? 1,
         cut_selection_title: opt.cut_selection_title || 'Select Preferred Cut / Parts',
         allowed_cuts: (opt.allowed_cuts || (opt.has_cuts_selection ? DEFAULT_FISH_CUTS : [])).map((c: any) => 
-          typeof c === 'string' ? { name: c, price: 0 } : c
+          typeof c === 'string' ? { name: c, price: 0, fixed_count: 0 } : { ...c, fixed_count: c.fixed_count || 0 }
         ),
         min_cuts_selection: opt.min_cuts_selection ?? (opt.has_cuts_selection ? 1 : 0),
         max_cuts_selection: opt.max_cuts_selection || 1,
+        has_fixed_cuts_matrix: opt.has_fixed_cuts_matrix ?? false,
+        fixed_total_cuts: opt.fixed_total_cuts || 4,
+        has_cubes_count_selection: opt.has_cubes_count_selection ?? false,
       }))
     }))
 
@@ -590,7 +602,10 @@ export default function StoreInventoryPage() {
       cut_selection_title: 'Select Preferred Cut / Parts',
       allowed_cuts: [],
       min_cuts_selection: 1,
-      max_cuts_selection: 1
+      max_cuts_selection: 1,
+      has_fixed_cuts_matrix: false,
+      fixed_total_cuts: 4,
+      has_cubes_count_selection: false,
     })
     setOptionGroups(updated)
   }
@@ -614,17 +629,30 @@ export default function StoreInventoryPage() {
     const key = `${groupIndex}-${optionIndex}`
     const cutName = (newCutInput[key] || '').trim()
     const cutPrice = parseFloat(newCutPriceInput[key] || '0') || 0
+    const cutCount = parseInt(newCutCountInput[key] || '1', 10) || 1
     if (!cutName) return
 
     const updated = [...optionGroups]
     const currentCuts = (updated[groupIndex].options[optionIndex].allowed_cuts || []) as CutItem[]
 
     if (!currentCuts.some(c => (typeof c === 'string' ? c : c.name) === cutName)) {
-      updated[groupIndex].options[optionIndex].allowed_cuts = [...currentCuts, { name: cutName, price: cutPrice }]
+      updated[groupIndex].options[optionIndex].allowed_cuts = [...currentCuts, { name: cutName, price: cutPrice, fixed_count: cutCount }]
       setOptionGroups(updated)
     }
     setNewCutInput({ ...newCutInput, [key]: '' })
     setNewCutPriceInput({ ...newCutPriceInput, [key]: '' })
+    setNewCutCountInput({ ...newCutCountInput, [key]: '' })
+  }
+
+  const updateCutCountInOption = (groupIndex: number, optionIndex: number, cutIndex: number, newCount: number) => {
+    const updated = [...optionGroups]
+    const currentCuts = [...(updated[groupIndex].options[optionIndex].allowed_cuts || [])] as CutItem[]
+    const targetCut = currentCuts[cutIndex]
+    if (typeof targetCut !== 'string') {
+      currentCuts[cutIndex] = { ...targetCut, fixed_count: Math.max(0, newCount) }
+      updated[groupIndex].options[optionIndex].allowed_cuts = currentCuts
+      setOptionGroups(updated)
+    }
   }
 
   const removeCutFromOption = (groupIndex: number, optionIndex: number, cutIndex: number) => {
@@ -1061,6 +1089,108 @@ export default function StoreInventoryPage() {
                   />
                 </div>
 
+                {/* RESTORED: Ingredients, Allergens, Prep Time, Servings & Storage Instructions */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-200">
+                  <div className="space-y-3">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
+                      Ingredients
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        value={newIngredient}
+                        onChange={(e) => setNewIngredient(e.target.value)}
+                        placeholder="e.g. Fresh Catfish, Ehuru, Uda"
+                        className="rounded-xl border-gray-300 text-xs bg-white font-medium"
+                      />
+                      <Button type="button" onClick={addIngredient} className="bg-[#0A2E1D] text-white hover:bg-[#12422C] text-xs font-bold">
+                        Add
+                      </Button>
+                    </div>
+                    {ingredients.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {ingredients.map((ing, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold">
+                            {ing}
+                            <button type="button" onClick={() => removeIngredient(idx)} className="text-emerald-700 hover:text-red-600">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
+                      Allergens
+                    </label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        value={newAllergen}
+                        onChange={(e) => setNewAllergen(e.target.value)}
+                        placeholder="e.g. Shellfish, Peanuts, Gluten"
+                        className="rounded-xl border-gray-300 text-xs bg-white font-medium"
+                      />
+                      <Button type="button" onClick={addAllergen} className="bg-[#0A2E1D] text-white hover:bg-[#12422C] text-xs font-bold">
+                        Add
+                      </Button>
+                    </div>
+                    {allergens.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {allergens.map((alg, idx) => (
+                          <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 text-red-800 border border-red-200 rounded-lg text-xs font-bold">
+                            {alg}
+                            <button type="button" onClick={() => removeAllergen(idx)} className="text-red-700 hover:text-red-900">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
+                      Preparation Time (Minutes)
+                    </label>
+                    <Input
+                      type="number"
+                      value={prepTime}
+                      onChange={(e) => setPrepTime(e.target.value)}
+                      className="rounded-xl border-gray-300 font-bold bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
+                      Servings / Portions
+                    </label>
+                    <Input
+                      type="number"
+                      value={servings}
+                      onChange={(e) => setServings(e.target.value)}
+                      className="rounded-xl border-gray-300 font-bold bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
+                    Storage Instructions
+                  </label>
+                  <Textarea
+                    rows={2}
+                    value={storageInstructions}
+                    onChange={(e) => setStorageInstructions(e.target.value)}
+                    placeholder="e.g. Store in a cool dry place or keep refrigerated."
+                    className="rounded-xl border-gray-300 text-xs font-medium bg-white"
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-gray-700 block">
                     Product Image
@@ -1337,6 +1467,28 @@ export default function StoreInventoryPage() {
                                     <span className="font-bold text-gray-700">Has Multiplier Counter</span>
                                   </label>
 
+                                  {/* FIXED NUMBER OF CUTS SETUP CHECKBOX */}
+                                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={option.has_fixed_cuts_matrix || false}
+                                      onChange={(e) => updateOption(groupIdx, optIdx, 'has_fixed_cuts_matrix', e.target.checked)}
+                                      className="w-4 h-4 accent-[#0A2E1D] rounded cursor-pointer"
+                                    />
+                                    <span className="font-bold text-gray-700">Fixed Number of Cuts Setup</span>
+                                  </label>
+
+                                  {/* ENABLE CUBE / CUT COUNT (+ BUTTON) CHECKBOX */}
+                                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={option.has_cubes_count_selection || false}
+                                      onChange={(e) => updateOption(groupIdx, optIdx, 'has_cubes_count_selection', e.target.checked)}
+                                      className="w-4 h-4 accent-[#0A2E1D] rounded cursor-pointer"
+                                    />
+                                    <span className="font-bold text-gray-700">Enable Cube / Cut Count (+ Button)</span>
+                                  </label>
+
                                   <label className="flex items-center gap-2 cursor-pointer select-none">
                                     <input
                                       type="checkbox"
@@ -1387,7 +1539,7 @@ export default function StoreInventoryPage() {
                                   </div>
                                 )}
 
-                                {option.has_cuts_selection && (
+                                {(option.has_cuts_selection || option.has_fixed_cuts_matrix || option.has_cubes_count_selection) && (
                                   <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-3.5 space-y-3 mt-2">
                                     
                                     <div>
@@ -1403,51 +1555,142 @@ export default function StoreInventoryPage() {
                                       />
                                     </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                      <div>
-                                        <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">
-                                          Min Cuts Selection Allowed
-                                        </label>
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          value={option.min_cuts_selection ?? 1}
-                                          onChange={(e) => updateOption(groupIdx, optIdx, 'min_cuts_selection', parseInt(e.target.value, 10) || 0)}
-                                          className="bg-white text-xs font-bold rounded-lg"
-                                        />
-                                      </div>
-
-                                      <div>
-                                        <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">
-                                          Max Cuts Selection Allowed
+                                    {/* FIXED NUMBER OF CUTS CONFIGURATION PANEL */}
+                                    {option.has_fixed_cuts_matrix && (
+                                      <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 space-y-2">
+                                        <label className="text-[10px] font-extrabold uppercase text-amber-900 block">
+                                          Set Fixed Total Number of Cuts Required (e.g. 4 pieces total)
                                         </label>
                                         <Input
                                           type="number"
                                           min="1"
-                                          value={option.max_cuts_selection ?? 1}
-                                          onChange={(e) => updateOption(groupIdx, optIdx, 'max_cuts_selection', parseInt(e.target.value, 10) || 1)}
-                                          className="bg-white text-xs font-bold rounded-lg"
+                                          value={option.fixed_total_cuts ?? 4}
+                                          onChange={(e) => updateOption(groupIdx, optIdx, 'fixed_total_cuts', parseInt(e.target.value, 10) || 4)}
+                                          className="bg-white text-xs font-bold rounded-lg w-32"
                                         />
+                                        <p className="text-[11px] text-amber-800 font-medium">
+                                          Admin can specify exactly how many total cuts/pieces the customer must allocate across available parts.
+                                        </p>
                                       </div>
-                                    </div>
+                                    )}
+
+                                    {/* ENABLE CUBE/CUT COUNT PREVIEW PANEL FOR STOREFRONT */}
+                                    {option.has_cubes_count_selection && (
+                                      <div className="bg-blue-50/90 border border-blue-300 rounded-xl p-3.5 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-xs font-black text-blue-900">
+                                            🛍️ Storefront Preview: Cube / Cut Count (+ Button Enabled)
+                                          </span>
+                                          <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full font-bold">
+                                            Interactive UI
+                                          </span>
+                                        </div>
+                                        <p className="text-[11px] text-blue-800 font-medium">
+                                          Customers on the storefront will see interactive plus/minus buttons next to each cut to specify exact quantities.
+                                        </p>
+
+                                        <div className="space-y-2 bg-white p-3 rounded-lg border border-blue-200">
+                                          {(option.allowed_cuts || []).map((cutItem: any, cIdx: number) => {
+                                            const cName = typeof cutItem === 'string' ? cutItem : cutItem.name
+                                            const cPrice = typeof cutItem === 'string' ? 0 : (cutItem.price || 0)
+                                            const key = `${groupIdx}-${optIdx}-${cIdx}`
+                                            const currentCount = previewSelections[key]?.[cName] ?? (typeof cutItem !== 'string' ? (cutItem.fixed_count || 0) : 0)
+
+                                            return (
+                                              <div key={cIdx} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0 text-xs">
+                                                <div>
+                                                  <span className="font-bold text-gray-800">{cName}</span>
+                                                  {cPrice > 0 && <span className="text-emerald-700 font-bold ml-1.5">(+₦{cPrice})</span>}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      const updatedCount = Math.max(0, currentCount - 1)
+                                                      setPreviewSelections({
+                                                        ...previewSelections,
+                                                        [key]: { ...(previewSelections[key] || {}), [cName]: updatedCount }
+                                                      })
+                                                    }}
+                                                    className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold text-gray-700 transition"
+                                                  >
+                                                    <Minus className="w-3.5 h-3.5" />
+                                                  </button>
+                                                  <span className="font-black w-6 text-center text-sm">{currentCount}</span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      const updatedCount = currentCount + 1
+                                                      setPreviewSelections({
+                                                        ...previewSelections,
+                                                        [key]: { ...(previewSelections[key] || {}), [cName]: updatedCount }
+                                                      })
+                                                    }}
+                                                    className="w-7 h-7 rounded-lg bg-[#0A2E1D] text-white hover:bg-[#12422C] flex items-center justify-center font-bold transition shadow-sm"
+                                                  >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {!option.has_cubes_count_selection && (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">
+                                            Min Cuts Selection Allowed
+                                          </label>
+                                          <Input
+                                            type="number"
+                                            min="0"
+                                            value={option.min_cuts_selection ?? 1}
+                                            onChange={(e) => updateOption(groupIdx, optIdx, 'min_cuts_selection', parseInt(e.target.value, 10) || 0)}
+                                            className="bg-white text-xs font-bold rounded-lg"
+                                          />
+                                        </div>
+
+                                        <div>
+                                          <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">
+                                            Max Cuts Selection Allowed
+                                          </label>
+                                          <Input
+                                            type="number"
+                                            min="1"
+                                            value={option.max_cuts_selection ?? 1}
+                                            onChange={(e) => updateOption(groupIdx, optIdx, 'max_cuts_selection', parseInt(e.target.value, 10) || 1)}
+                                            className="bg-white text-xs font-bold rounded-lg"
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
 
                                     <div>
                                       <label className="text-[10px] font-extrabold uppercase text-emerald-900 block mb-1">
-                                        Allowed Piece/Cut Names &amp; Price Per Cut (₦)
+                                        Allowed Piece/Cut Names, Price &amp; Default Count (₦)
                                       </label>
 
                                       <div className="flex flex-wrap gap-2 mb-3">
                                         {(option.allowed_cuts || []).map((cutItem: any, cutIdx: number) => {
                                           const cName = typeof cutItem === 'string' ? cutItem : cutItem.name
                                           const cPrice = typeof cutItem === 'string' ? 0 : (cutItem.price || 0)
+                                          const cCount = typeof cutItem === 'string' ? 0 : (cutItem.fixed_count || 0)
 
                                           return (
                                             <span
                                               key={cutIdx}
-                                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold shadow-xs"
+                                              className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold shadow-xs"
                                             >
                                               <span>{cName}</span>
                                               {cPrice > 0 && <span className="text-[#EAA823] font-black">(+₦{cPrice.toLocaleString()})</span>}
+                                              {option.has_fixed_cuts_matrix && (
+                                                <span className="bg-emerald-100 text-emerald-900 px-1.5 py-0.5 rounded text-[10px]">
+                                                  Qty: {cCount}
+                                                </span>
+                                              )}
                                               <button
                                                 type="button"
                                                 onClick={() => removeCutFromOption(groupIdx, optIdx, cutIdx)}
@@ -1461,7 +1704,7 @@ export default function StoreInventoryPage() {
                                       </div>
 
                                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                                        <div className="sm:col-span-6">
+                                        <div className="sm:col-span-5">
                                           <Input
                                             type="text"
                                             value={newCutInput[`${groupIdx}-${optIdx}`] || ''}
@@ -1470,7 +1713,7 @@ export default function StoreInventoryPage() {
                                             className="bg-white text-xs rounded-lg"
                                           />
                                         </div>
-                                        <div className="sm:col-span-4">
+                                        <div className="sm:col-span-3">
                                           <div className="relative">
                                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">₦</span>
                                             <Input
@@ -1483,7 +1726,19 @@ export default function StoreInventoryPage() {
                                             />
                                           </div>
                                         </div>
-                                        <div className="sm:col-span-2">
+                                        {option.has_fixed_cuts_matrix && (
+                                          <div className="sm:col-span-2">
+                                            <Input
+                                              type="number"
+                                              min="0"
+                                              value={newCutCountInput[`${groupIdx}-${optIdx}`] || ''}
+                                              onChange={(e) => setNewCutCountInput({ ...newCutCountInput, [`${groupIdx}-${optIdx}`]: e.target.value })}
+                                              placeholder="Count"
+                                              className="bg-white text-xs rounded-lg font-bold"
+                                            />
+                                          </div>
+                                        )}
+                                        <div className={option.has_fixed_cuts_matrix ? "sm:col-span-2" : "sm:col-span-4"}>
                                           <Button
                                             type="button"
                                             size="sm"

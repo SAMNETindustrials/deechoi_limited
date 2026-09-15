@@ -26,7 +26,10 @@ import {
   HeartHandshake,
   Lock,
   Hash,
-  LogOut
+  LogOut,
+  MessageSquare,
+  CornerDownRight,
+  ShieldCheck
 } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -51,11 +54,32 @@ interface CustomerSession {
   phone?: string
 }
 
+interface ReviewResponse {
+  id: string
+  review_id: string
+  user_name: string
+  responseText?: string
+  response_text?: string
+  is_approved: boolean
+  created_at: string
+}
+
+interface ReviewItem {
+  id: string
+  order_id?: string
+  customer_name: string
+  rating: number
+  review_text: string
+  item_ordered: string
+  created_at: string
+  responses?: ReviewResponse[]
+}
+
 export default function MyOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [customerSession, setCustomerSession] = useState<CustomerSession | null>(null)
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed'>('all')
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed' | 'reviews'>('all')
 
   // Transaction Login States
   const [loginEmail, setLoginEmail] = useState('')
@@ -69,6 +93,13 @@ export default function MyOrdersPage() {
   const [reviewText, setReviewText] = useState('')
   const [submittingReview, setSubmittingReview] = useState(false)
   const [reviewedOrderIds, setReviewedOrderIds] = useState<string[]>([])
+
+  // Storefront Reviews & View/Reply States
+  const [storeReviews, setStoreReviews] = useState<ReviewItem[]>([])
+  const [loadingReviews, setLoadingReviews] = useState(false)
+  const [selectedReviewModal, setSelectedReviewModal] = useState<ReviewItem | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [submittingReply, setSubmittingReply] = useState(false)
 
   const supabase = createClient()
 
@@ -87,6 +118,21 @@ export default function MyOrdersPage() {
       console.warn('Could not check reviewed orders:', err)
     }
   }, [supabase])
+
+  const fetchStorefrontReviews = useCallback(async () => {
+    try {
+      setLoadingReviews(true)
+      const res = await fetch('/api/reviews')
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        setStoreReviews(data)
+      }
+    } catch (err) {
+      console.error('Failed to load storefront reviews:', err)
+    } finally {
+      setLoadingReviews(false)
+    }
+  }, [])
 
   const fetchCustomerOrders = useCallback(async (forcedEmail?: string) => {
     try {
@@ -146,7 +192,8 @@ export default function MyOrdersPage() {
 
   useEffect(() => {
     fetchCustomerOrders()
-  }, [fetchCustomerOrders])
+    fetchStorefrontReviews()
+  }, [fetchCustomerOrders, fetchStorefrontReviews])
 
   // Handle 5-digit code & email login
   const handleTransactionLogin = async (e: React.FormEvent) => {
@@ -277,11 +324,42 @@ export default function MyOrdersPage() {
       setReviewedOrderIds((prev) => Array.from(new Set([reviewOrder.id, ...prev])))
       alert('Thank you! Your review is now live on our storefront.')
       setReviewOrder(null)
+      fetchStorefrontReviews()
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to submit review'
       alert(message)
     } finally {
       setSubmittingReview(false)
+    }
+  }
+
+  const handleReplyToReview = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedReviewModal || !replyText.trim()) return
+
+    try {
+      setSubmittingReply(true)
+      const currentUserName = customerSession?.email ? customerSession.email.split('@')[0] : 'Community Member'
+
+      const res = await fetch('/api/reviews/responses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reviewId: selectedReviewModal.id,
+          userName: currentUserName,
+          responseText: replyText.trim(),
+        }),
+      })
+
+      if (!res.ok) throw new Error('Failed to submit response')
+      setReplyText('')
+      alert('Your response has been submitted! It will appear publicly once approved by our admin team.')
+      fetchStorefrontReviews()
+      setSelectedReviewModal(null)
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit response.')
+    } finally {
+      setSubmittingReply(false)
     }
   }
 
@@ -354,7 +432,7 @@ export default function MyOrdersPage() {
           {hasSession && (
             <div className="flex items-center gap-3">
               <button
-                onClick={() => fetchCustomerOrders()}
+                onClick={() => { fetchCustomerOrders(); fetchStorefrontReviews(); }}
                 className="text-xs font-bold text-[#0A2E1D] hover:underline flex items-center gap-1 bg-white border border-gray-200 px-3 py-1.5 rounded-full shadow-xs transition cursor-pointer"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -458,11 +536,11 @@ export default function MyOrdersPage() {
               </div>
               
               <h1 className="text-2xl sm:text-3xl font-black text-white">
-                Your Order History
+                Your Order History & Community Reviews
               </h1>
               
               <p className="text-xs sm:text-sm text-emerald-100/80 mt-1 max-w-lg">
-                Track live dispatches, view receipts, and rate any of your completed meals.
+                Track live dispatches, view receipts, and click any community review below to read full details and view approved replies.
               </p>
 
               <div className="mt-4 pt-4 border-t border-emerald-800/60 flex flex-wrap gap-4 text-xs text-emerald-200">
@@ -474,158 +552,248 @@ export default function MyOrdersPage() {
             </div>
 
             {/* Filter Tabs */}
-            {orders.length > 0 && (
-              <div className="flex items-center gap-2 mb-6 border-b border-gray-200 pb-3">
-                <button
-                  onClick={() => setActiveTab('all')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                    activeTab === 'all'
-                      ? 'bg-[#0A2E1D] text-white shadow-sm'
-                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  All Orders ({orders.length})
-                </button>
-                <button
-                  onClick={() => setActiveTab('active')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    activeTab === 'active'
-                      ? 'bg-[#0A2E1D] text-white shadow-sm'
-                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  <Truck className="w-3.5 h-3.5 text-amber-500" />
-                  Active ({activeOrders.length})
-                </button>
-                <button
-                  onClick={() => setActiveTab('completed')}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    activeTab === 'completed'
-                      ? 'bg-[#0A2E1D] text-white shadow-sm'
-                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
-                  Delivered ({completedOrders.length})
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2 mb-6 border-b border-gray-200 pb-3 overflow-x-auto no-scrollbar">
+              <button
+                onClick={() => setActiveTab('all')}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                  activeTab === 'all'
+                    ? 'bg-[#0A2E1D] text-white shadow-sm'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                All Orders ({orders.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('active')}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'active'
+                    ? 'bg-[#0A2E1D] text-white shadow-sm'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <Truck className="w-3.5 h-3.5 text-amber-500" />
+                Active ({activeOrders.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('completed')}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'completed'
+                    ? 'bg-[#0A2E1D] text-white shadow-sm'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                Delivered ({completedOrders.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('reviews')}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'reviews'
+                    ? 'bg-[#0A2E1D] text-white shadow-sm'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                Storefront Reviews ({storeReviews.length})
+              </button>
+            </div>
 
-            {/* Orders Listing */}
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-20 space-y-3">
-                <Loader2 className="w-8 h-8 animate-spin text-[#0A2E1D]" />
-                <p className="text-xs font-bold text-gray-500">Checking your live orders...</p>
-              </div>
-            ) : displayedOrders.length === 0 ? (
-              <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200 p-8 shadow-sm">
-                <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-[#EAA823]">
-                  <ShoppingBag className="w-8 h-8" />
-                </div>
-                <h2 className="text-lg font-bold text-gray-800 mb-1">No Orders Found</h2>
-                <p className="text-xs text-gray-500 mb-6 max-w-xs mx-auto">
-                  {activeTab !== 'all' 
-                    ? `You do not have any ${activeTab} orders at the moment.` 
-                    : 'No order history associated with your email address.'}
-                </p>
-                <Link href="/">
-                  <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs cursor-pointer">
-                    Explore Menu & Order
-                  </Button>
-                </Link>
-              </div>
-            ) : (
+            {/* TAB CONTENT: STOREFRONT REVIEWS FEED */}
+            {activeTab === 'reviews' ? (
               <div className="space-y-4">
-                {displayedOrders.map((order) => {
-                  const itemCount = (order.items || []).reduce((acc: number, item: any) => acc + (item.quantity || 1), 0)
-                  const firstItem = order.items?.[0]?.name || order.items?.[0]?.product_name || 'Delicious Meal'
-                  const isReviewed = reviewedOrderIds.includes(order.id)
+                <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm mb-4">
+                  <h3 className="font-extrabold text-sm sm:text-base text-[#0A2E1D] flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-[#EAA823]" />
+                    <span>Storefront Customer Reviews &amp; Conversations</span>
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Click any review card below to view the complete feedback, read approved replies, and add your own response!
+                  </p>
+                </div>
 
-                  return (
-                    <div
-                      key={order.id}
-                      className="bg-white border border-gray-200/80 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-md transition space-y-4"
-                    >
-                      {/* Order Header */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-black text-xs text-[#EAA823]">
-                            #{order.id.slice(0, 8).toUpperCase()}
-                          </span>
-                          <span className="text-gray-300">•</span>
-                          <span className="text-xs font-semibold text-gray-500 flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5" />
-                            {new Date(order.created_at).toLocaleDateString(undefined, {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </span>
-                        </div>
+                {loadingReviews ? (
+                  <div className="text-center py-12">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-[#0A2E1D]" />
+                    <p className="text-xs text-gray-400 mt-2">Loading storefront reviews...</p>
+                  </div>
+                ) : storeReviews.length === 0 ? (
+                  <div className="text-center py-12 bg-white rounded-3xl border border-gray-200 p-8">
+                    <p className="text-xs text-gray-500">No storefront reviews available yet.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {storeReviews.map((rev) => {
+                      const approvedCount = (rev.responses || []).filter(r => r.is_approved).length
 
-                        <div>{getStatusBadge(order.status)}</div>
-                      </div>
+                      return (
+                        <div
+                          key={rev.id}
+                          onClick={() => setSelectedReviewModal(rev)}
+                          className="bg-white border border-gray-200/80 rounded-3xl p-5 shadow-sm hover:shadow-md transition cursor-pointer space-y-3 group"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-extrabold text-xs sm:text-sm text-[#0A2E1D] group-hover:text-amber-600 transition">
+                                  {rev.customer_name}
+                                </span>
+                                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
+                                  Verified Meal
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-gray-400 mt-0.5">
+                                Ordered: <span className="font-bold text-gray-600">{rev.item_ordered}</span> • {new Date(rev.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
 
-                      {/* Order Content */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="space-y-1.5">
-                          <p className="font-extrabold text-sm sm:text-base text-[#0A2E1D]">
-                            {firstItem} {itemCount > 1 ? `+ ${itemCount - 1} more item${itemCount > 2 ? 's' : ''}` : ''}
+                            <div className="flex items-center gap-0.5">
+                              {[1, 2, 3, 4, 5].map((s) => (
+                                <Star 
+                                  key={s} 
+                                  className={`w-3.5 h-3.5 ${s <= rev.rating ? 'fill-[#EAA823] text-[#EAA823]' : 'text-gray-300'}`} 
+                                />
+                              ))}
+                            </div>
+                          </div>
+
+                          <p className="text-xs sm:text-sm text-gray-700 font-medium line-clamp-2 bg-gray-50/80 p-3 rounded-2xl border border-gray-100">
+                            &ldquo;{rev.review_text}&rdquo;
                           </p>
-                          <p className="text-xs text-gray-500 flex items-center gap-1">
-                            <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                            <span className="truncate max-w-xs">{order.delivery_address}, {order.delivery_city}</span>
-                          </p>
-                          <p className="text-[11px] text-gray-400 font-medium">
-                            Recipient: {order.customer_name} ({order.customer_phone})
-                          </p>
-                        </div>
 
-                        {/* Total & Action Buttons */}
-                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-3 sm:pt-0 border-t sm:border-0 border-gray-100">
-                          <div>
-                            <span className="text-[10px] text-gray-400 uppercase font-semibold block sm:text-right">Total Paid</span>
-                            <span className="text-base sm:text-lg font-black text-[#0A2E1D]">
-                              ₦{Number(order.total_amount || 0).toLocaleString()}
+                          <div className="flex items-center justify-between pt-1 text-[11px]">
+                            <span className="text-gray-500 font-semibold flex items-center gap-1">
+                              <MessageSquare className="w-3.5 h-3.5 text-[#EAA823]" />
+                              {approvedCount} approved repl{approvedCount !== 1 ? 'ies' : 'y'}
+                            </span>
+                            <span className="text-amber-600 font-bold group-hover:underline flex items-center gap-1">
+                              View Complete Review &amp; Replies <ChevronRight className="w-3.5 h-3.5" />
                             </span>
                           </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* TAB CONTENT: ORDERS LISTING */
+              <>
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#0A2E1D]" />
+                    <p className="text-xs font-bold text-gray-500">Checking your live orders...</p>
+                  </div>
+                ) : displayedOrders.length === 0 ? (
+                  <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200 p-8 shadow-sm">
+                    <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 text-[#EAA823]">
+                      <ShoppingBag className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-lg font-bold text-gray-800 mb-1">No Orders Found</h2>
+                    <p className="text-xs text-gray-500 mb-6 max-w-xs mx-auto">
+                      {activeTab !== 'all' 
+                        ? `You do not have any ${activeTab} orders at the moment.` 
+                        : 'No order history associated with your email address.'}
+                    </p>
+                    <Link href="/">
+                      <Button className="bg-[#0A2E1D] text-white hover:bg-[#EAA823] hover:text-[#0A2E1D] font-bold rounded-full px-6 text-xs cursor-pointer">
+                        Explore Menu & Order
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {displayedOrders.map((order) => {
+                      const itemCount = (order.items || []).reduce((acc: number, item: any) => acc + (item.quantity || 1), 0)
+                      const firstItem = order.items?.[0]?.name || order.items?.[0]?.product_name || 'Delicious Meal'
+                      const isReviewed = reviewedOrderIds.includes(order.id)
 
-                          <div className="flex items-center gap-2">
-                            {order.status === 'completed' && (
-                              isReviewed ? (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
-                                  <Star className="w-3.5 h-3.5 fill-[#EAA823] text-[#EAA823]" />
-                                  Reviewed
+                      return (
+                        <div
+                          key={order.id}
+                          className="bg-white border border-gray-200/80 rounded-3xl p-5 sm:p-6 shadow-sm hover:shadow-md transition space-y-4"
+                        >
+                          {/* Order Header */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-100">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-black text-xs text-[#EAA823]">
+                                #{order.id.slice(0, 8).toUpperCase()}
+                              </span>
+                              <span className="text-gray-300">•</span>
+                              <span className="text-xs font-semibold text-gray-500 flex items-center gap-1">
+                                <Calendar className="w-3.5 h-3.5" />
+                                {new Date(order.created_at).toLocaleDateString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            </div>
+
+                            <div>{getStatusBadge(order.status)}</div>
+                          </div>
+
+                          {/* Order Content */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="space-y-1.5">
+                              <p className="font-extrabold text-sm sm:text-base text-[#0A2E1D]">
+                                {firstItem} {itemCount > 1 ? `+ ${itemCount - 1} more item${itemCount > 2 ? 's' : ''}` : ''}
+                              </p>
+                              <p className="text-xs text-gray-500 flex items-center gap-1">
+                                <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                                <span className="truncate max-w-xs">{order.delivery_address}, {order.delivery_city}</span>
+                              </p>
+                              <p className="text-[11px] text-gray-400 font-medium">
+                                Recipient: {order.customer_name} ({order.customer_phone})
+                              </p>
+                            </div>
+
+                            {/* Total & Action Buttons */}
+                            <div className="flex items-center justify-between sm:justify-end gap-3 pt-3 sm:pt-0 border-t sm:border-0 border-gray-100">
+                              <div>
+                                <span className="text-[10px] text-gray-400 uppercase font-semibold block sm:text-right">Total Paid</span>
+                                <span className="text-base sm:text-lg font-black text-[#0A2E1D]">
+                                  ₦{Number(order.total_amount || 0).toLocaleString()}
                                 </span>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleOpenReviewModal(order)}
-                                  className="bg-amber-500 hover:bg-amber-400 text-[#072d1d] font-bold rounded-xl text-xs gap-1 shadow-sm transition cursor-pointer"
-                                >
-                                  <Star className="w-3.5 h-3.5" />
-                                  <span>Review</span>
-                                </Button>
-                              )
-                            )}
+                              </div>
 
-                            <Link href={`/order-confirmation/${order.id}`}>
-                              <Button
-                                size="sm"
-                                className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold rounded-xl text-xs gap-1.5 shadow-sm transition cursor-pointer"
-                              >
-                                <span>{order.status === 'completed' ? 'Receipt' : 'Track'}</span>
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              </Button>
-                            </Link>
+                              <div className="flex items-center gap-2">
+                                {order.status === 'completed' && (
+                                  isReviewed ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                                      <Star className="w-3.5 h-3.5 fill-[#EAA823] text-[#EAA823]" />
+                                      Reviewed
+                                    </span>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleOpenReviewModal(order)}
+                                      className="bg-amber-500 hover:bg-amber-400 text-[#072d1d] font-bold rounded-xl text-xs gap-1 shadow-sm transition cursor-pointer"
+                                    >
+                                      <Star className="w-3.5 h-3.5" />
+                                      <span>Review</span>
+                                    </Button>
+                                  )
+                                )}
+
+                                <Link href={`/order-confirmation/${order.id}`}>
+                                  <Button
+                                    size="sm"
+                                    className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold rounded-xl text-xs gap-1.5 shadow-sm transition cursor-pointer"
+                                  >
+                                    <span>{order.status === 'completed' ? 'Receipt' : 'Track'}</span>
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  </Button>
+                                </Link>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
@@ -722,6 +890,126 @@ export default function MyOrdersPage() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Complete Review & Replies Modal */}
+      {selectedReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl border border-gray-100 space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-[#EAA823]" />
+                <h3 className="font-extrabold text-base text-[#0A2E1D]">Complete Review &amp; Conversation</h3>
+              </div>
+              <button
+                onClick={() => setSelectedReviewModal(null)}
+                className="p-1 rounded-full text-gray-400 hover:text-gray-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Review Details */}
+            <div className="space-y-3 bg-gray-50/70 p-4 sm:p-5 rounded-2xl border border-gray-200/60">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-sm text-[#0A2E1D]">{selectedReviewModal.customer_name}</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-md">
+                      Verified Order
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    Item Ordered: <span className="font-bold text-gray-600">{selectedReviewModal.item_ordered}</span> • {new Date(selectedReviewModal.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-0.5">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star 
+                      key={s} 
+                      className={`w-4 h-4 ${s <= selectedReviewModal.rating ? 'fill-[#EAA823] text-[#EAA823]' : 'text-gray-300'}`} 
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-xs sm:text-sm text-gray-800 font-medium leading-relaxed bg-white p-3.5 rounded-xl border border-gray-100 shadow-2xs">
+                &ldquo;{selectedReviewModal.review_text}&rdquo;
+              </p>
+            </div>
+
+            {/* Approved Replies Thread */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-[#EAA823]" />
+                Approved Community Replies &amp; Responses
+              </h4>
+
+              {(() => {
+                const approvedResponses = (selectedReviewModal.responses || []).filter(r => r.is_approved)
+                if (approvedResponses.length === 0) {
+                  return (
+                    <p className="text-xs text-gray-400 italic bg-gray-50 p-4 rounded-xl text-center">
+                      No approved replies for this review yet. Be the first to respond below!
+                    </p>
+                  )
+                }
+
+                return (
+                  <div className="space-y-2.5 pl-3 sm:pl-4 border-l-2 border-[#EAA823]">
+                    {approvedResponses.map((resp) => (
+                      <div key={resp.id} className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-200/60 shadow-2xs space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-extrabold text-[#0A2E1D] flex items-center gap-1">
+                            <CornerDownRight className="w-3.5 h-3.5 text-[#EAA823]" />
+                            {resp.user_name}
+                          </span>
+                          <span className="text-[9px] text-gray-400">{new Date(resp.created_at).toLocaleDateString()}</span>
+                        </div>
+                        <p className="text-xs text-gray-700 pl-4">{resp.responseText || resp.response_text}</p>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+
+            {/* Reply Form */}
+            <form onSubmit={handleReplyToReview} className="pt-3 border-t border-gray-100 space-y-3">
+              <label className="block text-xs font-bold text-gray-700 uppercase">
+                Add Your Reply to this Review:
+              </label>
+              <textarea
+                rows={2}
+                required
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                placeholder="Write your friendly response or advice..."
+                className="w-full text-xs bg-[#FDFBF7] border border-gray-200 p-3 rounded-xl outline-none focus:ring-1 focus:ring-[#0A2E1D]"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSelectedReviewModal(null)}
+                  className="text-xs font-bold py-5 rounded-xl border-gray-200 cursor-pointer"
+                >
+                  Close
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={submittingReply || !replyText.trim()}
+                  className="bg-[#0A2E1D] hover:bg-[#EAA823] hover:text-[#0A2E1D] text-white font-bold text-xs py-5 px-6 rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                >
+                  {submittingReply ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 text-[#EAA823]" />}
+                  <span>Submit for Approval</span>
+                </Button>
+              </div>
+            </form>
+
           </div>
         </div>
       )}

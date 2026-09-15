@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useCart } from '@/lib/cart-context'
 import { StorefrontHeader } from '@/components/storefront/header'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import {
   ArrowLeft,
   ShoppingBag,
@@ -23,8 +24,16 @@ import {
   AlertCircle,
   XCircle,
   ShieldAlert,
-  Info
+  Info,
+  FileText,
+  Fish
 } from 'lucide-react'
+
+interface CutItem {
+  name: string
+  price: number
+  fixed_count?: number
+}
 
 interface Option {
   name: string
@@ -41,9 +50,14 @@ interface Option {
   min_multiplier_count?: number
   has_cuts_selection?: boolean
   cut_selection_title?: string
-  allowed_cuts?: string[]
+  allowed_cuts?: (string | CutItem)[]
   min_cuts_selection?: number
   max_cuts_selection?: number
+  has_fixed_cuts_matrix?: boolean
+  fixed_total_cuts?: number
+  has_cubes_count_selection?: boolean
+  has_fixed_cubes?: boolean
+  fixed_cubes_count?: number
 }
 
 interface OptionGroup {
@@ -55,6 +69,7 @@ interface OptionGroup {
 }
 
 interface SelectedOptionItem {
+  choiceLabel?: React.ReactNode
   groupName: string
   optionName: string
   priceModifier: number
@@ -82,11 +97,14 @@ export default function ProductDetailPage({
 
   const [quantity, setQuantity] = useState(1)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [customerNote, setCustomerNote] = useState('')
 
   const [selectedRadioOptions, setSelectedRadioOptions] = useState<Record<string, Option | null>>({})
   const [selectedCheckboxOptions, setSelectedCheckboxOptions] = useState<Record<string, boolean>>({})
   const [unitCounters, setUnitCounters] = useState<Record<string, number>>({})
   const [selectedCuts, setSelectedCuts] = useState<Record<string, string[]>>({})
+  // New State to manage individual cube / cut quantities when 'has_cubes_count_selection' is enabled
+  const [cutCounts, setCutCounts] = useState<Record<string, Record<string, number>>>({})
 
   // Format 24h time to 12h AM/PM for friendly display
   const formatTime = (timeStr?: string | null) => {
@@ -212,6 +230,7 @@ export default function ProductDetailPage({
         const defaults: Record<string, Option | null> = {}
         const counters: Record<string, number> = {}
         const cuts: Record<string, string[]> = {}
+        const initialCutCounts: Record<string, Record<string, number>> = {}
 
         if (Array.isArray(data.customization_options)) {
           data.customization_options.forEach((group: OptionGroup) => {
@@ -225,7 +244,18 @@ export default function ProductDetailPage({
 
               if (Boolean(defaultOpt.has_cuts_selection) && Array.isArray(defaultOpt.allowed_cuts) && defaultOpt.allowed_cuts.length > 0) {
                 const minCount = defaultOpt.min_cuts_selection ?? 1
-                cuts[defaultOpt.name] = defaultOpt.allowed_cuts.slice(0, Math.max(1, minCount))
+                const cutNames = defaultOpt.allowed_cuts.map((c: any) => (typeof c === 'string' ? c : c?.name || ''))
+                cuts[defaultOpt.name] = cutNames.slice(0, Math.max(1, minCount))
+              }
+
+              if (defaultOpt.has_cubes_count_selection && Array.isArray(defaultOpt.allowed_cuts)) {
+                const countsMap: Record<string, number> = {}
+                defaultOpt.allowed_cuts.forEach((c: any) => {
+                  const cName = typeof c === 'string' ? c : c?.name || ''
+                  const defCount = typeof c === 'object' && c !== null ? (c.fixed_count || 0) : 0
+                  countsMap[cName] = defCount
+                })
+                initialCutCounts[defaultOpt.name] = countsMap
               }
             } else {
               defaults[group.name] = null
@@ -237,6 +267,7 @@ export default function ProductDetailPage({
         setSelectedCheckboxOptions({})
         setUnitCounters(counters)
         setSelectedCuts(cuts)
+        setCutCounts(initialCutCounts)
       }
     } catch (err) {
       console.error('Error fetching product detail page:', err)
@@ -287,13 +318,27 @@ export default function ProductDetailPage({
     }
 
     if (Boolean(opt.has_cuts_selection) && Array.isArray(opt.allowed_cuts) && opt.allowed_cuts.length > 0) {
+      const cutNames = opt.allowed_cuts.map((c: any) => (typeof c === 'string' ? c : c?.name || ''))
       if (!selectedCuts[opt.name] || selectedCuts[opt.name].length === 0) {
         const minCount = opt.min_cuts_selection ?? 1
         setSelectedCuts({
           ...selectedCuts,
-          [opt.name]: opt.allowed_cuts.slice(0, Math.max(1, minCount)),
+          [opt.name]: cutNames.slice(0, Math.max(1, minCount)),
         })
       }
+    }
+
+    if (opt.has_cubes_count_selection && Array.isArray(opt.allowed_cuts)) {
+      const countsMap: Record<string, number> = {}
+      opt.allowed_cuts.forEach((c: any) => {
+        const cName = typeof c === 'string' ? c : c?.name || ''
+        const defCount = typeof c === 'object' && c !== null ? (c.fixed_count || 0) : 0
+        countsMap[cName] = defCount
+      })
+      setCutCounts({
+        ...cutCounts,
+        [opt.name]: countsMap
+      })
     }
   }
 
@@ -336,6 +381,21 @@ export default function ProductDetailPage({
         [optionName]: [...current.slice(1), cutName],
       })
     }
+  }
+
+  const handleCutCountChange = (optionName: string, cutName: string, change: number) => {
+    setValidationError(null)
+    const currentMap = cutCounts[optionName] || {}
+    const currentVal = currentMap[cutName] || 0
+    const nextVal = Math.max(0, currentVal + change)
+
+    setCutCounts({
+      ...cutCounts,
+      [optionName]: {
+        ...currentMap,
+        [cutName]: nextVal
+      }
+    })
   }
 
   const handleCounterChange = (option: Option, change: number) => {
@@ -411,7 +471,41 @@ export default function ProductDetailPage({
       })
     }
 
-    return base * quantity
+    // Add extra cut prices if applicable (supports standard cuts and cube/cut counts)
+    let cutsExtraTotal = 0
+    if (Array.isArray(product.customization_options)) {
+      product.customization_options.forEach((group: OptionGroup) => {
+        if (!group.type || group.type === 'radio') {
+          const selectedOpt = selectedRadioOptions[group.name]
+          if (selectedOpt && Array.isArray(selectedOpt.allowed_cuts)) {
+            if (selectedOpt.has_cubes_count_selection) {
+              const countsMap = cutCounts[selectedOpt.name] || {}
+              selectedOpt.allowed_cuts.forEach((cutItem: any) => {
+                if (typeof cutItem === 'object' && cutItem !== null) {
+                  const cName = cutItem.name
+                  const cPrice = Number(cutItem.price || 0)
+                  const qty = countsMap[cName] || 0
+                  if (qty > 0 && cPrice > 0) {
+                    cutsExtraTotal += cPrice * qty
+                  }
+                }
+              })
+            } else if (Boolean(selectedOpt.has_cuts_selection)) {
+              const chosenCutNames = selectedCuts[selectedOpt.name] || []
+              selectedOpt.allowed_cuts.forEach((cutItem: any) => {
+                if (typeof cutItem === 'object' && cutItem !== null) {
+                  if (chosenCutNames.includes(cutItem.name) && Number(cutItem.price) > 0) {
+                    cutsExtraTotal += Number(cutItem.price)
+                  }
+                }
+              })
+            }
+          }
+        }
+      })
+    }
+
+    return (base + cutsExtraTotal) * quantity
   }
 
   const handleAddToCart = () => {
@@ -444,12 +538,22 @@ export default function ProductDetailPage({
 
         if (!group.type || group.type === 'radio') {
           const opt = selectedRadioOptions[group.name]
-          if (opt && Boolean(opt.has_cuts_selection)) {
+          if (opt && Boolean(opt.has_cuts_selection) && !opt.has_cubes_count_selection) {
             const minAllowed = opt.min_cuts_selection ?? 1
             const currentChosen = selectedCuts[opt.name] || []
 
             if (currentChosen.length < minAllowed) {
               setValidationError(`Please select at least ${minAllowed} piece cut${minAllowed > 1 ? 's' : ''} for "${opt.name}".`)
+              return
+            }
+          }
+
+          if (opt && opt.has_fixed_cuts_matrix) {
+            const fixedTarget = opt.fixed_total_cuts || 4
+            const countsMap = cutCounts[opt.name] || {}
+            const totalAllocated = Object.values(countsMap).reduce((a, b) => a + b, 0)
+            if (totalAllocated !== fixedTarget) {
+              setValidationError(`Please allocate exactly ${fixedTarget} total cuts for "${opt.name}" (Current: ${totalAllocated}).`)
               return
             }
           }
@@ -467,6 +571,10 @@ export default function ProductDetailPage({
             let modifier = opt.price_modifier || 0
             let optDisplayName = opt.name
 
+            if (opt.has_fixed_cubes) {
+              optDisplayName += ` [Includes ${opt.fixed_cubes_count || 4} Cubes/Pieces]`
+            }
+
             if (opt.has_counter || (opt.multiplier && opt.multiplier > 0)) {
               const minimum = getCounterMinimum(opt)
               const count = Math.max(minimum, unitCounters[opt.name] || minimum)
@@ -474,11 +582,35 @@ export default function ProductDetailPage({
               optDisplayName = `${opt.name} (${count} units)`
             }
 
-            if (Boolean(opt.has_cuts_selection) && selectedCuts[opt.name] && selectedCuts[opt.name].length > 0) {
+            if (opt.has_cubes_count_selection && cutCounts[opt.name]) {
+              const countsMap = cutCounts[opt.name] || {}
+              const formattedParts = Object.entries(countsMap)
+                .filter(([_, qty]) => qty > 0)
+                .map(([cName, qty]) => `${cName} x${qty}`)
+              
+              if (formattedParts.length > 0) {
+                optDisplayName += ` [Parts: ${formattedParts.join(', ')}]`
+              }
+
+              opt.allowed_cuts?.forEach((c: any) => {
+                if (typeof c === 'object' && c !== null) {
+                  const qty = countsMap[c.name] || 0
+                  if (qty > 0 && Number(c.price) > 0) {
+                    modifier += Number(c.price) * qty
+                  }
+                }
+              })
+            } else if (Boolean(opt.has_cuts_selection) && selectedCuts[opt.name] && selectedCuts[opt.name].length > 0) {
               optDisplayName += ` [Parts: ${selectedCuts[opt.name].join(', ')}]`
+              opt.allowed_cuts?.forEach((c: any) => {
+                if (typeof c === 'object' && c !== null && selectedCuts[opt.name].includes(c.name)) {
+                  modifier += Number(c.price || 0)
+                }
+              })
             }
 
             selectedOptionsList.push({
+              choiceLabel: optDisplayName,
               groupName: group.name,
               optionName: optDisplayName,
               priceModifier: modifier,
@@ -494,6 +626,7 @@ export default function ProductDetailPage({
           group.options.forEach((opt) => {
             if (selectedCheckboxOptions[opt.name]) {
               selectedOptionsList.push({
+                choiceLabel: opt.name,
                 groupName: group.name,
                 optionName: opt.name,
                 priceModifier: opt.price_modifier || 0,
@@ -501,6 +634,15 @@ export default function ProductDetailPage({
             }
           })
         }
+      })
+    }
+
+    if (customerNote.trim()) {
+      selectedOptionsList.push({
+        choiceLabel: customerNote.trim(),
+        groupName: 'Special Instructions / Note',
+        optionName: customerNote.trim(),
+        priceModifier: 0,
       })
     }
 
@@ -822,6 +964,7 @@ export default function ProductDetailPage({
                               const counterMin = getCounterMinimum(opt)
                               const currentCount = unitCounters[opt.name] || counterMin
                               const showCuts = Boolean(opt.has_cuts_selection) && Array.isArray(opt.allowed_cuts) && opt.allowed_cuts.length > 0
+                              const showCubesCount = Boolean(opt.has_cubes_count_selection) && Array.isArray(opt.allowed_cuts) && opt.allowed_cuts.length > 0
 
                               return (
                                 <div
@@ -847,6 +990,13 @@ export default function ProductDetailPage({
 
                                   {opt.description && (
                                     <p className="text-[11px] text-gray-500 mt-1 pl-6">{opt.description}</p>
+                                  )}
+
+                                  {/* FIXED CUBES BADGE */}
+                                  {opt.has_fixed_cubes && (
+                                    <div className="mt-2 text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                                      Includes {opt.fixed_cubes_count || 4} cubes/pieces
+                                    </div>
                                   )}
 
                                   {/* COUNTER / MULTIPLIER CONTROLS */}
@@ -877,8 +1027,61 @@ export default function ProductDetailPage({
                                     </div>
                                   )}
 
-                                  {/* CUTS & PIECES SELECTION */}
-                                  {isSelected && showCuts && (
+                                  {/* CUBES / CUT COUNT (+ BUTTON) SELECTION */}
+                                  {isSelected && showCubesCount && (
+                                    <div 
+                                      className="mt-3 pt-3 border-t border-gray-200/70 space-y-2.5"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="flex items-center justify-between text-[11px]">
+                                        <span className="font-extrabold text-[#0A2E1D] flex items-center gap-1">
+                                          <Fish className="w-3.5 h-3.5 text-emerald-700" />
+                                          {opt.cut_selection_title || 'Select Cut/Pieces & Counts:'}
+                                        </span>
+                                        <span className="text-gray-500 font-medium">
+                                          Total: {Object.values(cutCounts[opt.name] || {}).reduce((a, b) => a + b, 0)}
+                                        </span>
+                                      </div>
+
+                                      <div className="space-y-2 bg-white p-2.5 rounded-xl border border-gray-200">
+                                        {opt.allowed_cuts!.map((cutItem: any, cIdx: number) => {
+                                          const cutName = typeof cutItem === 'string' ? cutItem : cutItem?.name || ''
+                                          const cutPrice = typeof cutItem === 'string' ? 0 : Number(cutItem?.price || 0)
+                                          const currentCutQty = (cutCounts[opt.name] || {})[cutName] || 0
+
+                                          return (
+                                            <div key={cIdx} className="flex items-center justify-between py-1 border-b border-gray-100 last:border-0 text-xs">
+                                              <div>
+                                                <span className="font-bold text-gray-800">{cutName}</span>
+                                                {cutPrice > 0 && <span className="text-emerald-700 font-bold ml-1.5">(+₦{cutPrice})</span>}
+                                              </div>
+                                              <div className="flex items-center gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleCutCountChange(opt.name, cutName, -1)}
+                                                  disabled={currentCutQty <= 0}
+                                                  className="w-6 h-6 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40 flex items-center justify-center font-bold text-gray-700 transition"
+                                                >
+                                                  <Minus className="w-3 h-3" />
+                                                </button>
+                                                <span className="font-black w-6 text-center text-xs text-[#0A2E1D]">{currentCutQty}</span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleCutCountChange(opt.name, cutName, 1)}
+                                                  className="w-6 h-6 rounded-lg bg-[#0A2E1D] text-white hover:bg-[#12422C] flex items-center justify-center font-bold transition shadow-xs"
+                                                >
+                                                  <Plus className="w-3 h-3" />
+                                                </button>
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* STANDARD CUTS & PIECES SELECTION */}
+                                  {isSelected && showCuts && !opt.has_cubes_count_selection && (
                                     <div 
                                       className="mt-3 pt-3 border-t border-gray-200/70 space-y-2"
                                       onClick={(e) => e.stopPropagation()}
@@ -890,21 +1093,30 @@ export default function ProductDetailPage({
                                         </span>
                                       </div>
                                       <div className="flex flex-wrap gap-1.5">
-                                        {opt.allowed_cuts!.map((cut: string, cIdx: number) => {
-                                          const isCutSelected = (selectedCuts[opt.name] || []).includes(cut)
+                                        {opt.allowed_cuts!.map((cutItem: any, cIdx: number) => {
+                                          const cutName = typeof cutItem === 'string' ? cutItem : cutItem?.name || ''
+                                          const cutPrice = typeof cutItem === 'string' ? 0 : Number(cutItem?.price || 0)
+                                          const isCutSelected = (selectedCuts[opt.name] || []).includes(cutName)
                                           const maxSel = opt.max_cuts_selection || 1
+
                                           return (
                                             <button
                                               key={cIdx}
                                               type="button"
-                                              onClick={() => toggleCut(opt.name, cut, maxSel)}
-                                              className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                                              onClick={() => toggleCut(opt.name, cutName, maxSel)}
+                                              className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
                                                 isCutSelected
                                                   ? 'bg-[#0A2E1D] text-white border-[#0A2E1D] shadow-xs'
                                                   : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-gray-300'
                                               }`}
                                             >
-                                              {cut} {isCutSelected && '✓'}
+                                              <span>{cutName}</span>
+                                              {cutPrice > 0 && (
+                                                <span className={isCutSelected ? 'text-[#EAA823]' : 'text-emerald-700'}>
+                                                  (+₦{cutPrice.toLocaleString()})
+                                                </span>
+                                              )}
+                                              {isCutSelected && <span>✓</span>}
                                             </button>
                                           )
                                         })}
@@ -954,6 +1166,20 @@ export default function ProductDetailPage({
                 })}
               </div>
             )}
+
+            {/* CUSTOMER NOTE / SPECIAL INSTRUCTIONS */}
+            <div className="bg-white p-5 rounded-2xl border border-gray-200 space-y-2 shadow-xs">
+              <label className="text-xs font-black uppercase text-[#0A2E1D] tracking-wider flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-[#EAA823]" /> Special Instructions / Custom Note
+              </label>
+              <Textarea
+                rows={3}
+                value={customerNote}
+                onChange={(e) => setCustomerNote(e.target.value)}
+                placeholder="Write what you want or what you don't want (e.g., extra pepper, no onions, extra well done)..."
+                className="rounded-xl border-gray-300 text-xs bg-white"
+              />
+            </div>
 
             {/* QUANTITY & ADD TO CART BAR */}
             <div className="pt-6 border-t border-gray-200 space-y-4">

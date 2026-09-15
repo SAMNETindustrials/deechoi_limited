@@ -1699,8 +1699,7 @@ Thank you for choosing De-echoi Limited!`
             </div>
           </div>
         </div>
-      {'}'}
-    </header>
+      </header>
 
       {/* =====================================================
           MOBILE DRAWER / NAVIGATION MENU
