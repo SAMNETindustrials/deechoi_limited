@@ -33,7 +33,7 @@ export async function getTelegramConfig() {
     process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN ||
     ''
   ).trim()
-  
+
   let chatId = (
     process.env.TELEGRAM_CHAT_ID ||
     process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID ||
@@ -199,9 +199,9 @@ export async function sendTelegramOrderNotification(order: {
           Array.isArray(item.selected_options) &&
           item.selected_options.length > 0
         ) {
-          optText = `\n   └ <i>${escapeHtml(
+          optText = `\n └ <i>${escapeHtml(
             item.selected_options
-              .map((o: any) => `${o.groupName}: ${o.optionName}`)
+              .map((o: any) => `${o.groupName}:${o.optionName}`)
               .join(', ')
           )}</i>`
         }
@@ -293,7 +293,7 @@ export async function sendTelegramWaitlistNotification({
   const safePhone = escapeHtml(phone)
   const safeCode = escapeHtml(promoCode)
   const safeDish = escapeHtml(favoriteDish)
-  
+
   const timeString = new Date().toLocaleString('en-US', {
     timeZone: 'Africa/Lagos',
   })
@@ -396,7 +396,7 @@ export async function sendCustomerInvoiceEmail(receipt: {
   }>
 }) {
   const subject = `Official Order Invoice & Receipt - Ref: ${receipt.receipt_number}`
-  
+
   const itemsTextList = (receipt.items || [])
     .map(
       (item, idx) =>
@@ -454,4 +454,43 @@ export async function sendEmailReply(
   messageBody: string
 ) {
   return sendOrderConfirmationEmail(toEmail, subject, messageBody)
+}
+
+/**
+ * 7. Send Training Academy Student Message (Welcome or Completion Certificate Notice)
+ */
+export async function sendStudentMessageEmail(
+  toEmail: string,
+  subject: string,
+  messageBody: string
+) {
+  try {
+    const userEmail = process.env.GMAIL_SENDER_EMAIL || process.env.GMAIL_USER
+    const appPassword = process.env.GMAIL_APP_PASSWORD
+
+    if (!userEmail || !appPassword) {
+      console.warn('[Training Email Notice]: Gmail SMTP credentials not configured. Student message logged:', { toEmail, subject, messageBody })
+      return { success: true }
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: userEmail,
+        pass: appPassword,
+      },
+    })
+
+    const info = await transporter.sendMail({
+      from: `"De-echoi Training Academy" <${userEmail}>`,
+      to: toEmail,
+      subject: subject,
+      text: messageBody,
+    })
+
+    return { success: true, data: info }
+  } catch (err: any) {
+    console.error('[Student Training Email Dispatch Error]:', err)
+    return { success: false, error: err.message }
+  }
 }

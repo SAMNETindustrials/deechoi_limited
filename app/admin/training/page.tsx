@@ -25,12 +25,16 @@ import {
   Users,
   X,
   Save,
+  Send,
+  Mail,
+  MessageSquare,
 } from 'lucide-react'
 
 import CertificateEditor, {
   DEFAULT_DESIGN,
   DesignElement,
 } from '@/components/admin/certificate-editor'
+
 /*
  * ================================================================
  * STUDENT TYPE
@@ -141,6 +145,15 @@ export default function AdminTrainingPage() {
   } | null>(null)
 
   /*
+   * Robust Modal Email Dispatcher State
+   */
+  const [activeMessagingStudent, setActiveMessagingStudent] = useState<Student | null>(null)
+  const [selectedMessageType, setSelectedMessageType] = useState<'welcome' | 'completion'>('welcome')
+  const [customMessageSubject, setCustomMessageSubject] = useState('')
+  const [customMessageContent, setCustomMessageContent] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
+
+  /*
    * Certificate editor state
    */
 
@@ -236,6 +249,92 @@ export default function AdminTrainingPage() {
 
   /*
    * ==============================================================
+   * HANDLE OPENING ROBUST MESSAGING MODAL
+   * ==============================================================
+   */
+
+  const handleOpenMessagingModal = (student: Student) => {
+    if (!student.email) {
+      setMessage({
+        type: 'error',
+        text: `${student.full_name} does not have an email address available in our database.`,
+      })
+      return
+    }
+
+    setActiveMessagingStudent(student)
+    const defaultType = student.certificate_issued ? 'completion' : 'welcome'
+    setSelectedMessageType(defaultType)
+    
+    setCustomMessageSubject(
+      defaultType === 'welcome'
+        ? `Welcome to De-echoi Training Academy - ${student.course}`
+        : `Congratulations on Completing Your Course - ${student.course}`
+    )
+
+    setCustomMessageContent(
+      defaultType === 'welcome'
+        ? `Dear ${student.full_name},\n\nCongratulations and welcome to De-echoi Training Academy! We are thrilled to have you enrolled in the ${student.course} program. Your training journey starts here.\n\nBest regards,\nDe-echoi Academy Team`
+        : `Dear ${student.full_name},\n\nCongratulations on successfully completing your training in ${student.course}! Your certificate serial number is ${student.certificate_serial || 'Ready'}. You can verify and print your certificate from our portal.\n\nBest regards,\nDe-echoi Academy Team`
+    )
+  }
+
+  const handleMessageTypeChange = (type: 'welcome' | 'completion', student: Student) => {
+    setSelectedMessageType(type)
+    setCustomMessageSubject(
+      type === 'welcome'
+        ? `Welcome to De-echoi Training Academy - ${student.course}`
+        : `Congratulations on Completing Your Course - ${student.course}`
+    )
+    setCustomMessageContent(
+      type === 'welcome'
+        ? `Dear ${student.full_name},\n\nCongratulations and welcome to De-echoi Training Academy! We are thrilled to have you enrolled in the ${student.course} program. Your training journey starts here.\n\nBest regards,\nDe-echoi Academy Team`
+        : `Dear ${student.full_name},\n\nCongratulations on successfully completing your training in ${student.course}! Your certificate serial number is ${student.certificate_serial || 'Ready'}. You can verify and print your certificate from our portal.\n\nBest regards,\nDe-echoi Academy Team`
+    )
+  }
+
+  const sendCustomStudentEmail = async () => {
+    if (!activeMessagingStudent || !activeMessagingStudent.email) return
+
+    setSendingEmail(true)
+    setMessage(null)
+
+    try {
+      const response = await fetch('/api/messages/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentMessage: {
+            to: activeMessagingStudent.email,
+            subject: customMessageSubject,
+            message: customMessageContent,
+          },
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to dispatch student email.')
+      }
+
+      setMessage({
+        type: 'success',
+        text: `Congratulatory ${selectedMessageType} email successfully dispatched to ${activeMessagingStudent.email}!`,
+      })
+      setActiveMessagingStudent(null)
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: `Could not send email: ${err.message || 'Unknown network error'}`,
+      })
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
+  /*
+   * ==============================================================
    * ADD STUDENT
    * ==============================================================
    */
@@ -287,8 +386,10 @@ export default function AdminTrainingPage() {
       return
     }
 
+    const newStudent = data as Student
+
     setStudents((current) => [
-      data as Student,
+      newStudent,
       ...current,
     ])
 
@@ -298,7 +399,7 @@ export default function AdminTrainingPage() {
 
     setMessage({
       type: 'success',
-      text: `${data.full_name} has been registered.`,
+      text: `${newStudent.full_name} has been registered successfully.`,
     })
   }
 
@@ -967,8 +1068,18 @@ export default function AdminTrainingPage() {
                           )}
                         </td>
 
-                        <td className="px-5 py-4">
+                        <td className="px-5 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {student.email && (
+                              <button
+                                onClick={() => handleOpenMessagingModal(student)}
+                                className="p-2 rounded-lg border border-blue-500/20 text-blue-400 hover:bg-blue-500/10 transition flex items-center gap-1 text-xs font-bold"
+                                title="Send robust welcome or completion message"
+                              >
+                                <Mail className="w-4 h-4" />
+                              </button>
+                            )}
+
                             <button
                               onClick={() =>
                                 openCertificatePreview(
@@ -1026,6 +1137,114 @@ export default function AdminTrainingPage() {
           </p>
         </div>
       </main>
+
+      {/* ========================================================
+          ROBUST STUDENT MESSAGING MODAL
+      ========================================================= */}
+
+      {activeMessagingStudent && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-xl rounded-3xl border border-blue-500/30 bg-[#151b23] shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-white/10 flex items-center justify-between bg-[#1a1f2e]">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base">
+                    Student Communication Center
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    Recipient: <strong className="text-white">{activeMessagingStudent.full_name} ({activeMessagingStudent.email})</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveMessagingStudent(null)}
+                className="p-2 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-gray-400">
+                  Select Message Template
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleMessageTypeChange('welcome', activeMessagingStudent)}
+                    className={`py-2 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      selectedMessageType === 'welcome'
+                        ? 'bg-[#EAA823] text-[#0A2E1D] shadow-md font-black'
+                        : 'bg-black/30 border border-white/10 text-gray-300 hover:bg-white/5'
+                    }`}
+                  >
+                    Welcome / Onboarding
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMessageTypeChange('completion', activeMessagingStudent)}
+                    className={`py-2 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      selectedMessageType === 'completion'
+                        ? 'bg-emerald-600 text-white shadow-md font-black'
+                        : 'bg-black/30 border border-white/10 text-gray-300 hover:bg-white/5'
+                    }`}
+                  >
+                    Completion &amp; Certificate
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-gray-400">
+                  Email Subject
+                </label>
+                <input
+                  type="text"
+                  value={customMessageSubject}
+                  onChange={(e) => setCustomMessageSubject(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-2.5 text-xs text-white outline-none focus:border-[#EAA823]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-gray-400">
+                  Message Body Content
+                </label>
+                <textarea
+                  rows={6}
+                  value={customMessageContent}
+                  onChange={(e) => setCustomMessageContent(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-gray-200 outline-none focus:border-[#EAA823] leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveMessagingStudent(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-gray-400 hover:bg-white/5 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={sendCustomStudentEmail}
+                  disabled={sendingEmail}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#EAA823] to-amber-500 px-5 py-2.5 text-xs font-black text-[#0A2E1D] shadow-lg hover:scale-[1.02] transition disabled:opacity-50"
+                >
+                  {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Dispatch Message
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================
           REGISTER STUDENT MODAL

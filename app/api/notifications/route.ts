@@ -14,7 +14,67 @@ const transporter = nodemailer.createTransport({
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { receipt, campaign, authorizedSignature, companyStamp } = body
+    const { receipt, campaign, studentMessage, authorizedSignature, companyStamp } = body
+
+    // Handle Student Academy Direct / Custom Messages (Welcome or Completion)
+    if (studentMessage) {
+      const { to, subject, message } = studentMessage
+      if (!to || !subject || !message) {
+        return NextResponse.json(
+          { success: false, error: 'Missing student email, subject, or message content.' },
+          { status: 400 }
+        )
+      }
+
+      const studentEmailHtmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>${subject}</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f8; margin: 0; padding: 20px; color: #111; }
+              .email-wrapper { max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+              .header { background: #0A2E1D; color: #ffffff; padding: 30px; text-align: center; }
+              .header h1 { margin: 0; font-size: 22px; letter-spacing: 0.5px; }
+              .header p { margin: 5px 0 0 0; color: #EAA823; font-size: 12px; text-transform: uppercase; font-weight: bold; }
+              .body-content { padding: 30px; }
+              .message-text { font-size: 15px; line-height: 1.6; color: #374151; white-space: pre-wrap; }
+              .footer { background: #0F1419; color: #9ca3af; padding: 20px; text-align: center; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="email-wrapper">
+              <div class="header">
+                <h1>DEECHOI TRAINING ACADEMY</h1>
+                <p>Professional Software, Tech &amp; Culinary Training</p>
+              </div>
+              <div class="body-content">
+                <h2 style="color: #0A2E1D; margin-top: 0; font-size: 20px;">${subject}</h2>
+                <div class="message-text">
+                  ${message}
+                </div>
+              </div>
+              <div class="footer">
+                <p>&copy; ${new Date().getFullYear()} De-echoi Limited. All rights reserved.<br/>Eze Nvuigwe Avenue, Woji, Port Harcourt, Rivers State.</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `
+
+      await transporter.sendMail({
+        from: `"De-echoi Training Academy" <${process.env.GMAIL_SENDER_EMAIL}>`,
+        to: to,
+        subject: subject,
+        html: studentEmailHtmlContent,
+      })
+
+      return NextResponse.json({
+        success: true,
+        message: `Student training message successfully dispatched to ${to}`
+      })
+    }
 
     // Handle Campaign / Promotional Broadcast Emails
     if (campaign) {
@@ -48,7 +108,7 @@ export async function POST(request: Request) {
             <div class="email-wrapper">
               <div class="header">
                 <h1>DEECHOI LIMITED</h1>
-                <p>Bakery, Kitchen & Event Catering Operations</p>
+                <p>Bakery, Kitchen &amp; Event Catering Operations</p>
               </div>
               <div class="body-content">
                 ${imageUrl ? `<img src="${imageUrl}" class="campaign-banner" alt="Promo Banner" />` : ''}
@@ -132,7 +192,7 @@ export async function POST(request: Request) {
             <div class="header">
               <div class="brand">
                 <h1>DEECHOI LIMITED</h1>
-                <p>Bakery, Kitchen & Event Catering Operations</p>
+                <p>Bakery, Kitchen &amp; Event Catering Operations</p>
                 <p>Eze Nvuigwe Avenue, Woji, Port Harcourt</p>
                 <p>Email: deechoi01@gmail.com &bull; Tel: +234 7046145982</p>
               </div>
@@ -229,7 +289,7 @@ export async function POST(request: Request) {
     await transporter.sendMail({
       from: `"De-echoi Limited" <${process.env.GMAIL_SENDER_EMAIL}>`,
       to: receipt.customer_email,
-      subject: `Official Order Invoice & Receipt - ${receipt.receipt_number}`,
+      subject: `Official Order Invoice &amp; Receipt - ${receipt.receipt_number}`,
       html: emailHtmlContent,
       attachments: [
         {
