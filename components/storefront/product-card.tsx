@@ -124,7 +124,7 @@ export function ProductCard({
     <Link 
       href={`/product/${id}`}
       onClick={handleCardClick}
-      className={`group block bg-white rounded-3xl border border-gray-100 overflow-hidden transition-all duration-300 flex flex-col justify-between ${
+      className={`group block bg-white rounded-2xl sm:rounded-3xl border border-gray-100 overflow-hidden transition-all duration-300 flex flex-col justify-between ${
         isUnavailable 
           ? 'opacity-85 shadow-none cursor-not-allowed' 
           : 'shadow-xs hover:shadow-xl hover:-translate-y-1'
@@ -140,18 +140,18 @@ export function ProductCard({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-400">
-            <Utensils className="w-8 h-8 text-gray-300" />
+            <Utensils className="w-6 h-6 sm:w-8 sm:h-8 text-gray-300" />
           </div>
         )}
 
-        <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start z-20">
-          <span className="bg-[#0A2E1D]/90 backdrop-blur-md text-[#EAA823] text-[10px] font-black px-2.5 py-1 rounded-full uppercase shadow-xs">
+        <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 flex flex-col gap-1 items-start z-20">
+          <span className="bg-[#0A2E1D]/90 backdrop-blur-md text-[#EAA823] text-[9px] sm:text-[10px] font-black px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full uppercase shadow-xs">
             {category}
           </span>
           
           {isTimeBound && menuSection && (
-            <span className="flex items-center gap-1 bg-amber-100/95 backdrop-blur-md text-amber-900 text-[9px] font-extrabold px-2.5 py-1 rounded-full uppercase shadow-xs">
-              <Clock className="w-3 h-3" />
+            <span className="flex items-center gap-1 bg-amber-100/95 backdrop-blur-md text-amber-900 text-[8px] sm:text-[9px] font-extrabold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full uppercase shadow-xs">
+              <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
               {menuSection}
             </span>
           )}
@@ -159,9 +159,9 @@ export function ProductCard({
 
         {/* Pre-Order Identification Badge */}
         {!isStoreLive && mounted && inStock && (
-          <div className="absolute top-3 right-3 z-20">
-            <span className="bg-amber-500 text-[#0A2E1D] text-[9px] font-black px-2.5 py-1 rounded-full uppercase shadow-md flex items-center gap-1">
-              <Clock className="w-3 h-3" />
+          <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 z-20">
+            <span className="bg-amber-500 text-[#0A2E1D] text-[8px] sm:text-[9px] font-black px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full uppercase shadow-md flex items-center gap-1">
+              <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
               Pre-Order
             </span>
           </div>
@@ -170,52 +170,52 @@ export function ProductCard({
         {/* OVERLAYS FOR OUT OF STOCK OR CLOSED MENUS */}
         {!inStock ? (
           <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-10">
-            <span className="bg-red-600 text-white font-bold text-xs px-4 py-1.5 rounded-full uppercase tracking-wider shadow-lg">
+            <span className="bg-red-600 text-white font-bold text-[10px] sm:text-xs px-3 py-1 sm:px-4 sm:py-1.5 rounded-full uppercase tracking-wider shadow-lg">
               Sold Out
             </span>
           </div>
         ) : (isStoreLive && isTimeBound && !isTimeValid && mounted) ? (
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-[3px] flex flex-col items-center justify-center p-4 text-center z-10">
-            <span className="bg-amber-500 text-[#0A2E1D] font-black text-xs px-4 py-1.5 rounded-full uppercase tracking-wider mb-2 shadow-lg">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-[3px] flex flex-col items-center justify-center p-3 text-center z-10">
+            <span className="bg-amber-500 text-[#0A2E1D] font-black text-[10px] sm:text-xs px-3 py-1 sm:px-4 sm:py-1.5 rounded-full uppercase tracking-wider mb-1 sm:mb-2 shadow-lg">
               Menu Closed
             </span>
-            <span className="text-white text-[10px] font-bold bg-black/50 px-3 py-1 rounded-lg">
+            <span className="text-white text-[9px] sm:text-[10px] font-bold bg-black/50 px-2.5 py-0.5 sm:py-1 rounded-lg">
               Available from {formatTime(availableFrom)} tomorrow
             </span>
           </div>
         ) : null}
       </div>
 
-      <div className="p-4 sm:p-5 space-y-2 flex-1 flex flex-col justify-between">
+      <div className="p-3 sm:p-5 space-y-1.5 sm:space-y-2 flex-1 flex flex-col justify-between">
         <div>
-          <h3 className={`text-base font-extrabold leading-snug line-clamp-1 transition-colors ${
+          <h3 className={`text-xs sm:text-base font-extrabold leading-snug line-clamp-1 transition-colors ${
             isUnavailable ? 'text-gray-600' : 'text-[#0A2E1D] group-hover:text-[#EAA823]'
           }`}>
             {name}
           </h3>
           {description && (
-            <p className="text-xs text-gray-500 line-clamp-2 mt-1 leading-relaxed">
+            <p className="text-[11px] sm:text-xs text-gray-500 line-clamp-2 mt-0.5 sm:mt-1 leading-relaxed">
               {description}
             </p>
           )}
         </div>
 
-        <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+        <div className="pt-2.5 sm:pt-3 border-t border-gray-100 flex items-center justify-between">
           <div>
-            <span className="text-[10px] text-gray-400 font-semibold block">
+            <span className="text-[9px] sm:text-[10px] text-gray-400 font-semibold block">
               {!isStoreLive && mounted ? 'Pre-Order From' : 'From'}
             </span>
-            <span className={`text-base sm:text-lg font-black ${isUnavailable ? 'text-gray-500' : 'text-[#0A2E1D]'}`}>
+            <span className={`text-sm sm:text-lg font-black ${isUnavailable ? 'text-gray-500' : 'text-[#0A2E1D]'}`}>
               ₦{Number(price).toLocaleString()}
             </span>
           </div>
 
-          <div className={`p-2.5 rounded-full transition-colors shadow-xs ${
+          <div className={`p-2 sm:p-2.5 rounded-full transition-colors shadow-xs ${
             isUnavailable 
               ? 'bg-gray-200 text-gray-400' 
               : 'bg-[#0A2E1D] group-hover:bg-[#EAA823] text-white group-hover:text-[#0A2E1D]'
           }`}>
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
       </div>

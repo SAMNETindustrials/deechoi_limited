@@ -34,7 +34,6 @@ import {
   MessageCircle,
   ShoppingBag,
   ArrowUpRight,
-  MapPin,
   AlertTriangle
 } from 'lucide-react'
 import Link from 'next/link'
@@ -47,6 +46,10 @@ interface Product {
   image_url: string | null
   in_stock: boolean
   category: string
+  is_time_bound?: boolean
+  available_from?: string | null
+  available_to?: string | null
+  menu_section?: string | null
 }
 
 interface SubCategoryItem {
@@ -318,16 +321,43 @@ export default function DesktopHomePage() {
   const fetchProducts = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('store_products')
-        .select('*')
-        .neq('category', 'Cakes')
-        .order('created_at', { ascending: false })
 
-      if (error) throw error
+      // Fetch from both 'store_products' and 'products' tables to catch all admin uploads
+      const [storeRes, generalRes] = await Promise.all([
+        supabase.from('store_products').select('*').order('created_at', { ascending: false }),
+        supabase.from('products').select('*').order('created_at', { ascending: false }),
+      ])
 
-      const productList = (data || []).filter(
-        p => p.category?.toLowerCase() !== 'cakes' && !p.name?.toLowerCase().includes('cake')
+      const storeProductsList = storeRes.data || []
+      const generalProductsList = generalRes.data || []
+
+      // Combine and deduplicate by ID
+      const combinedMap = new Map<string, Product>()
+      ;[...storeProductsList, ...generalProductsList].forEach((p) => {
+        if (p && p.id) {
+          combinedMap.set(p.id, {
+            id: p.id,
+            name: p.name || 'Untitled Product',
+            description: p.description || '',
+            price: Number(p.price || 0),
+            image_url: p.image_url || p.imageUrl || null,
+            in_stock: p.in_stock ?? p.inStock ?? true,
+            category: p.category || 'Specialty',
+            is_time_bound: p.is_time_bound ?? p.isTimeBound ?? false,
+            available_from: p.available_from || p.availableFrom || null,
+            available_to: p.available_to || p.availableTo || null,
+            menu_section: p.menu_section || p.menuSection || null,
+          })
+        }
+      })
+
+      // ONLY exclude products whose official category is explicitly "Cakes" or "Cake". 
+      // This ensures items like "Cheesy Pancake" (which contain "cake" in the name) stay safely on the main food menu!
+      const productList = Array.from(combinedMap.values()).filter(
+        (p) => {
+          const cat = p.category?.toLowerCase().trim() || ''
+          return cat !== 'cakes' && cat !== 'cake'
+        }
       )
 
       setProducts(productList)
@@ -618,7 +648,7 @@ export default function DesktopHomePage() {
 
       <WaitlistCountdownSection />
 
-      {/* Hero Section (Clean flat bottom alignment on desktop) */}
+      {/* Hero Section */}
       <section className="relative overflow-hidden bg-[#0A2E1D] text-white pt-8 pb-16 lg:pb-24 rounded-none">
         <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#EAA823_1px,transparent_1px)] [background-size:16px_16px]" />
 
@@ -727,7 +757,7 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* Category Navigation Bar with Seamless Auto-Scrolling Loop & Pause on Hover */}
+      {/* Category Navigation Bar */}
       <section 
         className="py-6 bg-white border-b border-gray-100 sticky top-20 z-40 shadow-sm w-full"
         onMouseEnter={() => setIsPaused(true)}
@@ -857,7 +887,7 @@ export default function DesktopHomePage() {
           </div>
         </div>
 
-        {/* Hover Mega Menu with Padding Buffer to Prevent Instant Disappearing */}
+        {/* Hover Mega Menu */}
         {activeCategoryConfig?.groups && activeCategoryConfig.groups.length > 0 && dropdownPosition && (
           <div
             style={{
@@ -935,14 +965,14 @@ export default function DesktopHomePage() {
         )}
       </section>
 
-      {/* Customer Reviews & Interactive Community Feed Section */}
+      {/* Customer Reviews Section */}
       <section className="py-8 bg-[#FDFBF7] border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <CustomerReviewsSection />
         </div>
       </section>
 
-      {/* Food Menu Listing */}
+      {/* Food Menu Listing (2 columns on mobile/small screens up to multi-column desktop grid) */}
       <section className="py-16 scroll-mt-24" id="our-menu-section">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
@@ -1033,7 +1063,7 @@ export default function DesktopHomePage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
               {filteredProducts.map((product) => (
                 <ProductCard
                   key={product.id}
@@ -1044,6 +1074,10 @@ export default function DesktopHomePage() {
                   imageUrl={product.image_url ?? undefined}
                   inStock={product.in_stock}
                   category={product.category}
+                  isTimeBound={product.is_time_bound}
+                  availableFrom={product.available_from}
+                  availableTo={product.available_to}
+                  menuSection={product.menu_section}
                   onViewDetails={handleViewDetails}
                 />
               ))}

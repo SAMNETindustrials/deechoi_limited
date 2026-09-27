@@ -148,11 +148,9 @@ export default function MobileHomePage() {
 
     checkStoreStatus()
 
-    // Listen for changes from other tabs or same-tab custom events
     window.addEventListener('storage', checkStoreStatus)
     window.addEventListener('deechoi_store_status_change', checkStoreStatus)
     
-    // Fallback polling just in case local storage event misses
     const statusInterval = setInterval(checkStoreStatus, 2000)
 
     fetchProducts()
@@ -183,20 +181,46 @@ export default function MobileHomePage() {
     try {
       setLoading(true)
 
-      const { data, error } = await supabase
-        .from('store_products')
-        .select('*')
-        .neq('category', 'Cakes')
-        .order('created_at', { ascending: false })
+      // Fetch from both 'store_products' and 'products' tables to capture all admin uploads
+      const [storeRes, generalRes] = await Promise.all([
+        supabase.from('store_products').select('*').order('created_at', { ascending: false }),
+        supabase.from('products').select('*').order('created_at', { ascending: false }),
+      ])
 
-      if (error) throw error
+      const storeProductsList = storeRes.data || []
+      const generalProductsList = generalRes.data || []
 
-      const mealList = (data || []).filter(
-        p => p.category?.toLowerCase() !== 'cakes' && !p.name?.toLowerCase().includes('cake')
+      // Combine and deduplicate by ID
+      const combinedMap = new Map<string, Product>()
+      ;[...storeProductsList, ...generalProductsList].forEach((p) => {
+        if (p && p.id) {
+          combinedMap.set(p.id, {
+            id: p.id,
+            name: p.name || 'Untitled Product',
+            description: p.description || '',
+            price: Number(p.price || 0),
+            image_url: p.image_url || p.imageUrl || null,
+            in_stock: p.in_stock ?? p.inStock ?? true,
+            category: p.category || 'Specialty',
+            is_time_bound: p.is_time_bound ?? p.isTimeBound ?? false,
+            available_from: p.available_from || p.availableFrom || null,
+            available_to: p.available_to || p.availableTo || null,
+            menu_section: p.menu_section || p.menuSection || null,
+          })
+        }
+      })
+
+      // ONLY exclude products whose official category is explicitly "Cakes" or "Cake". 
+      // This ensures items like "Cheesy Pancake" stay safely on the main food menu!
+      const productList = Array.from(combinedMap.values()).filter(
+        (p) => {
+          const cat = p.category?.toLowerCase().trim() || ''
+          return cat !== 'cakes' && cat !== 'cake'
+        }
       )
 
-      setProducts(mealList)
-      setFilteredProducts(mealList)
+      setProducts(productList)
+      setFilteredProducts(productList)
     } catch (error) {
       console.error('Failed to fetch products:', error)
     } finally {
@@ -724,7 +748,7 @@ export default function MobileHomePage() {
               {activeFilterLabel && <Button variant="outline" size="sm" onClick={clearFilter} className="cursor-pointer">Show Full Menu</Button>}
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {filteredProducts.map(product => (
                 <ProductCard
                   key={product.id}
