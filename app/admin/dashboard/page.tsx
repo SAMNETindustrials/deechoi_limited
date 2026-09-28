@@ -9,7 +9,7 @@ import {
   ArrowUpRight, ArrowDownRight, ChevronRight, Search, Clock, CheckCircle2, Truck,
   MessageSquare, Layers, Sparkles, Sun, Moon, CloudSun, Users, UserCheck, Lightbulb, Flame, Award,
   Target, LineChart, Megaphone, HelpCircle, Wind, Droplets, Gauge, CloudRain, MapPin, Power, PlayCircle,
-  Grid, Plus, Check, SlidersHorizontal, Eye, EyeOff, ShieldCheck, Zap, Activity, Store, Ban, Star, GraduationCap
+  Grid, Plus, Check, SlidersHorizontal, Eye, EyeOff, ShieldCheck, Zap, Activity, Store, Ban, Star, GraduationCap, User, Sliders
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -55,8 +55,13 @@ interface DashboardStats {
 export default function AdminDashboardPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(true) // Desktop default open
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false) // Mobile drawer state
   const [darkMode, setDarkMode] = useState(true)
+
+  // Mobile Dropdown States
+  const [showMobileSalesDropdown, setShowMobileSalesDropdown] = useState(false)
+  const [showMobileProfileDropdown, setShowMobileProfileDropdown] = useState(false)
 
   const [activeWidgets, setActiveWidgets] = useState<Record<string, boolean>>({
     weather: true,
@@ -115,6 +120,8 @@ export default function AdminDashboardPage() {
   })
 
   const notifDropdownRef = useRef<HTMLDivElement>(null)
+  const mobileSalesDropdownRef = useRef<HTMLDivElement>(null)
+  const mobileProfileDropdownRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -214,6 +221,12 @@ export default function AdminDashboardPage() {
     const handleClickOutside = (event: MouseEvent) => {
       if (notifDropdownRef.current && !notifDropdownRef.current.contains(event.target as Node)) {
         setShowNotifications(false)
+      }
+      if (mobileSalesDropdownRef.current && !mobileSalesDropdownRef.current.contains(event.target as Node)) {
+        setShowMobileSalesDropdown(false)
+      }
+      if (mobileProfileDropdownRef.current && !mobileProfileDropdownRef.current.contains(event.target as Node)) {
+        setShowMobileProfileDropdown(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -442,8 +455,101 @@ export default function AdminDashboardPage() {
   return (
     <div className={`min-h-screen flex font-sans transition-colors duration-300 ${darkMode ? 'bg-[#0F1419] text-white' : 'bg-[#F4F7F6] text-slate-900'}`}>
 
-      {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} ${darkMode ? 'bg-gradient-to-b from-[#1a1f2e] to-[#131821] border-r border-[#EAA823]/20' : 'bg-white border-r border-gray-200 shadow-sm'} transition-all duration-300 sticky top-0 h-screen flex flex-col hidden md:flex shadow-2xl z-30`}>
+      {/* Mobile Drawer Backdrop */}
+      {mobileSidebarOpen && (
+        <div 
+          onClick={() => setMobileSidebarOpen(false)}
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-xs transition-opacity"
+        />
+      )}
+
+      {/* Mobile Sidebar Drawer */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 md:hidden flex flex-col transition-transform duration-300 shadow-2xl ${
+        darkMode ? 'bg-gradient-to-b from-[#1a1f2e] to-[#131821] border-r border-[#EAA823]/20 text-white' : 'bg-white border-r border-gray-200 text-slate-900'
+      } ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="h-20 border-b border-inherit flex items-center justify-between px-4 py-4">
+          <Link href="/admin/dashboard" onClick={() => setMobileSidebarOpen(false)}>
+            <div className="relative w-12 h-12 cursor-pointer">
+              <Image src="/logo.png" alt="DEECHOI" fill className="object-contain" priority />
+            </div>
+          </Link>
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-amber-500/80 px-3 mb-1.5">Core Operations</p>
+            <div className="space-y-1">
+              {coreNavigation.map((item) => (
+                <Link key={item.id} href={item.path} onClick={() => setMobileSidebarOpen(false)}>
+                  <button className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 group cursor-pointer ${
+                    item.active
+                      ? 'bg-gradient-to-r from-[#EAA823] to-[#f5d547] text-[#0A2E1D] shadow-lg shadow-[#EAA823]/30 font-bold'
+                      : darkMode ? 'text-gray-400 hover:bg-[#EAA823]/10 hover:text-[#EAA823]' : 'text-gray-600 hover:bg-amber-50 hover:text-[#0A2E1D]'
+                  }`}>
+                    <item.icon className={`h-4 w-4 flex-shrink-0 transition-transform ${item.active ? '' : 'group-hover:scale-110'}`} />
+                    <span className="text-xs font-bold">{item.label}</span>
+                  </button>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-white/10 my-2" />
+
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400/80 px-3 mb-1.5">Goals &amp; Sales</p>
+            <div className="space-y-1">
+              {growthTools.map((item) => (
+                <Link key={item.id} href={item.path} onClick={() => setMobileSidebarOpen(false)}>
+                  <button className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 group cursor-pointer ${
+                    darkMode ? 'text-gray-400 hover:bg-[#EAA823]/10 hover:text-[#EAA823]' : 'text-gray-600 hover:bg-amber-50 hover:text-[#0A2E1D]'
+                  }`}>
+                    <item.icon className="h-4 w-4 flex-shrink-0 group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-bold">{item.label}</span>
+                  </button>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-white/10 my-2" />
+
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-blue-400/80 px-3 mb-1.5">Support &amp; Config</p>
+            <div className="space-y-1">
+              {supportAndSettings.map((item) => (
+                <Link key={item.id} href={item.path} onClick={() => setMobileSidebarOpen(false)}>
+                  <button className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 group cursor-pointer ${
+                    darkMode ? 'text-gray-400 hover:bg-[#EAA823]/10 hover:text-[#EAA823]' : 'text-gray-600 hover:bg-amber-50 hover:text-[#0A2E1D]'
+                  }`}>
+                    <item.icon className="h-4 w-4 flex-shrink-0 group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-bold">{item.label}</span>
+                  </button>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </nav>
+
+        <div className="border-t border-inherit p-3">
+          <button
+            onClick={handleLogout}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors group cursor-pointer ${darkMode ? 'text-gray-400 hover:bg-red-500/10 hover:text-red-400' : 'text-gray-600 hover:bg-red-50 hover:text-red-600'}`}
+          >
+            <LogOut className="h-5 w-5 flex-shrink-0 group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-medium">Logout</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Desktop Sticky Sidebar (Original View Unchanged) */}
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} ${darkMode ? 'bg-gradient-to-b from-[#1a1f2e] to-[#131821] border-r border-[#EAA823]/20' : 'bg-white border-r border-gray-200 shadow-sm'} transition-all duration-300 sticky top-0 h-screen flex-col hidden md:flex shadow-2xl z-30`}>
         <div className="h-20 border-b border-inherit flex items-center justify-center px-4 py-4">
           <Link href="/admin/dashboard">
             <div className="relative w-12 h-12 cursor-pointer hover:opacity-80 transition-opacity">
@@ -519,20 +625,299 @@ export default function AdminDashboardPage() {
         </div>
       </aside>
 
-      {/* Main Content */}
+      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className={`h-20 border-b ${darkMode ? 'border-[#EAA823]/20 bg-gradient-to-r from-[#1a1f2e] to-[#131821]' : 'border-gray-200 bg-white shadow-xs'} flex items-center justify-between px-4 md:px-8 sticky top-0 z-40 shadow-lg gap-4`}>
+        <header className={`border-b ${darkMode ? 'border-[#EAA823]/20 bg-gradient-to-r from-[#1a1f2e] to-[#131821]' : 'border-gray-200 bg-white shadow-xs'} sticky top-0 z-20 shadow-lg`}>
           
-          {/* 1. Search Bar on the Left */}
-          <div className="flex items-center gap-3 flex-1 max-w-md">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className={`p-2 rounded-lg transition-colors hidden md:block cursor-pointer ${darkMode ? 'hover:bg-[#EAA823]/20 text-[#EAA823]' : 'hover:bg-gray-100 text-[#0A2E1D]'}`}
-            >
-              <Menu className="h-5 w-5" />
-            </button>
+          {/* Top Header Row */}
+          <div className="h-20 flex items-center justify-between px-4 md:px-8 gap-4">
+            
+            {/* 1. Desktop Toggle & Search */}
+            <div className="flex items-center gap-3 flex-1 max-w-md">
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className={`p-2 rounded-lg transition-colors hidden md:block cursor-pointer ${darkMode ? 'hover:bg-[#EAA823]/20 text-[#EAA823]' : 'hover:bg-gray-100 text-[#0A2E1D]'}`}
+              >
+                <Menu className="h-5 w-5" />
+              </button>
 
-            <div className={`flex items-center gap-2 rounded-full px-4 py-2.5 flex-1 border ${darkMode ? 'bg-[#EAA823]/10 border-[#EAA823]/20 text-white' : 'bg-gray-50 border-gray-200 text-slate-800'}`}>
+              <button
+                onClick={() => setMobileSidebarOpen(true)}
+                className={`p-2 rounded-lg transition-colors md:hidden cursor-pointer ${darkMode ? 'hover:bg-[#EAA823]/20 text-[#EAA823]' : 'hover:bg-gray-100 text-[#0A2E1D]'}`}
+                aria-label="Open Mobile Menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+
+              <div className={`hidden md:flex items-center gap-2 rounded-full px-4 py-2.5 flex-1 border ${darkMode ? 'bg-[#EAA823]/10 border-[#EAA823]/20 text-white' : 'bg-gray-50 border-gray-200 text-slate-800'}`}>
+                <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                <button
+                  type="button"
+                  onClick={() => setMrTellOpen(true)}
+                  className="shrink-0 rounded-full focus-visible:outline-none cursor-pointer"
+                  title="Ask Mr. Tell"
+                >
+                  <Image src="/Mr_tell.jpeg" alt="Mr. Tell" width={18} height={18} className="rounded-full object-cover" />
+                </button>
+                <input
+                  type="text"
+                  placeholder="Search orders, dishes or ask Mr. Tell..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  className="bg-transparent text-xs placeholder-gray-400 outline-none w-full"
+                />
+              </div>
+            </div>
+
+            {/* 2. Middle Sales & Storefront Toggles (Desktop View) */}
+            <div className="hidden md:flex items-center gap-2.5 flex-shrink-0">
+              {salesSessionActive ? (
+                <Button
+                  onClick={handleCloseSales}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl px-3 h-9 gap-1.5 cursor-pointer shadow-xs"
+                  title="Close sales for today"
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span>Sales: </span><span className="font-black">ON</span>
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleStartSales}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl px-3.5 h-9 gap-1.5 cursor-pointer shadow-md animate-pulse"
+                  title="Start sales for today"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  <span>Sales: </span><span className="font-black">OFF (Start)</span>
+                </Button>
+              )}
+
+              <Button
+                onClick={handleToggleStorefront}
+                className={`font-extrabold text-xs rounded-xl px-3.5 h-9 gap-1.5 cursor-pointer shadow-xs transition-colors ${
+                  storefrontActive 
+                    ? 'bg-[#0A2E1D] text-emerald-400 hover:bg-emerald-950 border border-emerald-500/40' 
+                    : 'bg-red-600 text-white hover:bg-red-700 animate-pulse'
+                }`}
+                title="Toggle Storefront live ordering vs Pre-orders"
+              >
+                {storefrontActive ? <Store className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                <span>Storefront: </span>
+                <span>{storefrontActive ? 'LIVE' : 'PRE-ORDERS ONLY'}</span>
+              </Button>
+            </div>
+
+            {/* 3. Right Side Controls & Widget Store Button */}
+            <div className="flex items-center gap-2.5 flex-shrink-0">
+
+              {/* MOBILE: Integrated Sales & Storefront Dropdown Icon */}
+              <div 
+                className="relative md:hidden"
+                ref={mobileSalesDropdownRef}
+                onMouseEnter={() => setShowMobileSalesDropdown(true)}
+                onMouseLeave={() => setShowMobileSalesDropdown(false)}
+              >
+                <button
+                  onClick={() => setShowMobileSalesDropdown(!showMobileSalesDropdown)}
+                  className={`p-2.5 rounded-xl transition-all border cursor-pointer flex items-center gap-1 ${
+                    salesSessionActive && storefrontActive 
+                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' 
+                      : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                  }`}
+                  aria-label="Sales & Storefront Status"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                </button>
+
+                {showMobileSalesDropdown && (
+                  <div className={`absolute right-0 mt-2 w-56 rounded-2xl shadow-2xl z-50 p-3 border space-y-2.5 ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/30 text-white' : 'bg-white border-gray-200 text-slate-800'}`}>
+                    <div className="text-[10px] font-black uppercase tracking-wider text-amber-500/90 px-1">Quick Status &amp; Controls</div>
+                    
+                    <div className="space-y-1.5">
+                      {salesSessionActive ? (
+                        <button
+                          onClick={handleCloseSales}
+                          className="w-full flex items-center justify-between p-2 rounded-xl bg-amber-600/20 text-amber-300 hover:bg-amber-600/30 text-xs font-bold transition cursor-pointer"
+                        >
+                          <span className="flex items-center gap-1.5"><Power className="w-3.5 h-3.5" /> Sales Session</span>
+                          <span className="bg-amber-500 text-[#0A2E1D] text-[9px] font-black px-1.5 py-0.5 rounded-full">ON</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleStartSales}
+                          className="w-full flex items-center justify-between p-2 rounded-xl bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 text-xs font-bold transition cursor-pointer"
+                        >
+                          <span className="flex items-center gap-1.5"><PlayCircle className="w-3.5 h-3.5" /> Sales Session</span>
+                          <span className="bg-emerald-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">OFF</span>
+                        </button>
+                      )}
+
+                      <button
+                        onClick={handleToggleStorefront}
+                        className={`w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                          storefrontActive 
+                            ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' 
+                            : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5"><Store className="w-3.5 h-3.5" /> Storefront</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${storefrontActive ? 'bg-emerald-500 text-[#0A2E1D]' : 'bg-red-600 text-white'}`}>
+                          {storefrontActive ? 'LIVE' : 'PRE-ORDER'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className={`p-2.5 rounded-xl transition-all border cursor-pointer ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/20 text-[#EAA823] hover:bg-[#EAA823]/20' : 'bg-gray-100 border-gray-200 text-amber-600 hover:bg-amber-50'}`}
+                title="Toggle Dark/Light Mode"
+              >
+                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+
+              <div className="relative" ref={notifDropdownRef}>
+                <button
+                  onClick={() => setShowNotifications(!showNotifications)}
+                  className={`relative p-2.5 rounded-xl transition-all border cursor-pointer ${darkMode ? 'border-[#EAA823]/20 hover:bg-[#EAA823]/20' : 'border-gray-200 hover:bg-gray-100'}`}
+                  aria-label="View Notifications"
+                >
+                  <Bell className={`h-5 w-5 ${unreadCount > 0 ? 'text-[#EAA823]' : 'text-gray-400'}`} />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1 border-2 border-inherit animate-pulse">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div className={`absolute right-0 mt-3 w-80 sm:w-96 rounded-2xl shadow-2xl z-50 overflow-hidden border ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/30 text-white' : 'bg-white border-gray-200 text-slate-800'}`}>
+                    <div className={`p-4 border-b flex items-center justify-between ${darkMode ? 'bg-[#131821] border-white/10' : 'bg-gray-50 border-gray-100'}`}>
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-4 h-4 text-[#EAA823]" />
+                        <h3 className="font-bold text-sm">Live Activity</h3>
+                        {unreadCount > 0 && (
+                          <span className="bg-[#EAA823] text-[#0A2E1D] text-[10px] font-black px-2 py-0.5 rounded-full">
+                            {unreadCount} new
+                          </span>
+                        )}
+                      </div>
+                      
+                      <button
+                        onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
+                        className="text-[11px] text-[#EAA823] hover:underline cursor-pointer"
+                      >
+                        Mark all read
+                      </button>
+                    </div>
+
+                    <div className="max-h-96 overflow-y-auto divide-y divide-gray-100 dark:divide-white/5">
+                      {notifications.length === 0 ? (
+                        <div className="p-8 text-center text-gray-400 text-xs">No notifications yet</div>
+                      ) : (
+                        notifications.map((notif) => (
+                          <div
+                            key={notif.id}
+                            onClick={() => handleNotificationClick(notif)}
+                            className={`p-3.5 cursor-pointer transition-all flex items-start justify-between gap-3 ${
+                              !notif.read ? (darkMode ? 'bg-[#EAA823]/10' : 'bg-amber-50/60') : (darkMode ? 'hover:bg-white/5' : 'hover:bg-gray-50')
+                            }`}
+                          >
+                            <div className="flex items-start gap-3 min-w-0">
+                              <div className={`p-2 rounded-xl mt-0.5 flex-shrink-0 ${
+                                notif.type === 'inquiry' 
+                                  ? 'bg-purple-500/20 text-purple-400' 
+                                  : 'bg-[#EAA823]/20 text-[#EAA823]'
+                              }`}>
+                                {notif.type === 'inquiry' ? (
+                                  <MessageSquare className="w-4 h-4" />
+                                ) : (
+                                  <ShoppingCart className="w-4 h-4" />
+                                )}
+                              </div>
+                              
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold truncate">{notif.title}</p>
+                                <p className="text-[11px] text-gray-400">{notif.subtitle}</p>
+                                <p className="text-[10px] text-gray-500 mt-0.5">{formatRelativeTime(notif.created_at)}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                              <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                                notif.type === 'inquiry' 
+                                  ? 'bg-purple-500/20 text-purple-300' 
+                                  : 'bg-amber-500/20 text-amber-300'
+                              }`}>
+                                {notif.badge}
+                              </span>
+                              <span className="text-[10px] text-[#EAA823] flex items-center gap-0.5 pt-1">
+                                <span>Open</span>
+                                <ChevronRight className="w-3 h-3" />
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* DESKTOP: Widget Store Button */}
+              <Link href="/admin/widgets" className="hidden md:block">
+                <button className="bg-gradient-to-r from-[#EAA823] to-amber-500 hover:from-amber-500 hover:to-[#EAA823] text-[#0A2E1D] font-black text-xs sm:text-sm px-4 py-2.5 rounded-2xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95 flex-shrink-0" title="Open Widgets Store">
+                  <Grid className="w-4 h-4" />
+                  <span className="hidden xl:inline">Widgets Store</span>
+                </button>
+              </Link>
+
+              {/* MOBILE: User Profile Icon with Dropdown (Housing Widgets & Settings) */}
+              <div 
+                className="relative md:hidden"
+                ref={mobileProfileDropdownRef}
+                onMouseEnter={() => setShowMobileProfileDropdown(true)}
+                onMouseLeave={() => setShowMobileProfileDropdown(false)}
+              >
+                <button
+                  onClick={() => setShowMobileProfileDropdown(!showMobileProfileDropdown)}
+                  className={`p-2.5 rounded-xl transition-all border cursor-pointer flex items-center justify-center ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/30 text-[#EAA823]' : 'bg-gray-100 border-gray-200 text-amber-600'}`}
+                  aria-label="User Profile Menu"
+                >
+                  <User className="w-4 h-4" />
+                </button>
+
+                {showMobileProfileDropdown && (
+                  <div className={`absolute right-0 mt-2 w-56 rounded-2xl shadow-2xl z-50 p-3 border space-y-2 ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/30 text-white' : 'bg-white border-gray-200 text-slate-800'}`}>
+                    <div className="px-2 py-1.5 border-b border-inherit mb-1">
+                      <p className="text-xs font-black truncate">{user?.email || 'De-echoi Admin'}</p>
+                      <span className="text-[10px] text-amber-500 font-bold">Administrator</span>
+                    </div>
+
+                    <Link href="/admin/widgets" onClick={() => setShowMobileProfileDropdown(false)}>
+                      <button className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-[#EAA823]/20 text-xs font-bold transition cursor-pointer">
+                        <Grid className="w-4 h-4 text-[#EAA823]" />
+                        <span>Widgets Store</span>
+                      </button>
+                    </Link>
+
+                    <Link href="/admin/settings" onClick={() => setShowMobileProfileDropdown(false)}>
+                      <button className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-[#EAA823]/20 text-xs font-bold transition cursor-pointer">
+                        <Settings className="w-4 h-4 text-blue-400" />
+                        <span>Dashboard Settings</span>
+                      </button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+              
+            </div>
+          </div>
+
+          {/* Mobile Search Bar Row (Starts below Sales & Storefront toggles, spans to Widgets/Profile icon) */}
+          <div className="md:hidden px-4 pb-3 pt-1">
+            <div className={`flex items-center gap-2 rounded-full px-4 py-2.5 w-full border ${darkMode ? 'bg-[#EAA823]/10 border-[#EAA823]/20 text-white' : 'bg-gray-50 border-gray-200 text-slate-800'}`}>
               <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
               <button
                 type="button"
@@ -551,151 +936,6 @@ export default function AdminDashboardPage() {
               />
             </div>
           </div>
-
-          {/* 2. Middle Sales & Storefront Toggles */}
-          <div className="flex items-center gap-2.5 flex-shrink-0">
-            {salesSessionActive ? (
-              <Button
-                onClick={handleCloseSales}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl px-3 h-9 gap-1.5 cursor-pointer shadow-xs"
-                title="Close sales for today"
-              >
-                <Power className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Sales: </span><span className="font-black">ON</span>
-              </Button>
-            ) : (
-              <Button
-                onClick={handleStartSales}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl px-3.5 h-9 gap-1.5 cursor-pointer shadow-md animate-pulse"
-                title="Start sales for today"
-              >
-                <PlayCircle className="w-4 h-4" />
-                <span className="hidden sm:inline">Sales: </span><span className="font-black">OFF (Start)</span>
-              </Button>
-            )}
-
-            <Button
-              onClick={handleToggleStorefront}
-              className={`font-extrabold text-xs rounded-xl px-3.5 h-9 gap-1.5 cursor-pointer shadow-xs transition-colors ${
-                storefrontActive 
-                  ? 'bg-[#0A2E1D] text-emerald-400 hover:bg-emerald-950 border border-emerald-500/40' 
-                  : 'bg-red-600 text-white hover:bg-red-700 animate-pulse'
-              }`}
-              title="Toggle Storefront live ordering vs Pre-orders"
-            >
-              {storefrontActive ? <Store className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-              <span className="hidden md:inline">Storefront: </span>
-              <span>{storefrontActive ? 'LIVE' : 'PRE-ORDERS ONLY'}</span>
-            </Button>
-          </div>
-
-          {/* 3. Right Side Controls & Widget Store Button */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className={`p-2.5 rounded-xl transition-all border cursor-pointer ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/20 text-[#EAA823] hover:bg-[#EAA823]/20' : 'bg-gray-100 border-gray-200 text-amber-600 hover:bg-amber-50'}`}
-              title="Toggle Dark/Light Mode"
-            >
-              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-
-            <div className="relative" ref={notifDropdownRef}>
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className={`relative p-2.5 rounded-xl transition-all border cursor-pointer ${darkMode ? 'border-[#EAA823]/20 hover:bg-[#EAA823]/20' : 'border-gray-200 hover:bg-gray-100'}`}
-                aria-label="View Notifications"
-              >
-                <Bell className={`h-5 w-5 ${unreadCount > 0 ? 'text-[#EAA823]' : 'text-gray-400'}`} />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1 border-2 border-inherit animate-pulse">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-
-              {showNotifications && (
-                <div className={`absolute right-0 mt-3 w-80 sm:w-96 rounded-2xl shadow-2xl z-50 overflow-hidden border ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/30 text-white' : 'bg-white border-gray-200 text-slate-800'}`}>
-                  <div className={`p-4 border-b flex items-center justify-between ${darkMode ? 'bg-[#131821] border-white/10' : 'bg-gray-50 border-gray-100'}`}>
-                    <div className="flex items-center gap-2">
-                      <Bell className="w-4 h-4 text-[#EAA823]" />
-                      <h3 className="font-bold text-sm">Live Activity</h3>
-                      {unreadCount > 0 && (
-                        <span className="bg-[#EAA823] text-[#0A2E1D] text-[10px] font-black px-2 py-0.5 rounded-full">
-                          {unreadCount} new
-                        </span>
-                      )}
-                    </div>
-                    
-                    <button
-                      onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
-                      className="text-[11px] text-[#EAA823] hover:underline cursor-pointer"
-                    >
-                      Mark all read
-                    </button>
-                  </div>
-
-                  <div className="max-h-96 overflow-y-auto divide-y divide-gray-100 dark:divide-white/5">
-                    {notifications.length === 0 ? (
-                      <div className="p-8 text-center text-gray-400 text-xs">No notifications yet</div>
-                    ) : (
-                      notifications.map((notif) => (
-                        <div
-                          key={notif.id}
-                          onClick={() => handleNotificationClick(notif)}
-                          className={`p-3.5 cursor-pointer transition-all flex items-start justify-between gap-3 ${
-                            !notif.read ? (darkMode ? 'bg-[#EAA823]/10' : 'bg-amber-50/60') : (darkMode ? 'hover:bg-white/5' : 'hover:bg-gray-50')
-                          }`}
-                        >
-                          <div className="flex items-start gap-3 min-w-0">
-                            <div className={`p-2 rounded-xl mt-0.5 flex-shrink-0 ${
-                              notif.type === 'inquiry' 
-                                ? 'bg-purple-500/20 text-purple-400' 
-                                : 'bg-[#EAA823]/20 text-[#EAA823]'
-                            }`}>
-                              {notif.type === 'inquiry' ? (
-                                <MessageSquare className="w-4 h-4" />
-                              ) : (
-                                <ShoppingCart className="w-4 h-4" />
-                              )}
-                            </div>
-                            
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold truncate">{notif.title}</p>
-                              <p className="text-[11px] text-gray-400">{notif.subtitle}</p>
-                              <p className="text-[10px] text-gray-500 mt-0.5">{formatRelativeTime(notif.created_at)}</p>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                            <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                              notif.type === 'inquiry' 
-                                ? 'bg-purple-500/20 text-purple-300' 
-                                : 'bg-amber-500/20 text-amber-300'
-                            }`}>
-                              {notif.badge}
-                            </span>
-                            <span className="text-[10px] text-[#EAA823] flex items-center gap-0.5 pt-1">
-                              <span>Open</span>
-                              <ChevronRight className="w-3 h-3" />
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <Link href="/admin/widgets">
-              <button className="bg-gradient-to-r from-[#EAA823] to-amber-500 hover:from-amber-500 hover:to-[#EAA823] text-[#0A2E1D] font-black text-xs sm:text-sm px-4 py-2.5 rounded-2xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95 flex-shrink-0" title="Open Widgets Store">
-                <Grid className="w-4 h-4" />
-                <span className="hidden xl:inline">Widgets Store</span>
-              </button>
-            </Link>
-            
-          </div>
         </header>
 
         {/* Dashboard Body */}
@@ -706,7 +946,7 @@ export default function AdminDashboardPage() {
               <h1 className={`text-2xl md:text-3xl font-extrabold ${darkMode ? 'text-white' : 'text-[#0A2E1D]'}`}>
                 {timeGreeting}, De-echoi! Welcome back to your dashboard.
               </h1>
-              <p className="text-xs text-gray-400 flex items-center gap-1.5">
+              <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
                 <MapPin className="w-3.5 h-3.5 text-[#EAA823]" />
                 Detected Location: <strong className="text-white">{userLocation.city}, {userLocation.region}</strong> 
                 {userLocation.isPortHarcourt ? (
