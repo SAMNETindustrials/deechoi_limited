@@ -9,7 +9,7 @@ import {
   ArrowUpRight, ArrowDownRight, ChevronRight, Search, Clock, CheckCircle2, Truck,
   MessageSquare, Layers, Sparkles, Sun, Moon, CloudSun, Users, UserCheck, Lightbulb, Flame, Award,
   Target, LineChart, Megaphone, HelpCircle, Wind, Droplets, Gauge, CloudRain, MapPin, Power, PlayCircle,
-  Grid, Plus, Check, SlidersHorizontal, Eye, EyeOff, ShieldCheck, Zap, Activity, Store, Ban, Star, GraduationCap, User, Sliders
+  Grid, Plus, Check, SlidersHorizontal, Eye, EyeOff, ShieldCheck, Zap, Activity, Store, Ban, Star, GraduationCap, User, AlertCircle, Plane
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -55,11 +55,16 @@ interface DashboardStats {
 export default function AdminDashboardPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(true) // Desktop default open
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false) // Mobile drawer state
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(true)
 
-  // Mobile Dropdown States
+  const [customAlert, setCustomAlert] = useState<{ show: boolean; message: string }>({ show: false, message: '' })
+
+  const triggerCustomAlert = (message: string) => {
+    setCustomAlert({ show: true, message })
+  }
+
   const [showMobileSalesDropdown, setShowMobileSalesDropdown] = useState(false)
   const [showMobileProfileDropdown, setShowMobileProfileDropdown] = useState(false)
 
@@ -75,6 +80,7 @@ export default function AdminDashboardPage() {
 
   const [salesSessionActive, setSalesSessionActive] = useState(true)
   const [storefrontActive, setStorefrontActive] = useState(true)
+  const [kitchenMaintenanceActive, setKitchenMaintenanceActive] = useState(false)
   const [lastClosedDate, setLastClosedDate] = useState<string | null>(null)
 
   const [timeGreeting, setTimeGreeting] = useState('Good day')
@@ -140,10 +146,12 @@ export default function AdminDashboardPage() {
 
     const savedShiftStatus = localStorage.getItem('deechoi_sales_session_active')
     const savedStoreStatus = localStorage.getItem('deechoi_storefront_active')
+    const savedMaintenanceStatus = localStorage.getItem('deechoi_kitchen_maintenance')
     const savedCloseDate = localStorage.getItem('deechoi_last_closed_date')
 
     if (savedShiftStatus !== null) setSalesSessionActive(savedShiftStatus === 'true')
     if (savedStoreStatus !== null) setStorefrontActive(savedStoreStatus === 'true')
+    if (savedMaintenanceStatus !== null) setKitchenMaintenanceActive(savedMaintenanceStatus === 'true')
     if (savedCloseDate) setLastClosedDate(savedCloseDate)
 
     const currentHour = new Date().getHours()
@@ -211,9 +219,22 @@ export default function AdminDashboardPage() {
     window.dispatchEvent(new Event('deechoi_store_status_change'))
 
     if (!newState) {
-      alert('Storefront turned OFF. Customers can now only make PRE-ORDERS.')
+      triggerCustomAlert('Storefront turned OFF. Customers can now only make PRE-ORDERS.')
     } else {
-      alert('Storefront turned ON. Live ordering is now active.')
+      triggerCustomAlert('Storefront turned ON. Live ordering is now active.')
+    }
+  }
+
+  const handleToggleKitchenMaintenance = () => {
+    const newState = !kitchenMaintenanceActive
+    setKitchenMaintenanceActive(newState)
+    localStorage.setItem('deechoi_kitchen_maintenance', String(newState))
+    window.dispatchEvent(new Event('deechoi_store_status_change'))
+
+    if (newState) {
+      triggerCustomAlert('Kitchen Maintenance Mode ACTIVATED! Users can view products and register for courses, but ordering is disabled with the maintenance notice.')
+    } else {
+      triggerCustomAlert('Kitchen Maintenance Mode DEACTIVATED. Normal kitchen operations resumed.')
     }
   }
 
@@ -438,6 +459,7 @@ export default function AdminDashboardPage() {
     { id: 'messages', icon: MessageSquare, label: 'Messages & AI', path: '/admin/messages' },
     { id: 'products', icon: Layers, label: 'Products', path: '/admin/products' },
     { id: 'inventory', icon: Package, label: 'Stock & Inventory', path: '/admin/inventory' },
+    { id: 'partners', icon: Store, label: 'Partners & Hubs', path: '/admin/partners' },
     { id: 'training', icon: GraduationCap, label: 'Training & Academy', path: '/admin/training' }
   ]
 
@@ -548,7 +570,7 @@ export default function AdminDashboardPage() {
         </div>
       </aside>
 
-      {/* Desktop Sticky Sidebar (Original View Unchanged) */}
+      {/* Desktop Sticky Sidebar */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} ${darkMode ? 'bg-gradient-to-b from-[#1a1f2e] to-[#131821] border-r border-[#EAA823]/20' : 'bg-white border-r border-gray-200 shadow-sm'} transition-all duration-300 sticky top-0 h-screen flex-col hidden md:flex shadow-2xl z-30`}>
         <div className="h-20 border-b border-inherit flex items-center justify-center px-4 py-4">
           <Link href="/admin/dashboard">
@@ -629,10 +651,8 @@ export default function AdminDashboardPage() {
       <div className="flex-1 flex flex-col min-w-0">
         <header className={`border-b ${darkMode ? 'border-[#EAA823]/20 bg-gradient-to-r from-[#1a1f2e] to-[#131821]' : 'border-gray-200 bg-white shadow-xs'} sticky top-0 z-20 shadow-lg`}>
           
-          {/* Top Header Row */}
           <div className="h-20 flex items-center justify-between px-4 md:px-8 gap-4">
             
-            {/* 1. Desktop Toggle & Search */}
             <div className="flex items-center gap-3 flex-1 max-w-md">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -669,8 +689,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            {/* 2. Middle Sales & Storefront Toggles (Desktop View) */}
-            <div className="hidden md:flex items-center gap-2.5 flex-shrink-0">
+            <div className="hidden md:flex items-center gap-2 flex-shrink-0">
               {salesSessionActive ? (
                 <Button
                   onClick={handleCloseSales}
@@ -704,12 +723,24 @@ export default function AdminDashboardPage() {
                 <span>Storefront: </span>
                 <span>{storefrontActive ? 'LIVE' : 'PRE-ORDERS ONLY'}</span>
               </Button>
+
+              <Button
+                onClick={handleToggleKitchenMaintenance}
+                className={`font-extrabold text-xs rounded-xl px-3.5 h-9 gap-1.5 cursor-pointer shadow-xs transition-all ${
+                  kitchenMaintenanceActive
+                    ? 'bg-amber-500 text-[#0A2E1D] hover:bg-amber-400 animate-pulse ring-2 ring-amber-300'
+                    : 'bg-[#1a233a] text-blue-300 hover:bg-[#253252] border border-blue-500/30'
+                }`}
+                title="Toggle Travel / Kitchen Maintenance Mode (Disable ordering, show maintenance notice)"
+              >
+                <Plane className="w-4 h-4" />
+                <span>Kitchen Maintenance: </span>
+                <span>{kitchenMaintenanceActive ? 'ON (TRAVEL MODE)' : 'OFF'}</span>
+              </Button>
             </div>
 
-            {/* 3. Right Side Controls & Widget Store Button */}
             <div className="flex items-center gap-2.5 flex-shrink-0">
 
-              {/* MOBILE: Integrated Sales & Storefront Dropdown Icon */}
               <div 
                 className="relative md:hidden"
                 ref={mobileSalesDropdownRef}
@@ -719,7 +750,7 @@ export default function AdminDashboardPage() {
                 <button
                   onClick={() => setShowMobileSalesDropdown(!showMobileSalesDropdown)}
                   className={`p-2.5 rounded-xl transition-all border cursor-pointer flex items-center gap-1 ${
-                    salesSessionActive && storefrontActive 
+                    salesSessionActive && storefrontActive && !kitchenMaintenanceActive
                       ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' 
                       : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
                   }`}
@@ -729,7 +760,7 @@ export default function AdminDashboardPage() {
                 </button>
 
                 {showMobileSalesDropdown && (
-                  <div className={`absolute right-0 mt-2 w-56 rounded-2xl shadow-2xl z-50 p-3 border space-y-2.5 ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/30 text-white' : 'bg-white border-gray-200 text-slate-800'}`}>
+                  <div className={`absolute right-0 mt-2 w-64 rounded-2xl shadow-2xl z-50 p-3 border space-y-2.5 ${darkMode ? 'bg-[#1a1f2e] border-[#EAA823]/30 text-white' : 'bg-white border-gray-200 text-slate-800'}`}>
                     <div className="text-[10px] font-black uppercase tracking-wider text-amber-500/90 px-1">Quick Status &amp; Controls</div>
                     
                     <div className="space-y-1.5">
@@ -762,6 +793,20 @@ export default function AdminDashboardPage() {
                         <span className="flex items-center gap-1.5"><Store className="w-3.5 h-3.5" /> Storefront</span>
                         <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${storefrontActive ? 'bg-emerald-500 text-[#0A2E1D]' : 'bg-red-600 text-white'}`}>
                           {storefrontActive ? 'LIVE' : 'PRE-ORDER'}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={handleToggleKitchenMaintenance}
+                        className={`w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                          kitchenMaintenanceActive
+                            ? 'bg-amber-500 text-[#0A2E1D]'
+                            : 'bg-blue-500/10 text-blue-300 hover:bg-blue-500/20'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5"><Plane className="w-3.5 h-3.5" /> Kitchen Maintenance</span>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${kitchenMaintenanceActive ? 'bg-[#0A2E1D] text-amber-300' : 'bg-blue-600 text-white'}`}>
+                          {kitchenMaintenanceActive ? 'ON' : 'OFF'}
                         </span>
                       </button>
                     </div>
@@ -865,7 +910,6 @@ export default function AdminDashboardPage() {
                 )}
               </div>
 
-              {/* DESKTOP: Widget Store Button */}
               <Link href="/admin/widgets" className="hidden md:block">
                 <button className="bg-gradient-to-r from-[#EAA823] to-amber-500 hover:from-amber-500 hover:to-[#EAA823] text-[#0A2E1D] font-black text-xs sm:text-sm px-4 py-2.5 rounded-2xl shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95 flex-shrink-0" title="Open Widgets Store">
                   <Grid className="w-4 h-4" />
@@ -873,7 +917,6 @@ export default function AdminDashboardPage() {
                 </button>
               </Link>
 
-              {/* MOBILE: User Profile Icon with Dropdown (Housing Widgets & Settings) */}
               <div 
                 className="relative md:hidden"
                 ref={mobileProfileDropdownRef}
@@ -915,7 +958,6 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
-          {/* Mobile Search Bar Row (Starts below Sales & Storefront toggles, spans to Widgets/Profile icon) */}
           <div className="md:hidden px-4 pb-3 pt-1">
             <div className={`flex items-center gap-2 rounded-full px-4 py-2.5 w-full border ${darkMode ? 'bg-[#EAA823]/10 border-[#EAA823]/20 text-white' : 'bg-gray-50 border-gray-200 text-slate-800'}`}>
               <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
@@ -958,7 +1000,12 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {salesSessionActive ? (
+              {kitchenMaintenanceActive ? (
+                <div className="flex items-center gap-2 bg-amber-500/20 border border-amber-500/40 px-3 py-1.5 rounded-2xl text-xs font-bold text-amber-300 animate-pulse">
+                  <Plane className="w-4 h-4 text-amber-400" />
+                  <span>Kitchen Maintenance (Travel Mode) Active</span>
+                </div>
+              ) : salesSessionActive ? (
                 <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 px-3 py-1.5 rounded-2xl text-xs font-bold text-emerald-300">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Shift Active (Sales Open)</span>
@@ -977,7 +1024,7 @@ export default function AdminDashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
               <div className={`lg:col-span-5 rounded-3xl p-6 border shadow-2xl relative overflow-hidden flex flex-col justify-between ${darkMode ? 'bg-gradient-to-br from-[#1a233a] via-[#111827] to-[#0b101b] border-blue-500/30' : 'bg-gradient-to-br from-blue-900 to-indigo-950 text-white'}`}>
                 <div className="absolute -right-10 -bottom-10 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-                
+                 
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="font-black text-sm text-blue-200 uppercase tracking-widest">Live Weather Radar</h3>
@@ -1047,7 +1094,7 @@ export default function AdminDashboardPage() {
                     <span>TEMPERATURE TREND (°C)</span>
                     <span className="text-emerald-400 flex items-center gap-1">Optimal Range</span>
                   </div>
-                  
+                   
                   <div className="relative h-16 w-full flex items-end justify-between px-2 pt-4">
                     <svg className="absolute inset-0 w-full h-full overflow-visible px-4" preserveAspectRatio="none" viewBox="0 0 500 60">
                       <path d="M 0 30 Q 80 10, 160 25 T 320 20 T 480 35" fill="none" stroke="#EAA823" strokeWidth="2.5" />
@@ -1312,6 +1359,34 @@ export default function AdminDashboardPage() {
                     </Link>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* CUSTOM DASHBOARD ALERT MODAL */}
+          {customAlert.show && (
+            <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="w-full max-w-sm rounded-3xl bg-[#0A2E1D] border-2 border-[#EAA823]/40 p-6 text-white shadow-2xl space-y-4 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-[#EAA823] flex items-center justify-center mx-auto border border-[#EAA823]/30">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3 className="text-base font-black text-[#EAA823] uppercase tracking-wider">
+                    De-echoi Notice
+                  </h3>
+                  <p className="text-xs sm:text-sm text-gray-200 leading-relaxed">
+                    {customAlert.message}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCustomAlert({ show: false, message: '' })}
+                  className="w-full bg-[#EAA823] hover:bg-amber-400 text-[#0A2E1D] font-black text-xs sm:text-sm py-3 rounded-xl shadow-lg transition active:scale-95 cursor-pointer"
+                >
+                  OK, Understood
+                </button>
               </div>
             </div>
           )}

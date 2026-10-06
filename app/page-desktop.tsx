@@ -34,7 +34,8 @@ import {
   MessageCircle,
   ShoppingBag,
   ArrowUpRight,
-  AlertTriangle
+  AlertTriangle,
+  Plane
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -250,6 +251,10 @@ export default function DesktopHomePage() {
 
   // Storefront live vs Pre-Order state
   const [isStoreLive, setIsStoreLive] = useState(true)
+  
+  // Kitchen Maintenance Mode state
+  const [kitchenMaintenanceActive, setKitchenMaintenanceActive] = useState(false)
+  const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false)
 
   // Mr. Tell AI State
   const [aiQuery, setAiQuery] = useState('')
@@ -265,7 +270,6 @@ export default function DesktopHomePage() {
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
   const buttonRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
-  // Auto-scrolling category track ref & pause state
   const categoryScrollRef = useRef<HTMLDivElement | null>(null)
   const [isPaused, setIsPaused] = useState(false)
 
@@ -280,13 +284,18 @@ export default function DesktopHomePage() {
       if (storeStatus !== null) {
         setIsStoreLive(storeStatus === 'true')
       }
+      const maintenanceStatus = localStorage.getItem('deechoi_kitchen_maintenance')
+      if (maintenanceStatus !== null) {
+        setKitchenMaintenanceActive(maintenanceStatus === 'true')
+      }
     }
+    
     checkStoreStatus()
     window.addEventListener('storage', checkStoreStatus)
+    window.addEventListener('deechoi_store_status_change', checkStoreStatus)
 
     fetchProducts()
 
-    // Seamless smooth auto-scrolling loop with instant reset
     const scrollContainer = categoryScrollRef.current
     let scrollInterval: NodeJS.Timeout | null = null
 
@@ -307,6 +316,7 @@ export default function DesktopHomePage() {
       if (autoDismissTimerRef.current) clearTimeout(autoDismissTimerRef.current)
       if (scrollInterval) clearInterval(scrollInterval)
       window.removeEventListener('storage', checkStoreStatus)
+      window.removeEventListener('deechoi_store_status_change', checkStoreStatus)
     }
   }, [isPaused])
 
@@ -322,7 +332,6 @@ export default function DesktopHomePage() {
     try {
       setLoading(true)
 
-      // Fetch from both 'store_products' and 'products' tables to catch all admin uploads
       const [storeRes, generalRes] = await Promise.all([
         supabase.from('store_products').select('*').order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('created_at', { ascending: false }),
@@ -331,7 +340,6 @@ export default function DesktopHomePage() {
       const storeProductsList = storeRes.data || []
       const generalProductsList = generalRes.data || []
 
-      // Combine and deduplicate by ID
       const combinedMap = new Map<string, Product>()
       ;[...storeProductsList, ...generalProductsList].forEach((p) => {
         if (p && p.id) {
@@ -351,8 +359,6 @@ export default function DesktopHomePage() {
         }
       })
 
-      // ONLY exclude products whose official category is explicitly "Cakes" or "Cake". 
-      // This ensures items like "Cheesy Pancake" (which contain "cake" in the name) stay safely on the main food menu!
       const productList = Array.from(combinedMap.values()).filter(
         (p) => {
           const cat = p.category?.toLowerCase().trim() || ''
@@ -509,6 +515,11 @@ export default function DesktopHomePage() {
   }
 
   const handleViewDetails = (productId: string) => {
+    // HARD INTERCEPT: If maintenance mode is active, block viewing details entirely
+    if (kitchenMaintenanceActive) {
+      setMaintenanceModalOpen(true)
+      return
+    }
     setSelectedProductId(productId)
     setShowModal(true)
   }
@@ -534,14 +545,21 @@ export default function DesktopHomePage() {
 
       <StorefrontHeader />
 
-      {!isStoreLive && (
+      {kitchenMaintenanceActive && (
+        <div className="bg-amber-500 text-[#0A2E1D] px-4 py-3 text-center text-xs font-black uppercase tracking-wider sticky top-20 z-50 shadow-lg flex items-center justify-center gap-2 animate-pulse">
+          <Plane className="w-4 h-4" />
+          <span>Kitchen Maintenance Mode Active: Our kitchen is currently on maintenance. You can view products and register for courses!</span>
+        </div>
+      )}
+
+      {!kitchenMaintenanceActive && !isStoreLive && (
         <div className="bg-amber-600 text-white px-4 py-2.5 text-center text-xs font-black uppercase tracking-wider sticky top-20 z-50 shadow-md flex items-center justify-center gap-2">
           <AlertTriangle className="w-4 h-4 animate-bounce" />
           <span>Notice: Storefront is currently in <span className="underline">Pre-Order Mode</span>. Live sales are closed for the day. You can still schedule pre-orders!</span>
         </div>
       )}
 
-      {/* Mr. Tell Desktop AI Concierge & Knowledge Search Bar */}
+      {/* Mr. Tell AI Concierge & Knowledge Search Bar */}
       <section className="bg-gradient-to-r from-[#041a11] via-[#072d1d] to-[#041a11] border-b border-[#EAA823]/30 py-3 text-white relative z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-2.5">
           
@@ -839,7 +857,6 @@ export default function DesktopHomePage() {
                   )
                 })}
 
-                {/* Duplicated items for seamless infinite-scroll looping illusion */}
                 {CATEGORIES.map((cat) => {
                   const isSelected = selectedCategory.toLowerCase() === cat.name.toLowerCase()
                   const hasGroups = cat.groups && cat.groups.length > 0
@@ -972,7 +989,7 @@ export default function DesktopHomePage() {
         </div>
       </section>
 
-      {/* Food Menu Listing (2 columns on mobile/small screens up to multi-column desktop grid) */}
+      {/* Food Menu Listing */}
       <section className="py-16 scroll-mt-24" id="our-menu-section">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
@@ -1065,33 +1082,77 @@ export default function DesktopHomePage() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
               {filteredProducts.map((product) => (
-                <ProductCard
+                <div 
                   key={product.id}
-                  id={product.id}
-                  name={product.name}
-                  description={product.description || ''}
-                  price={Number(product.price)}
-                  imageUrl={product.image_url ?? undefined}
-                  inStock={product.in_stock}
-                  category={product.category}
-                  isTimeBound={product.is_time_bound}
-                  availableFrom={product.available_from}
-                  availableTo={product.available_to}
-                  menuSection={product.menu_section}
-                  onViewDetails={handleViewDetails}
-                />
+                  onClick={(e) => {
+                    // STOP propagation so ProductCard's internal click doesn't trigger separately
+                    e.stopPropagation()
+                    if (kitchenMaintenanceActive) {
+                      setMaintenanceModalOpen(true)
+                    }
+                  }}
+                  className="relative group"
+                >
+                  {/* Overlay blocker when maintenance mode is active so clicks go straight to our interceptor */}
+                  {kitchenMaintenanceActive && (
+                    <div className="absolute inset-0 z-20 cursor-pointer bg-transparent" />
+                  )}
+                  <ProductCard
+                    id={product.id}
+                    name={product.name}
+                    description={product.description || ''}
+                    price={Number(product.price)}
+                    imageUrl={product.image_url ?? undefined}
+                    inStock={product.in_stock}
+                    category={product.category}
+                    isTimeBound={product.is_time_bound}
+                    availableFrom={product.available_from}
+                    availableTo={product.available_to}
+                    menuSection={product.menu_section}
+                    onViewDetails={handleViewDetails}
+                  />
+                </div>
               ))}
             </div>
           )}
         </div>
       </section>
 
-      {selectedProductId && (
+      {/* Only render product detail modal if maintenance is NOT active */}
+      {selectedProductId && !kitchenMaintenanceActive && (
         <ProductDetailModal
           productId={selectedProductId}
           isOpen={showModal}
           onClose={() => setShowModal(false)}
         />
+      )}
+
+      {/* KITCHEN MAINTENANCE NOTICE MODAL */}
+      {maintenanceModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-3xl bg-[#0A2E1D] border-2 border-[#EAA823]/40 p-6 text-white shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-[#EAA823] flex items-center justify-center mx-auto border border-[#EAA823]/30">
+              <Plane className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-black text-[#EAA823] uppercase tracking-wider">
+                Kitchen Maintenance Mode
+              </h3>
+              <p className="text-xs sm:text-sm text-gray-200 leading-relaxed">
+                Sorry our kitchen is currently on maintenance, you can go through our products, register for courses and have full experience until we resume back soon.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMaintenanceModalOpen(false)}
+              className="w-full bg-[#EAA823] hover:bg-amber-400 text-[#0A2E1D] font-black text-xs sm:text-sm py-3 rounded-xl shadow-lg transition active:scale-95 cursor-pointer"
+            >
+              OK, Understood
+            </button>
+          </div>
+        </div>
       )}
 
       <style jsx global>{`

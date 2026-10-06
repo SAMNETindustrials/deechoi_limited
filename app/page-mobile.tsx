@@ -31,7 +31,8 @@ import {
   Clock,
   HelpCircle,
   Truck,
-  AlertTriangle
+  AlertTriangle,
+  Plane
 } from 'lucide-react'
 
 import { ProductCard } from '@/components/storefront/product-card'
@@ -121,6 +122,11 @@ export default function MobileHomePage() {
   
   // Storefront Pre-Order Status State
   const [isStoreLive, setIsStoreLive] = useState(true)
+  
+  // Kitchen Maintenance Mode State
+  const [kitchenMaintenanceActive, setKitchenMaintenanceActive] = useState(false)
+  const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false)
+
   const [mounted, setMounted] = useState(false)
 
   // Mr. Tell AI State
@@ -138,11 +144,14 @@ export default function MobileHomePage() {
   useEffect(() => {
     setMounted(true)
 
-    // Robust check for storefront live status
     const checkStoreStatus = () => {
       const storeStatus = localStorage.getItem('deechoi_storefront_active')
       if (storeStatus !== null) {
         setIsStoreLive(storeStatus === 'true')
+      }
+      const maintenanceStatus = localStorage.getItem('deechoi_kitchen_maintenance')
+      if (maintenanceStatus !== null) {
+        setKitchenMaintenanceActive(maintenanceStatus === 'true')
       }
     }
 
@@ -181,7 +190,6 @@ export default function MobileHomePage() {
     try {
       setLoading(true)
 
-      // Fetch from both 'store_products' and 'products' tables to capture all admin uploads
       const [storeRes, generalRes] = await Promise.all([
         supabase.from('store_products').select('*').order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('created_at', { ascending: false }),
@@ -190,7 +198,6 @@ export default function MobileHomePage() {
       const storeProductsList = storeRes.data || []
       const generalProductsList = generalRes.data || []
 
-      // Combine and deduplicate by ID
       const combinedMap = new Map<string, Product>()
       ;[...storeProductsList, ...generalProductsList].forEach((p) => {
         if (p && p.id) {
@@ -210,8 +217,6 @@ export default function MobileHomePage() {
         }
       })
 
-      // ONLY exclude products whose official category is explicitly "Cakes" or "Cake". 
-      // This ensures items like "Cheesy Pancake" stay safely on the main food menu!
       const productList = Array.from(combinedMap.values()).filter(
         (p) => {
           const cat = p.category?.toLowerCase().trim() || ''
@@ -354,6 +359,11 @@ export default function MobileHomePage() {
   }
 
   const handleViewDetails = (productId: string) => {
+    // Intercept if Kitchen Maintenance Mode is ON
+    if (kitchenMaintenanceActive) {
+      setMaintenanceModalOpen(true)
+      return
+    }
     setSelectedProductId(productId)
     setShowModal(true)
   }
@@ -403,8 +413,14 @@ export default function MobileHomePage() {
       <div className="sticky top-0 z-40 w-full bg-[#072d1d] shadow-md border-b border-[#EAA823]/25">
         <StorefrontHeader />
 
-        {/* PRE-ORDER MODE NOTIFICATION */}
-        {!isStoreLive && mounted && (
+        {kitchenMaintenanceActive && mounted && (
+          <div className="bg-amber-500 text-[#072d1d] px-4 py-2 text-center text-[10px] sm:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm border-b border-amber-600 animate-pulse">
+            <Plane className="w-4 h-4" />
+            <span>Kitchen Maintenance Mode Active: Our kitchen is currently on maintenance. You can view products and register for courses!</span>
+          </div>
+        )}
+
+        {!kitchenMaintenanceActive && !isStoreLive && mounted && (
           <div className="bg-amber-600 text-white px-4 py-2 text-center text-[10px] sm:text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm border-b border-amber-500 animate-in slide-in-from-top-2">
             <AlertTriangle className="w-3.5 h-3.5 animate-bounce" />
             <span>Storefront is in <span className="underline">Pre-Order Mode</span></span>
@@ -750,21 +766,34 @@ export default function MobileHomePage() {
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {filteredProducts.map(product => (
-                <ProductCard
+                <div
                   key={product.id}
-                  id={product.id}
-                  name={product.name}
-                  description={product.description || ''}
-                  price={Number(product.price)}
-                  imageUrl={product.image_url ?? undefined}
-                  inStock={product.in_stock}
-                  category={product.category}
-                  isTimeBound={product.is_time_bound}
-                  availableFrom={product.available_from}
-                  availableTo={product.available_to}
-                  menuSection={product.menu_section}
-                  onViewDetails={handleViewDetails}
-                />
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (kitchenMaintenanceActive) {
+                      setMaintenanceModalOpen(true)
+                    }
+                  }}
+                  className="relative group"
+                >
+                  {kitchenMaintenanceActive && (
+                    <div className="absolute inset-0 z-20 cursor-pointer bg-transparent" />
+                  )}
+                  <ProductCard
+                    id={product.id}
+                    name={product.name}
+                    description={product.description || ''}
+                    price={Number(product.price)}
+                    imageUrl={product.image_url ?? undefined}
+                    inStock={product.in_stock}
+                    category={product.category}
+                    isTimeBound={product.is_time_bound}
+                    availableFrom={product.available_from}
+                    availableTo={product.available_to}
+                    menuSection={product.menu_section}
+                    onViewDetails={handleViewDetails}
+                  />
+                </div>
               ))}
             </div>
           )}
@@ -809,13 +838,41 @@ export default function MobileHomePage() {
         </button>
       </div>
 
-      {/* PRODUCT DETAIL MODAL */}
-      {selectedProductId && (
+      {/* PRODUCT DETAIL MODAL (Only renders if maintenance mode is OFF) */}
+      {selectedProductId && !kitchenMaintenanceActive && (
         <ProductDetailModal
           productId={selectedProductId}
           isOpen={showModal}
           onClose={() => setShowModal(false)}
         />
+      )}
+
+      {/* KITCHEN MAINTENANCE NOTICE MODAL */}
+      {maintenanceModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-3xl bg-[#0A2E1D] border-2 border-[#EAA823]/40 p-6 text-white shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-[#EAA823] flex items-center justify-center mx-auto border border-[#EAA823]/30">
+              <Plane className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-black text-[#EAA823] uppercase tracking-wider">
+                Kitchen Maintenance Mode
+              </h3>
+              <p className="text-xs sm:text-sm text-gray-200 leading-relaxed">
+                Sorry our kitchen is currently on maintenance, you can go through our products, register for courses and have full experience until we resume back soon.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMaintenanceModalOpen(false)}
+              className="w-full bg-[#EAA823] hover:bg-amber-400 text-[#0A2E1D] font-black text-xs sm:text-sm py-3 rounded-xl shadow-lg transition active:scale-95 cursor-pointer"
+            >
+              OK, Understood
+            </button>
+          </div>
+        </div>
       )}
 
       <style jsx global>{`

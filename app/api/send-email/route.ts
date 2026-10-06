@@ -32,19 +32,40 @@ function getTransporter() {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { email, subject, message, receipt } = body
+    const { email, subject, message, receipt, partner } = body
 
-    if (!email && !receipt?.customer_email) {
+    if (!email && !receipt?.customer_email && !partner?.email) {
       return NextResponse.json({ error: 'Email destination is required' }, { status: 400 })
     }
 
-    const recipientEmail = email || receipt?.customer_email
-    const emailSubject = subject || (receipt ? `Official Order Invoice & Receipt - Ref: ${receipt.receipt_number}` : 'De-echoi Notification')
+    const recipientEmail = email || receipt?.customer_email || partner?.email
+    const emailSubject = subject || 
+      (receipt ? `Official Order Invoice & Receipt - Ref: ${receipt.receipt_number}` : 
+       partner ? `De-echoi Partner Application Received (Pending Approval)` : 
+       'De-echoi Notification')
     
     let messageContent = message
     let itemsHtmlTable = ''
 
-    if (receipt) {
+    // Handle Partner Application Email Template Formatting
+    if (partner) {
+      messageContent = `
+Dear ${partner.contact_name || 'Valued Partner'},
+
+Thank you for applying to become an official De-echoi Limited Hub Partner in ${partner.state} (${partner.city}).
+
+Your hub station application (${partner.business_name}), identity verification, and signed agreement have been successfully received and are currently under review by our executive team. 
+
+Once approved by our administrator, your account will automatically unlock your Partner Performance Dashboard.
+
+Station Details:
+- Business / Kitchen Name: ${partner.business_name}
+- Location: ${partner.city}, ${partner.state}
+- Address: ${partner.address}
+
+Thank you for choosing De-echoi Limited!
+      `.trim()
+    } else if (receipt) {
       const itemsList = receipt.items || []
       const itemsTextList = itemsList
         .map(
@@ -131,7 +152,9 @@ Notes: ${receipt.notes || 'N/A'}
   <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #EAA823; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
     <div style="background-color: #072d1d; text-align: center; padding: 22px; border-bottom: 1px solid #e5e7eb;">
       <h1 style="color: #EAA823; margin: 0; font-size: 22px; font-weight: 900;">DE-ECHOI LIMITED</h1>
-      <p style="color: #d1fae5; font-size: 11px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Official Transaction Receipt & Invoice</p>
+      <p style="color: #d1fae5; font-size: 11px; margin: 4px 0 0 0; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">
+        ${partner ? 'Official Hub Partner Application' : 'Official Transaction Receipt & Invoice'}
+      </p>
     </div>
 
     <div style="padding: 24px;">

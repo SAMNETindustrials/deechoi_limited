@@ -494,3 +494,125 @@ export async function sendStudentMessageEmail(
     return { success: false, error: err.message }
   }
 }
+
+/**
+ * 8. Send Partner Registration Confirmation Email (Pending Approval)
+ */
+export async function sendPartnerRegistrationEmail(partner: {
+  business_name: string
+  contact_name: string
+  email: string
+  state: string
+  city: string
+  address: string
+}) {
+  const subject = 'De-echoi Partner Application Received (Pending Approval)'
+  const messageBody = `
+Dear ${partner.contact_name || 'Valued Partner'},
+
+Thank you for applying to become an official De-echoi Limited Hub Partner in ${partner.state} (${partner.city}).
+
+Your hub station application (${partner.business_name}), identity verification, and signed agreement have been successfully received and are currently under review by our executive team. 
+
+Once approved by our administrator, your account will automatically unlock your Partner Performance Dashboard.
+
+Station Details:
+- Business / Kitchen Name: ${partner.business_name}
+- Location: ${partner.city}, ${partner.state}
+- Address: ${partner.address}
+
+Thank you for choosing De-echoi Limited!
+
+De-echoi Limited Operations
+Eze Nvuigwe Avenue, Woji, Port Harcourt
+Email: deechoi01@gmail.com | Tel: +234 7046145982
+  `.trim()
+
+  return sendOrderConfirmationEmail(partner.email, subject, messageBody)
+}
+
+/**
+ * 9. Send Partner Approval Confirmation Email (Account Unlocked)
+ */
+export async function sendPartnerApprovalEmail(partner: {
+  business_name: string
+  contact_name: string
+  email: string
+  state: string
+  city: string
+}) {
+  const subject = '🎉 De-echoi Hub Partner Application Approved!'
+  const messageBody = `
+Congratulations ${partner.contact_name || 'Partner'}!
+
+We are thrilled to inform you that your application for ${partner.business_name} in ${partner.city}, ${partner.state} has been APPROVED by De-echoi Limited management.
+
+Your partner account is now fully active. You can log into your portal to access your Partner Performance Dashboard, manage regional orders, and start dispatching.
+
+Login Portal: https://deechoi.com/partner/register
+
+Welcome aboard the De-echoi network!
+
+De-echoi Limited Operations
+Eze Nvuigwe Avenue, Woji, Port Harcourt
+Email: deechoi01@gmail.com | Tel: +234 7046145982
+  `.trim()
+
+  return sendOrderConfirmationEmail(partner.email, subject, messageBody)
+}
+
+/**
+ * 10. Send Telegram Alert for New Partner Application
+ */
+export async function sendTelegramPartnerNotification(partner: {
+  business_name: string
+  contact_name: string
+  email: string
+  phone: string
+  state: string
+  city: string
+  address: string
+  nin_number?: string
+}) {
+  const safeBusiness = escapeHtml(partner.business_name)
+  const safeContact = escapeHtml(partner.contact_name)
+  const safeEmail = escapeHtml(partner.email)
+  const safePhone = escapeHtml(partner.phone)
+  const safeLocation = escapeHtml(`${partner.city}, ${partner.state}`)
+  const safeAddress = escapeHtml(partner.address)
+  const safeNin = escapeHtml(partner.nin_number || 'N/A')
+
+  const timeString = new Date().toLocaleString('en-US', {
+    timeZone: 'Africa/Lagos',
+  })
+
+  const htmlMessage = `
+🤝 <b>NEW HUB PARTNER APPLICATION!</b>
+━━━━━━━━━━━━━━━━━━
+🏢 <b>Business Name:</b> ${safeBusiness}
+👤 <b>Contact Person:</b> ${safeContact}
+📱 <b>Phone:</b> ${safePhone}
+📧 <b>Email:</b> ${safeEmail}
+📍 <b>Location:</b> ${safeLocation}
+🏠 <b>Address:</b> ${safeAddress}
+🆔 <b>NIN:</b> <code>${safeNin}</code>
+
+⏰ <b>Time:</b> ${timeString} (WAT)
+━━━━━━━━━━━━━━━━━━
+<i>Action required: Review & approve in Admin Dashboard.</i>
+`.trim()
+
+  const plainMessage = `
+[NEW HUB PARTNER APPLICATION]
+Business: ${partner.business_name}
+Contact: ${partner.contact_name}
+Phone: ${partner.phone}
+Email: ${partner.email}
+Location: ${partner.city}, ${partner.state}
+Address: ${partner.address}
+NIN: ${partner.nin_number || 'N/A'}
+Time: ${timeString} (WAT)
+`.trim()
+
+  return sendRawTelegramMessage(htmlMessage, plainMessage)
+}
